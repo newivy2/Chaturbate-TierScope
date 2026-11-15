@@ -27,12 +27,12 @@ export function libraryShell() {
 #tierscope-session-tools[data-chart-only=true] #tools-compact-label{display:block}
 #tierscope-session-tools[data-chart-only=true] #tools-compact-status{display:block;font-size:.85em;color:var(--panel-muted);padding:4px 9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex-shrink:0}
 #tierscope-session-tools[data-chart-only=true] #tools-compact-status[data-warning=true]{color:var(--panel-warning)}
-#tierscope-session-tools[data-chart-only=true] #tools-content{display:flex;flex-direction:column;padding:5px;overflow:auto}
+#tierscope-session-tools[data-chart-only=true] #tools-content{display:flex;flex-direction:column;padding:5px;overflow:auto;overflow-anchor:none}
 #tierscope-session-tools[data-chart-only=true] #tools-content>:not([data-compact-path]):not([data-compact-control]):not([data-compact-control-path]),#tierscope-session-tools[data-chart-only=true] #tools-content :is([data-compact-path],[data-compact-control-path])>:not([data-compact-path]):not([data-compact-control]):not([data-compact-control-path]){display:none!important}
 #tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-path]:not(canvas){display:flex;flex-direction:column;flex:1 0 auto;width:100%;min-width:0;min-height:0;margin:0;padding:0}
 #tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-control-path]:not([data-compact-path]){flex:0 0 auto;min-width:0;margin:0}
 #tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-control]{flex:0 0 auto;max-width:100%;min-width:0;margin:3px 0}
-#tierscope-session-tools[data-chart-only=true] #tools-content canvas[data-compact-path]{flex:1 0 140px;width:100%;height:140px;min-height:140px;margin:0;padding:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content canvas[data-compact-path]{flex:0 0 var(--compact-chart-height,200px);width:100%;height:var(--compact-chart-height,200px);min-height:200px;margin:0;padding:0}
 #tierscope-session-tools[data-chart-only=true] #tools-content #tools-chart-view>.tools-chart-inspection-scroll{display:block!important;position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
 #tierscope-session-tools #tools-resize-handle{position:absolute;left:0;top:0;width:16px;height:16px;padding:0;border:0;border-radius:6px 0 0;background:linear-gradient(135deg,#ff69b4 50%,transparent 50%);cursor:ew-resize;touch-action:none;z-index:2}
 #tierscope-session-tools .tools-appearance{flex-shrink:0;border-top:1px solid var(--panel-divider);padding:7px 12px}

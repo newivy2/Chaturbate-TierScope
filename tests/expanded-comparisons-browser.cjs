@@ -250,7 +250,7 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
    assert.match(await page.locator('#tools-chart-inspection caption').textContent(),/pinned/);
    await page.evaluate(()=>{
     window.compactCanvas=document.getElementById('tools-analysis-chart');
-    window.compactControls=[...document.querySelectorAll('.tools-metric-strip,#tools-live-window,#tools-recent-range,#tools-compare-axis,#tools-shared-length')]
+    window.compactControls=[...document.querySelectorAll('.tools-comparison-mode,.tools-metric-strip,#tools-live-window,#tools-recent-range,#tools-compare-axis,#tools-shared-length')]
      .map(element=>({element,parent:element.parentElement}));
    });
    return captureChart();
@@ -263,6 +263,16 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
     return Math.abs(library.getBoundingClientRect().height-Math.min(expected,innerHeight-16))<2;
    },enabled);
   }
+  async function assertDefaultPlot(reason){
+   await page.waitForFunction(()=>{
+    const content=document.getElementById('tools-content'),chart=document.getElementById('tools-analysis-chart'),scale=Number(document.getElementById('tierscope-session-tools').dataset.renderScale);
+    return content&&chart&&Math.abs(chart.getBoundingClientRect().top-content.getBoundingClientRect().top)<=8*scale;
+   });
+   assert(await library.evaluate(element=>{
+    const chart=element.querySelector('#tools-analysis-chart').getBoundingClientRect(),content=element.querySelector('#tools-content').getBoundingClientRect(),scale=Number(element.dataset.renderScale);
+    return chart.height>=199*scale&&chart.height>=content.height-12*scale;
+   }),reason+': the plot fills the content viewport with at least the regular chart height');
+  }
   async function assertCompactChart(before,reason){
    assert(await page.evaluate(()=>window.compactCanvas===document.getElementById('tools-analysis-chart')),reason+': the existing canvas is retained');
    assert.deepEqual(await captureChart(),before,reason+': hidden lines, zoom, cursor and metric stay intact');
@@ -270,16 +280,18 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
    for(const selector of ['#tierscope-session-tools nav','.tools-chart-legend'])
     assert(!(await page.locator(selector).isVisible()),reason+': analysis controls are hidden');
    assert(await page.locator('.tools-metric-strip').isVisible(),reason+': tier selection stays visible');
+   for(const selector of ['#tools-compare-saved','#tools-compare-live','#tools-compare-recent'])
+    assert(await page.locator(selector).isVisible(),reason+': comparison shortcuts remain reachable');
    assert(await page.locator('#tools-chart-zoom-in').isVisible(),reason+': chart range controls stay visible');
    for(const selector of ['#tools-live-window','#tools-recent-range','#tools-compare-axis','#tools-shared-length'])
     if(await page.locator(selector).count())assert(await page.locator(selector).isVisible(),reason+': comparison range stays visible');
    assert(await page.evaluate(()=>compactControls.every(({element,parent})=>
-    document.getElementById(element.id)===element&&element.parentElement===parent)),reason+': compact controls retain their original DOM nodes and parents');
+    element.isConnected&&element.parentElement===parent&&(!element.id||document.getElementById(element.id)===element))),reason+': compact controls retain their original DOM nodes and parents');
    assert(await page.locator('#tools-standard-size').isVisible());assert(await page.locator('#tools-opacity-slider').isVisible());
    assert(await library.evaluate(element=>{
-    const panel=element.getBoundingClientRect(),chart=element.querySelector('#tools-analysis-chart').getBoundingClientRect();
-    return element.scrollWidth<=element.clientWidth+1&&chart.width>150&&chart.height>70&&chart.left>=panel.left-1&&chart.right<=panel.right+1&&chart.top>=panel.top&&chart.bottom<=panel.bottom;
-   }),reason+': the chart fits inside the compact Library');
+    const panel=element.getBoundingClientRect(),chart=element.querySelector('#tools-analysis-chart').getBoundingClientRect(),scale=Number(element.dataset.renderScale);
+    return element.scrollWidth<=element.clientWidth+1&&chart.width>150&&chart.height>=199*scale&&chart.left>=panel.left-1&&chart.right<=panel.right+1;
+   }),reason+': the regular-height chart fits horizontally inside the scrollable compact Library');
   }
   await page.click('#tools-compare-saved');await picker();await page.click('#tools-analysis-clear');
   await page.fill('#tools-analysis-search','Bulk session');await page.click('#tools-compare-all-matching');
@@ -288,6 +300,7 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.locator('#tools-resize-handle').focus();await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowLeft');await resized(1.1);
   await opacity(75);await page.waitForFunction(()=>document.getElementById('tools-opacity-slider').value==='75');
   await toggleCompact(true);await resized(1);
+  await assertDefaultPlot('Saved comparison minimizes');
   assert.equal(await page.locator('#tools-opacity-slider').inputValue(),'95','compact appearance starts independently of the full Library');
   await assertCompactChart(savedCompact,'Saved comparison minimizes');
   await page.click('#tools-metric-withTokens');
@@ -319,6 +332,18 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.selectOption('#tools-compare-axis','elapsed');assert(await page.locator('#tools-shared-length').isEnabled());
   assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/real elapsed time/);
   await toggleCompact(false);assert.equal(await page.locator('#tools-compare-axis').inputValue(),'elapsed');
+  const savedBeforeModeSwitch=await captureChart();await toggleCompact(true);await assertDefaultPlot('Saved comparison opens again');
+  for(const mode of ['live','recent','saved']){
+   await page.click('#tools-compare-'+mode);
+   await page.waitForFunction(mode=>document.getElementById('tierscope-session-tools').dataset.chartOnly==='true'&&
+    document.getElementById('tools-compare-'+mode)?.getAttribute('aria-pressed')==='true',mode);
+   await assertDefaultPlot('Compact '+mode+' shortcut');
+  }
+  assert.deepEqual(await captureChart(),savedBeforeModeSwitch,'compact mode shortcuts restore the saved comparison choices');
+  await page.locator('#tools-content').evaluate(async element=>{element.scrollTop=0;await new Promise(requestAnimationFrame);});
+  await page.click('#tools-compare-saved');await assertDefaultPlot('The current Saved shortcut returns to its plot');
+  assert.deepEqual(await captureChart(),savedBeforeModeSwitch,'reselecting the current compact mode preserves its comparison choices');
+  await toggleCompact(false);
 
   await page.click('#tools-compare-recent');await page.click('#tools-recent-metric-total');
   let recentCompact=await chooseChart('cross_day_model');await page.click('#tools-recent-freeze');
@@ -347,7 +372,8 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.fill('#tools-chart-line-search','cross_day_model');
   await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('End');await page.click('#tools-chart-zoom-in');
   const topologyBefore=await captureChart();await page.evaluate(()=>{window.compactCanvas=document.getElementById('tools-analysis-chart');});
-  await toggleCompact(true);
+  await toggleCompact(true);await assertDefaultPlot('Recent comparison opens');
+  const topologyScroll=await page.locator('#tools-content').evaluate(async element=>{element.scrollTop=35;await new Promise(requestAnimationFrame);return element.scrollTop;});
   await page.evaluate(()=>{window.testNow+=30000;ViewerTracker.__expanded.addCompactRecent('_next');ViewerTracker.__expanded.refreshTools();});
   await page.waitForFunction(()=>{
    const canvas=document.getElementById('tools-analysis-chart');return canvas!==window.compactCanvas&&canvas?.hasAttribute('data-compact-path');
@@ -357,13 +383,15 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   const topologyAfter=await captureChart();
   assert.equal(topologyAfter.range,topologyBefore.range);assert.equal(topologyAfter.cursor,topologyBefore.cursor);
   assert.equal(topologyAfter.metric,topologyBefore.metric);assert.equal(topologyAfter.legend[0][1],false,'the existing model remains hidden after its chart index changes');
+  assert(Math.abs(await page.locator('#tools-content').evaluate(element=>element.scrollTop)-topologyScroll)<1,'same-mode chart replacement preserves the user scroll position');
   await page.screenshot({path:'/tmp/tierscope-chart-only-recent-'+engine+'.png'});
   await toggleCompact(false);
 
   await page.click('#tools-compare-live');await page.click('#tools-live-metric-total');
   const liveCompact=await chooseChart('live_model_39');
   const liveCountBefore=await lastLiveCount();await page.click('#tools-live-freeze');
-  await toggleCompact(true);await assertCompactChart(liveCompact,'Live comparison minimizes');
+  await toggleCompact(true);await assertDefaultPlot('Live comparison minimizes');await assertCompactChart(liveCompact,'Live comparison minimizes');
+  await page.locator('#tools-content').evaluate(async element=>{element.scrollTop=0;await new Promise(requestAnimationFrame);});
   assert.match(await page.locator('#tools-compact-status').textContent(),/frozen/i);
   for(const status of ['stopped','paused','offline','tracking']){
    await page.evaluate(status=>{
@@ -378,16 +406,26 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
    assert.match(await strip.textContent(),/frozen/i);assert.equal(await strip.getAttribute('title'),await strip.textContent());
    assert.equal(await strip.getAttribute('data-warning'),String(['stopped','offline'].includes(status)));
    await assertCompactChart(liveCompact,'Compact source status '+status);
+   assert.equal(await page.locator('#tools-content').evaluate(element=>element.scrollTop),0,'source metadata updates preserve the user scroll at the controls');
+  }
+  for(const viewport of [{width:380,height:850},{width:1250,height:1050}]){
+   await page.setViewportSize(viewport);
+   const scroll=await page.locator('#tools-content').evaluate(async element=>{
+    await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);return element.scrollTop;
+   });
+   assert.equal(scroll,0,'resizing preserves the user scroll at the compact controls');
   }
   await page.evaluate(()=>{window.testNow+=30000;ViewerTracker.__expanded.updateLive(39,360);ViewerTracker.__expanded.refreshTools();});
   assert.equal(await lastLiveCount(),liveCountBefore);await assertCompactChart(liveCompact,'Frozen Live comparison retains its values');
   await toggleCompact(false);assert.deepEqual(await captureChart(),liveCompact);
   await page.click('#tools-live-freeze');assert.equal(await lastLiveCount(),'360');
   await toggleCompact(true);
+  const liveScroll=await page.locator('#tools-content').evaluate(async element=>{element.scrollTop=23;await new Promise(requestAnimationFrame);return element.scrollTop;});
   await page.evaluate(()=>{window.testNow+=30000;ViewerTracker.__expanded.updateLive(39,390);ViewerTracker.__expanded.refreshTools();});
   await page.waitForFunction(()=>document.querySelector('#tools-live-samples [data-live-report="live_model_39"] td')?.textContent==='390');
   assert.equal(await library.getAttribute('data-chart-only'),'true','ongoing scans update the compact chart without expanding it');
   assert(!(await page.locator('.tools-chart-legend input').isChecked()),'ongoing compact updates preserve the hidden Live model');
+  assert(Math.abs(await page.locator('#tools-content').evaluate(element=>element.scrollTop)-liveScroll)<1,'ordinary new samples preserve the user scroll position');
   const liveSelected=await page.locator('[data-live-source]:checked').count();
   await page.click('#tools-live-metric-withTokens');
   assert.match(await page.locator('#tools-compact-subtitle').textContent(),/Viewers with tokens/);
@@ -421,7 +459,8 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   assert(shortLayout.left>=0&&shortLayout.right<=320&&shortLayout.bottom<=240&&shortLayout.horizontal<=1);
   assert(shortLayout.footerTop>=0&&shortLayout.footerBottom<=240,'the transparency footer stays within a short viewport');
   assert(shortLayout.scrollHeight>shortLayout.clientHeight&&['auto','scroll'].includes(shortLayout.overflow),'short compact views scroll the chart controls vertically');
-  for(const selector of ['.tools-metric-strip','#tools-live-window','#tools-chart-zoom-in','#tools-analysis-chart']){
+  assert(await page.locator('#tools-analysis-chart').evaluate(element=>element.getBoundingClientRect().height/Number(document.getElementById('tierscope-session-tools').dataset.renderScale)>=199),'short views retain at least 200 logical pixels for the chart');
+  for(const selector of ['#tools-compare-saved','#tools-compare-live','#tools-compare-recent','.tools-metric-strip','#tools-live-window','#tools-chart-zoom-in','#tools-analysis-chart']){
    const control=page.locator(selector);await control.evaluate(element=>element.scrollIntoView({block:'center',inline:'nearest'}));
    assert(await control.evaluate(element=>{
     const rect=element.getBoundingClientRect(),view=document.getElementById('tools-content').getBoundingClientRect();
