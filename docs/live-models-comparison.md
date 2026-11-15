@@ -1,10 +1,10 @@
-# Live models comparison — 3.29.0 beta
+# Live models comparison — 3.29.0
 
 Compare the audience charts from rooms being tracked in different TierScope tabs. The comparison uses their existing samples and makes no additional Chaturbate API requests. It works within the same browser profile and TierScope userscript installation.
 
-## Try the beta
+## Start comparing live models
 
-1. Install the complete [beta userscript](https://github.com/newivy2/TierScope/blob/beta/live-models-comparison/tierscope.user.js) in place of your existing TierScope script. The installed version and panel footer should both say **3.29.0-beta.1**. Tampermonkey may ask to accept the new storage-change notification permissions.
+1. Install the complete [official userscript](https://raw.githubusercontent.com/newivy2/TierScope/main/tierscope.user.js) in place of your existing TierScope script. The installed version and panel footer should both say **3.29.0**. Tampermonkey may ask to accept the new storage-change notification permissions.
 2. Refresh every room tab that should participate. Older versions do not publish live sources. Keep only one enabled TierScope copy.
 3. Open **Library → Compare → Live models** in any TierScope tab, including a directory page. Rooms appear after their tabs initialize. Sources without an accepted sample show **Waiting for first sample**.
 

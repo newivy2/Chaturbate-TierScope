@@ -207,7 +207,7 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
             freeze.setAttribute('aria-pressed', String(state.frozen)); freeze.disabled = !state.snapshots.size;
             chooserTitle.textContent = 'Models being tracked · ' + groups.size + ' · ' + state.selected.size + ' selected';
             empty.hidden = groups.size > 0;
-            empty.textContent = 'Open broadcast rooms in other tabs with this TierScope beta enabled. Models appear after their tabs start tracking; no favorite or saved Library session is required.';
+            empty.textContent = 'Open broadcast rooms in other tabs with TierScope enabled. Models appear after their tabs start tracking; no favorite or saved Library session is required.';
             const unavailable = selected.filter(source => ['unavailable', 'reset', 'stale'].includes(source.status)).length;
             status.textContent = (state.frozen ? 'Frozen at ' + new Date(state.frozenAt).toLocaleTimeString() + ' · source status still updates.' : 'Following new scans · ' + state.selected.size + ' / 12 models selected.') +
                 (unavailable ? ' ' + unavailable + ' source(s) unavailable or stale; open Models being tracked for details.' : '') +

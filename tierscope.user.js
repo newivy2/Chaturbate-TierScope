@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.29.0-beta.1
+// @version      3.29.0
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -7587,7 +7587,7 @@ underlying system, so should run in the browser, Node, or Plask.
         freeze.disabled = !state.snapshots.size;
         chooserTitle.textContent = "Models being tracked · " + groups.size + " · " + state.selected.size + " selected";
         empty.hidden = groups.size > 0;
-        empty.textContent = "Open broadcast rooms in other tabs with this TierScope beta enabled. Models appear after their tabs start tracking; no favorite or saved Library session is required.";
+        empty.textContent = "Open broadcast rooms in other tabs with TierScope enabled. Models appear after their tabs start tracking; no favorite or saved Library session is required.";
         const unavailable = selected.filter((source) => ["unavailable", "reset", "stale"].includes(source.status)).length;
         status.textContent = (state.frozen ? "Frozen at " + new Date(state.frozenAt).toLocaleTimeString() + " · source status still updates." : "Following new scans · " + state.selected.size + " / 12 models selected.") + (unavailable ? " " + unavailable + " source(s) unavailable or stale; open Models being tracked for details." : "") + (notice ? " " + notice : "") + (userNotice ? " " + userNotice : "");
         if (!groups.size) {
@@ -11617,7 +11617,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.29.0-beta.1";
+    runtime.TIERSCOPE_VERSION = "3.29.0";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;
