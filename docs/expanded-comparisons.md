@@ -1,10 +1,10 @@
-# Expanded comparisons — 3.30.0 beta
+# Expanded comparisons — 3.30.0
 
-This preview adds an all-model **Last 24h** comparison and removes the separate session/model count limits from saved and live comparisons. It still installs as one userscript.
+This release adds an all-model **Last 24h** comparison and removes the separate session/model count limits from saved and live comparisons. It still installs as one userscript.
 
-## Try the preview
+## Open comparisons
 
-Install [3.30.0-beta.4](https://github.com/newivy2/TierScope/blob/beta/expanded-comparisons/tierscope.user.js) over the existing TierScope script, then refresh your room tabs. Stable `main` remains on 3.29.0 until this preview is approved.
+Install the [official 3.30.0 userscript](https://raw.githubusercontent.com/newivy2/TierScope/main/tierscope.user.js), then refresh your room tabs. Keep only one enabled TierScope copy.
 
 Open **Library → Compare** and choose **Saved sessions**, **Live models**, or **Last 24h**. The **Current Live Session** card provides **Live sessions** and **Last 24h sessions** shortcuts beside the existing comparison actions. The Sessions tab and model-history actions also provide **Last 24h · all models** shortcuts.
 

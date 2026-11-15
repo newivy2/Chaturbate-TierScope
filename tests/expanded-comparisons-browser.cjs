@@ -218,6 +218,7 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.fill('#tools-chart-line-search','aaa_model');
   assert.notEqual(await page.locator('.tools-chart-legend label').evaluate(element=>element.style.color),style.color,'an alphabetically earlier model never takes the current room’s pink');
   await page.fill('#tools-chart-line-search','comparison_room');await page.locator('#dark-mode-toggle').setChecked(true);
+  await page.waitForFunction(()=>document.querySelector('.tools-chart-legend label')?.style.color==='rgb(255, 105, 180)');
   style=await currentLiveStyle();assert.equal(style.color,'rgb(255, 105, 180)');
   assert.deepEqual(await page.evaluate(()=>ViewerTracker.__expanded.saved()),styleSavedBefore,'metadata styling never rewrites saved sessions');
   assert.deepEqual(await page.evaluate(()=>ViewerTracker.__expanded.state()),liveBefore);assert.equal(requests,0);

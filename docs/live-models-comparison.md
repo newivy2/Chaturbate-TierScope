@@ -1,10 +1,10 @@
-# Live models comparison — 3.29.0
+# Live models comparison — 3.30.0
 
 Compare the audience charts from rooms being tracked in different TierScope tabs. The comparison uses their existing samples and makes no additional Chaturbate API requests. It works within the same browser profile and TierScope userscript installation.
 
 ## Start comparing live models
 
-1. Install the complete [official userscript](https://raw.githubusercontent.com/newivy2/TierScope/main/tierscope.user.js) in place of your existing TierScope script. The installed version and panel footer should both say **3.29.0**. Tampermonkey may ask to accept the new storage-change notification permissions.
+1. Install the complete [official userscript](https://raw.githubusercontent.com/newivy2/TierScope/main/tierscope.user.js) in place of your existing TierScope script. The installed version and panel footer should both say **3.30.0**. Tampermonkey may ask to accept the new storage-change notification permissions.
 2. Refresh every room tab that should participate. Older versions do not publish live sources. Keep only one enabled TierScope copy.
 3. Open **Library → Compare → Live models** in any TierScope tab, including a directory page. Rooms appear after their tabs initialize. Sources without an accepted sample show **Waiting for first sample**.
 
@@ -12,16 +12,16 @@ Live viewing does not require favorites or automatic keeping. Sessions enter the
 
 ## Select models
 
-Up to **12 models** can appear together. Available models with samples are selected initially. Expand **Models being tracked** to review statuses or check models that appear later. The chooser starts folded to give the chart priority. The metric strip switches between Room audience, Registered viewers, Viewers with tokens and the existing tiers.
+There is no separate model-count limit; available comparisons depend on browser resources. Available models with samples are selected initially. Expand **Models being tracked** to review statuses or check models that appear later. The chooser starts folded to give the chart priority. The metric strip switches between Room audience, Registered viewers, Viewers with tokens and the existing tiers.
 
-When one model is open in several tabs, TierScope uses the available session with the **most samples**, without adding or merging their histories. An equal sample count keeps the current source. If the selected tab closes or becomes stale, an available sibling can supply the line. Source colors stay distinct as models are added or removed.
+When one model is open in several tabs, TierScope uses the available session with the **most samples**, without adding or merging their histories. An equal sample count keeps the current source. If the selected tab closes or becomes stale, an available sibling can supply the line. This room’s selected model stays pink; other source colors remain stable as models are added or removed.
 
 A deliberate Reset or new session in the same tab has a separate identity. Its previous selected snapshot remains marked unavailable; use the source selector in that model's card to choose the replacement session. An old tab from before a room Reset cannot publish its history as current.
 
 ## Read the chart
 
 - All models share an axis of actual dates and clock times, including midnight crossings. The comparison does not fold different days onto a 24-hour chart.
-- Choose the last **15 minutes**, **hour**, **4 hours**, or **Full sessions**. The initial range is the last hour.
+- Choose the last **15 minutes**, **hour**, **4 hours**, **24 hours**, or **Full sessions**. The initial range is the last hour.
 - Each model has a solid, opaque line. Hide individual lines in the legend, inspect samples with the shared cursor, or zoom and pan using the existing chart controls.
 - Every line ends at its last accepted sample. Recording gaps stay gaps; a previous count is never extended to the current time to suggest a fresh scan.
 - The table reports each displayed snapshot's latest accepted count, timestamp and sample count. It does not total audiences across rooms.
