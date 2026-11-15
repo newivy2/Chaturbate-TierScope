@@ -69,8 +69,13 @@ async function download(page,action){const [d]=await Promise.all([page.waitForEv
  // The left page scales independently and follows drag and the viewport, while explicit user moves persist.
  await page.click('#btn-control-library');await page.evaluate(()=>ViewerTracker.__book.scale(1.2));await page.waitForTimeout(150);
  assert.equal(Math.round((await library.boundingBox()).width),370);
+ // Leave room for a physical leftward drag from Library's upper-left corner.
+ await panel.evaluate(e=>{e.style.left='600px';e.style.right='auto';});await page.waitForTimeout(100);
  const scopeSize=await panel.boundingBox(),titleHeight=(await page.locator('#tools-title').boundingBox()).height;
  const grip=await page.locator('#tools-resize-handle').boundingBox();
+ const libraryCorner=await library.boundingBox();
+ assert(Math.abs(grip.x-libraryCorner.x)<2&&Math.abs(grip.y-libraryCorner.y)<2,'resize grip sits in Library’s upper-left corner');
+ assert((await page.locator('#tools-title').boundingBox()).x>grip.x+grip.width,'Library title clears the resize grip');
  await page.mouse.move(grip.x+3,grip.y+3);await page.mouse.down();await page.mouse.move(grip.x-71,grip.y+3,{steps:6});await page.mouse.up();
  await page.waitForFunction(()=>Math.abs(Number(document.getElementById('tierscope-session-tools').dataset.scale)-1.2)<.01);
  await page.waitForTimeout(100);
@@ -98,7 +103,7 @@ async function download(page,action){const [d]=await Promise.all([page.waitForEv
  await setOpacity('tools-opacity-slider',95);await setOpacity('opacity-slider',95);
  await page.locator('#tools-resize-handle').focus();
  for(let i=0;i<30;i++)await page.keyboard.press('ArrowLeft');
- await page.waitForFunction(()=>Number(document.getElementById('tierscope-session-tools').dataset.scale)>2.4);
+ await page.waitForFunction(()=>Math.abs(Number(document.getElementById('tierscope-session-tools').dataset.scale)-2.5)<.001);
  const preferred=await library.getAttribute('data-scale');assert(Number(preferred)>2.4);
  await page.setViewportSize({width:380,height:740});await page.waitForTimeout(150);
  const fitted=await library.boundingBox();assert(fitted.width<=364.5&&fitted.height<=724.5);

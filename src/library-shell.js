@@ -17,9 +17,9 @@ export function libraryShell() {
 #tierscope-session-tools .tools-follow{padding:5px 0;border-bottom:1px solid var(--panel-divider)}
 #tierscope-session-tools .tools-follow>label{color:var(--panel-accent);font-weight:bold}
 #tierscope-session-tools .tools-danger{color:var(--panel-negative)}
-#tierscope-session-tools .tools-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 20px 9px 12px;border-bottom:1px solid #ff69b4;background:rgba(255,105,180,.06);flex-shrink:0}
+#tierscope-session-tools .tools-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px 9px 20px;border-bottom:1px solid #ff69b4;background:rgba(255,105,180,.06);flex-shrink:0}
 #tierscope-session-tools .tools-head-actions{display:flex;gap:5px;align-items:center}
-#tierscope-session-tools #tools-resize-handle{position:absolute;right:0;top:0;width:16px;height:16px;padding:0;border:0;border-radius:0 6px 0 0;background:linear-gradient(225deg,#ff69b4 50%,transparent 50%);cursor:ew-resize;touch-action:none;z-index:2}
+#tierscope-session-tools #tools-resize-handle{position:absolute;left:0;top:0;width:16px;height:16px;padding:0;border:0;border-radius:6px 0 0;background:linear-gradient(135deg,#ff69b4 50%,transparent 50%);cursor:ew-resize;touch-action:none;z-index:2}
 #tierscope-session-tools .tools-appearance{flex-shrink:0;border-top:1px solid var(--panel-divider);padding:7px 12px}
 #tierscope-session-tools .tools-opacity-controls{display:grid;grid-template-columns:auto minmax(0,1fr) 4ch;gap:7px;align-items:center;width:100%;font-size:.9em}
 #tierscope-session-tools #tools-opacity-slider{width:100%;min-width:0;margin:0;padding:0;height:12px;accent-color:#ff69b4;cursor:pointer}

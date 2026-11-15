@@ -2,7 +2,7 @@
 
 Install the [beta userscript](https://github.com/newivy2/TierScope/blob/beta/library-appearance/tierscope.user.js) over your existing script, then refresh room tabs. Official main remains 3.30.0.
 
-- Drag Library’s pink upper-right grip left to enlarge it or right to shrink it. Fonts, charts, controls and spacing scale together, independently of Scope.
+- Drag Library’s pink upper-left grip left to enlarge it or right to shrink it. Fonts, charts, controls and spacing scale together, independently of Scope.
 - Click the percentage button beside Close to restore Library to 100%. With the grip focused, arrow keys adjust the scale; Home restores 100%.
 - Use the transparency slider fixed at the bottom of Library to adjust its background. Text and charts retain their contrast. Scope’s slider affects Scope and its tier rows independently.
 
