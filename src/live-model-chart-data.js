@@ -5,24 +5,24 @@ import { analysisSeries } from './session-analysis.js';
 /** @typedef {import('./analysis-chart-data.js').InspectionSeries} InspectionSeries */
 
 // Reserve the slots of models that remain selected before assigning newcomers.
-// Unselected models release their slots, so changing a twelve-model comparison
-// cannot wrap a new color onto another visible model's color.
+// Unselected models release their slots; selections have no fixed palette cap.
 /** @param {string[]} rooms @param {Map<string,number>} previous */
 export function allocateLiveModelColors(rooms, previous = new Map()) {
     const selected = [...new Set(rooms)];
-    if (selected.length > 12 || selected.some(room => typeof room !== 'string' || !room.length)) {
-        throw new Error('Choose up to twelve named models for live comparison colors.');
+    if (selected.some(room => typeof room !== 'string' || !room.length)) {
+        throw new Error('Choose named models for live comparison colors.');
     }
     const colors = new Map(), used = new Set();
     for (const room of selected) {
         const index = previous.get(room);
-        if (Number.isSafeInteger(index) && index >= 0 && index < 12 && !used.has(index)) {
+        if (Number.isSafeInteger(index) && index >= 0 && !used.has(index)) {
             colors.set(room, index); used.add(index);
         }
     }
+    let index = 0;
     for (const room of selected) {
         if (colors.has(room)) continue;
-        let index = 0; while (used.has(index)) index++;
+        while (used.has(index)) index++;
         colors.set(room, index); used.add(index);
     }
     return colors;

@@ -138,7 +138,7 @@ const source=prepareSource(fs.readFileSync(path.join(__dirname,'../tierscope.use
  await page.locator('#tools-compare-previous').focus();await page.keyboard.press('Enter');
  assert.equal(await page.locator('[data-tools-tab=compare]').getAttribute('aria-pressed'),'true');
  assert.equal(await page.locator('#tools-recording-picker').getAttribute('open'),null);
- assert.deepEqual(await page.locator('[id^=tools-source-]').evaluateAll(els=>els.map(e=>e.value)),['live',...priorIds.slice(0,29)]);
+ assert.deepEqual(await page.locator('[id^=tools-source-]').evaluateAll(els=>els.map(e=>e.value)),['live',...priorIds]);
  assert.equal(await page.locator('#tools-analysis-chart').count(),1);
  assert.deepEqual(await page.evaluate(()=>ViewerTracker.__models.state()),beforeCompare);
  assert.equal(await page.evaluate(()=>JSON.stringify(ViewerTracker.__models.library().entries)),storedBefore);
@@ -147,12 +147,12 @@ const source=prepareSource(fs.readFileSync(path.join(__dirname,'../tierscope.use
  await page.evaluate(()=>ViewerTracker.__models.sample());assert.equal(await page.locator('#tools-summary-table').textContent(),tableBefore,'Follow live off keeps the comparison snapshot when another sample arrives');
  await page.click('#playback-return');assert.equal(await page.locator('#tools-summary-table').textContent(),tableBefore,'closing replay cannot replace the live comparison');
  await page.click('[data-tools-tab=library]');
- const layout=await page.evaluate(()=>{const c=document.getElementById('tools-content');const ids=Array.from(c.children).map(e=>e.id||e.className);return {storage:ids.indexOf('tools-library-storage'),book:ids.indexOf('tools-sessions-book'),searchFirst:document.getElementById('tools-sessions-book').children[1].id,listInside:document.getElementById('tools-library-list').parentElement.id,actions:ids.indexOf('tools-library-management'),last:c.lastElementChild.id};});
- assert.equal(layout.book,layout.storage+1);assert.equal(layout.searchFirst,'tools-library-search-menu');assert.equal(layout.listInside,'tools-sessions-book');assert(layout.actions>layout.book);assert.equal(layout.last,'tools-library-management');
+ const layout=await page.evaluate(()=>{const c=document.getElementById('tools-content');const ids=Array.from(c.children).map(e=>e.id||e.className);return {storage:ids.indexOf('tools-library-storage'),book:ids.indexOf('tools-sessions-book'),searchFirst:document.getElementById('tools-sessions-book').children[1].id,listInside:document.getElementById('tools-library-list').parentElement.id,actions:ids.indexOf('tools-library-management'),last:c.lastElementChild.id,last24hInManagement:document.getElementById('tools-library-management').contains(document.getElementById('tools-last24h'))};});
+ assert.equal(layout.book,layout.storage+1);assert.equal(layout.searchFirst,'tools-library-search-menu');assert.equal(layout.listInside,'tools-sessions-book');assert(layout.actions>layout.book);assert.equal(layout.last,'tools-library-management');assert(layout.last24hInManagement,'global comparison is grouped with other Library actions');
  await page.setViewportSize({width:640,height:700});await page.waitForTimeout(200);
  assert(await page.evaluate(()=>{const r=document.getElementById('tracker-container').getBoundingClientRect();return document.getElementById('tracker-container').contains(document.elementFromPoint(r.x+10,r.y+10));}));
  assert.equal(await page.locator('#tools-content').evaluate(e=>e.scrollWidth<=e.clientWidth),true);
  await page.screenshot({path:'/tmp/tierscope-317-'+engine+'-narrow.png'});
- assert.deepEqual(errors,[]);console.log('PASS collapsed Sessions Book and search, keyboard/focus, fold and tab state, draft/selection retention, simplified live card, favorite consent, up-to-thirty-session comparison, footer controls, themes and isolation');
+ assert.deepEqual(errors,[]);console.log('PASS collapsed Sessions Book and search, keyboard/focus, fold and tab state, draft/selection retention, live card and global Last24h shortcut, favorite consent, complete previous-session comparison, footer controls, themes and isolation');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

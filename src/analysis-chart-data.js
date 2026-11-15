@@ -68,9 +68,37 @@ export function zoomAnalysisWindow(span, start, end, factor, anchor) {
 // faint background. Apply background opacity once to their composited layer.
 export const COMPARISON_FOREGROUND_COUNT = 12;
 export const COMPARISON_BACKGROUND_OPACITY = 0.12;
+export const ANALYSIS_LINE_PAGE_SIZE = 30;
 /** @param {number} rank */
 export function comparisonOpacity(rank) {
     return rank < COMPARISON_FOREGROUND_COUNT ? (100 - rank * 5) / 100 : COMPARISON_BACKGROUND_OPACITY;
+}
+
+/** @param {InspectionSeries[]} series @param {number[]} [rankTimes] */
+export function comparisonSeriesOrder(series, rankTimes) {
+    const at = index => Number.isFinite(rankTimes?.[index]) ? rankTimes[index] : series[index].timestamps[0] ?? -Infinity;
+    const newestFirst = series.map((_, index) => index).sort((a, b) => at(b) - at(a) || a - b);
+    const ranks = new Array(series.length);
+    newestFirst.forEach((index, rank) => { ranks[index] = rank; });
+    return {newestFirst, ranks};
+}
+
+const darkComparisonColors = ['#ff69b4','#79baff','#68d391','#ffd166','#c4a3ff','#ff987d','#47c9cf','#eaa1e8','#b5cf63','#e99c55','#92a3e8','#b4b4bd'];
+const brightComparisonColors = ['#b42370','#175db0','#176f36','#835900','#7140a6','#a23c20','#08767c','#96558d','#557315','#98530d','#414b9d','#626269'];
+
+// Twelve familiar colors remain unchanged. Further live models receive stable
+// generated hues and alternating lightness, rather than wrapping onto color 1.
+// Arbitrarily many traces cannot all be perceptually distinct; labels, search
+// and independent visibility remain available for inspecting crowded charts.
+/** @param {number} index @param {boolean} [dark] */
+export function comparisonLineColor(index, dark = true) {
+    index = Number.isSafeInteger(index) && index >= 0 ? index : 0;
+    const curated = dark ? darkComparisonColors : brightComparisonColors;
+    if (index < curated.length) return curated[index];
+    const generated = index - curated.length, hue = (23 + generated * 137.50776405003785) % 360;
+    const saturation = [68, 82, 58][Math.floor(generated / 36) % 3];
+    const lightness = (dark ? [68, 57, 78] : [35, 44, 27])[Math.floor(generated / 12) % 3];
+    return 'hsl(' + hue.toFixed(3) + ' ' + saturation + '% ' + lightness + '%)';
 }
 
 // Preserve A–Z labels and valid source IDs when comparisons reach AA–AD.

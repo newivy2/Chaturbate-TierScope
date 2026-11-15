@@ -91,7 +91,7 @@ test('retry policy calculations cannot depend on browser, storage, owners or con
 });
 
 test('drawing health and analysis preferences cannot depend on session or presentation controllers', () => {
-  const permitted = new Set(['presentation-health.js', 'analysis-preferences.js', 'analysis-preference-data.js', 'session-analysis.js', 'model-history.js', 'library-query.js', 'analysis-chart-data.js', 'analysis-clock-data.js', 'library-drafts.js', 'analysis-follow.js', 'live-model-data.js', 'live-model-chart-data.js']);
+  const permitted = new Set(['presentation-health.js', 'analysis-preferences.js', 'analysis-preference-data.js', 'session-analysis.js', 'model-history.js', 'library-query.js', 'analysis-chart-data.js', 'analysis-clock-data.js', 'library-drafts.js', 'analysis-follow.js', 'live-model-data.js', 'live-model-chart-data.js', 'recent-comparison-data.js']);
   for (const file of permitted) {
     assert.deepEqual([...dependencies(file)].filter(dependency => !permitted.has(dependency)), [], file);
     assert.deepEqual([...runtimeFields(modules[file].ast)], [], file);

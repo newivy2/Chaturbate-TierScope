@@ -35,6 +35,7 @@ export function renderModelHistoryView(parent, overview, actions) {
     compare.className = 'tools-primary';
     button(buttons, 'Summary', () => actions.summary(select.value), 'tools-history-summary');
     button(buttons, 'Replay', () => actions.replay(select.value), 'tools-history-replay');
+    if (actions.recent) button(buttons, 'Last 24h · all models', actions.recent, 'tools-history-last24h');
     const comparisonHint = node(parent, 'p', '', 'tools-muted'); comparisonHint.id = 'tools-history-compare-hint';
     compare.setAttribute('aria-describedby', comparisonHint.id);
     if (actions.metricControl) actions.metricControl(parent);

@@ -14,8 +14,8 @@ If you used the beta, install from the official link above to follow main releas
 
 - **Live tracking and replay** — Follow viewer tiers and totals, inspect and zoom charts, and replay live or saved sessions.
 - **Session library** — Organize sessions by model, choose favorites and automatically keep their sessions while tracking.
-- **Summaries and comparisons** — Review statistics, compare up to thirty sessions per model by elapsed or clock time, and explore a model’s history.
-- **Live model comparisons** — Compare up to twelve models tracked in different tabs, using their existing scans.
+- **Summaries and comparisons** — Review statistics, compare saved sessions by elapsed or clock time, and explore a model’s history.
+- **Live model comparisons** — Compare models tracked in different tabs, using their existing scans.
 - **Reports and exports** — Download CSV data, TXT reports, animated GIFs or session files you can reopen later.
 - **Session and all-time highs** — Track each room’s audience records, with highlights when counts reach or break a high.
 - **Backup and restore** — Back up your library, records and preferences, and choose your library’s storage limits.

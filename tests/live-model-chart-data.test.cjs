@@ -21,10 +21,37 @@ test('replacing any selected live model reuses its free color without changing o
     }
     assert.equal(allocateLiveModelColors(['alice', 'alice']).size, 1);
     assert.equal(allocateLiveModelColors([], initial).size, 0);
-    assert.throws(() => allocateLiveModelColors([...rooms, 'thirteenth']), /twelve/);
+    assert.equal(allocateLiveModelColors([...rooms, 'thirteenth']).size, 13);
     assert.throws(() => allocateLiveModelColors(['']), /named models/);
     const repaired = allocateLiveModelColors(['alice', 'brenda', 'charlie'], new Map([['alice', 3], ['brenda', 3], ['charlie', 99]]));
     assert.equal(repaired.get('alice'), 3); assert.equal(new Set(repaired.values()).size, 3);
+});
+
+test('large live selections retain distinct stable slots and colors beyond the original twelve', async () => {
+    const {allocateLiveModelColors} = await import('../src/live-model-chart-data.js');
+    const {comparisonLineColor} = await import('../src/analysis-chart-data.js');
+    const rooms = Array.from({length: 1000}, (_, index) => 'model_' + index), initial = allocateLiveModelColors(rooms);
+    assert.equal(initial.size, 1000); assert.equal(new Set(initial.values()).size, 1000);
+    const changed = rooms.filter((_, index) => index % 3 !== 0).concat('new_model'), next = allocateLiveModelColors(changed, initial);
+    assert.equal(next.size, changed.length); assert.equal(new Set(next.values()).size, changed.length);
+    for (const room of changed) if (room !== 'new_model') assert.equal(next.get(room), initial.get(room));
+    for (const dark of [true, false]) {
+        const colors = [...initial.values()].map(index => comparisonLineColor(index, dark));
+        assert.equal(new Set(colors).size, 1000, 'generated colors never wrap to another assigned slot');
+        assert.notEqual(colors[0], colors[12]); assert.notEqual(colors[12], colors[24]);
+        assert.match(colors[12], /^hsl\(/);
+    }
+    assert.equal(comparisonLineColor(0), '#ff69b4'); assert.equal(comparisonLineColor(1, false), '#175db0');
+});
+
+test('saved comparison ranks scale to many models and honor original dates after rolling-window clipping', async () => {
+    const {comparisonSeriesOrder, comparisonOpacity} = await import('../src/analysis-chart-data.js');
+    const series = Array.from({length: 10000}, () => ({timestamps: [100000], times: [0], values: [1], breaks: [false]}));
+    const originalTimes = series.map((_, index) => 50000 + index), {newestFirst, ranks} = comparisonSeriesOrder(series, originalTimes);
+    assert.equal(newestFirst.length, 10000); assert.equal(newestFirst[0], 9999); assert.equal(newestFirst.at(-1), 0);
+    assert.equal(ranks[9999], 0); assert.equal(ranks[0], 9999);
+    assert.equal(comparisonOpacity(ranks[9999]), 1); assert.equal(comparisonOpacity(ranks[9988]), 0.45);
+    assert.equal(comparisonOpacity(ranks[9987]), 0.12); assert.equal(comparisonOpacity(ranks[0]), 0.12);
 });
 
 test('live models align the same instant rather than their individual session starts', async () => {

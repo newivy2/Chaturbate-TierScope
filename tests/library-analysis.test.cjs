@@ -76,7 +76,7 @@ test('six-record comparison clips every recording to shared coverage independent
  assert.equal(shared.axisMs,2000);assert.equal(shared.summaries.length,6);assert.equal(shared.summaries[0].mean,15);
  assert.equal(shared.summaries[1].coveredMs,1000);assert.equal(shared.summaries[1].gapMs,1000);assert.equal(shared.summaries[1].peak,21);assert.equal(shared.summaries[1].sessionPeak,999);
  assert.equal(compareRecordingSet(archives,'room',20,false).axisMs,7000);assert.equal(JSON.stringify(archives),before);
- assert.throws(()=>compareRecordingSet([]));assert.throws(()=>compareRecordingSet(Array.from({length:31},()=>archives[0])));
+ assert.throws(()=>compareRecordingSet([]));assert.equal(compareRecordingSet(Array.from({length:61},()=>archives[0])).summaries.length,61);
 });
 
 
@@ -100,28 +100,28 @@ test('Sessions Book sorts models by matching session count and alphabetically wi
 });
 
 
-test('thirty recordings preserve independent statistics and reject a thirty-first', async () => {
+test('large comparisons preserve independent statistics without a count cap', async () => {
  const {compareRecordingSet, MAX_COMPARE_RECORDINGS}=await analysis;
  const archives=Array.from({length:30},(_,i)=>({room:i%2?'Model':'model',session:{history:{timestamps:[1000,2000,3000],breaks:[false,false,i===10],total:[i,i+1,i+2],anonymous:[0,0,0],withTokens:[0,0,0]},roomTotalHigh:100,sessionHighs:{total:{value:100}}}}));
- assert.equal(MAX_COMPARE_RECORDINGS,30);
+ assert.equal(MAX_COMPARE_RECORDINGS,Infinity);
  const firstSix=compareRecordingSet(archives.slice(0,6)), full=compareRecordingSet(archives);
  assert.equal(full.summaries.length,30); assert.deepEqual(full.summaries.slice(0,6),firstSix.summaries);
  assert.equal(full.summaries[10].coveredMs,1000);assert.equal(full.summaries[11].coveredMs,2000);
- assert.throws(()=>compareRecordingSet([...archives,archives[0]]),/thirty/);
+ assert.equal(compareRecordingSet([...archives,archives[0]]).summaries.length,31);
 });
 
-test('mixed-model comparisons allow twelve sessions while expanded history requires one model',async()=>{
+test('mixed-model comparisons have no additional count restriction',async()=>{
  const {comparisonRecordingLimit,compareRecordingSet,MIXED_MODEL_COMPARE_RECORDINGS}=await analysis;
  const make=room=>({room,session:{history:{timestamps:[0,1000],total:[10,20],anonymous:[0,0],withTokens:[5,10]},roomTotalHigh:20,sessionHighs:{}}});
  const same=Array.from({length:30},(_,i)=>make(i%2?'MODEL':'model')),mixed=same.slice(0,12);
  mixed[11]=make('other');
  const before=JSON.stringify([same,mixed]);
- assert.equal(MIXED_MODEL_COMPARE_RECORDINGS,12);
- assert.equal(comparisonRecordingLimit([]),30);assert.equal(comparisonRecordingLimit(same),30);assert.equal(comparisonRecordingLimit(mixed),12);
+ assert.equal(MIXED_MODEL_COMPARE_RECORDINGS,Infinity);
+ assert.equal(comparisonRecordingLimit([]),Infinity);assert.equal(comparisonRecordingLimit(same),Infinity);assert.equal(comparisonRecordingLimit(mixed),Infinity);
  assert.equal(compareRecordingSet(mixed).summaries.length,12);
  assert.deepEqual(compareRecordingSet(same).summaries.slice(0,11),compareRecordingSet(mixed).summaries.slice(0,11));
- assert.throws(()=>compareRecordingSet([...mixed,make('model')]),/twelve.*different models/);
- assert.throws(()=>compareRecordingSet([...same.slice(0,29),make('other')]),/twelve.*different models/);
+ assert.equal(compareRecordingSet([...mixed,make('model')]).summaries.length,13);
+ assert.equal(compareRecordingSet([...same.slice(0,29),make('other')]).summaries.length,30);
  assert.equal(JSON.stringify([same,mixed]),before);
 });
 

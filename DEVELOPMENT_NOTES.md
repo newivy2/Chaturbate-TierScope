@@ -2,6 +2,8 @@
 
 Detailed reference for **3.29.0**. [Connection recovery guide](docs/connection-recovery.md). [Comparison fading and history guide](docs/comparison-history-shadows.md). [24h comparison guide](docs/clock-comparison.md). [Library chart controls guide](docs/library-chart-controls.md). [Follow live guide](docs/follow-live.md). [Audience trends and ratio guide](docs/audience-trends.md). [Sessions Book guide](docs/sessions-book.md). [ATH cleanup guide](docs/ath-retention.md). The simplified Current Live Session card provides Keep in Library, Auto, Compare with previous, and History. File controls are below the session list, and exports remain on stored-session menus and the separate replay card. Development uses modular sources and a single installable script; see [BUILDING.md](BUILDING.md). For installation instructions, see the [README](readme.md).
 
+Preview: [Expanded comparisons and Last 24h](docs/expanded-comparisons.md) are available in **3.30.0-beta.1**.
+
 ## Contents
 
 [Live models comparison across tabs](docs/live-models-comparison.md) is available in **3.29.0**.
@@ -555,6 +557,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.30.0-beta.1** | Preview all-model Last 24h comparison and expanded saved/live selections without separate count limits. Add bulk matching selection, paged source/statistics/line controls, more live colors and gray background traces. Keep recording gaps, actual timestamps, frozen inspection and independent tracking/storage behavior. |
 | **3.29.0** | Release cross-tab live comparisons for up to twelve models, selecting the session with the most samples for duplicate rooms. Include real-time chart updates, Freeze/Resume, source status and safe session boundaries. Also release coordinated API pacing with live-scan priority, optional user-list header compatibility and improved retry diagnostics. |
 | **3.29.0-beta.1** | Compare up to twelve models tracked in different tabs, using existing scans on a shared date/time axis. Add automatic updates, sample age and tracking status, Freeze/Resume, and safe Reset/stale-source handling. Duplicate models use the session with the most samples; ties keep the current source. |
 | **3.28.0-beta.3** | Give live scans priority over background requests, release the shared lock during waits, and distinguish queued requests from scans. Expire suspended queue entries and retain request spacing, cooldowns and cancellation protections. |
