@@ -13,7 +13,7 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
     if (savedState && (savedState.axisMode || 'elapsed') === axisMode) {
         ({start, end, cursor, pinned} = savedState);
         savedState.hidden.forEach(index => { if (index >= 0 && index < series.length) hidden.add(index); });
-        if (hidden.size === series.length) hidden.delete(0);
+        if (hidden.size === series.length && !config.allowAllHidden) hidden.delete(0);
         fitWindow(savedState.axisMs, datedAxis() ? (savedState.originAt || 0) - (config.originAt || 0) : 0);
     }
     let plotCache = null;
@@ -51,7 +51,9 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
     }
     refreshSeriesStyling();
     const legendLabels = new Map(), rows = new Map();
-    const paged = series.length > ANALYSIS_LINE_PAGE_SIZE;
+    // A retained search must remain clearable if the rolling selection shrinks
+    // below the usual paging threshold while the chart is being rebuilt.
+    const paged = series.length > ANALYSIS_LINE_PAGE_SIZE || !!savedState?.lineQuery;
     let linePage = savedState?.linePage || 0, lineQuery = savedState?.lineQuery || '';
     let matchingLines = series.map((_, index) => index), pageIndices = [], legendDark = true, legendBackground = '';
     const canvas = node(parent, 'canvas'); canvas.id = 'tools-analysis-chart'; canvas.tabIndex = 0; canvas.setAttribute('role', 'img');

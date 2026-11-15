@@ -4,7 +4,7 @@ This preview adds an all-model **Last 24h** comparison and removes the separate 
 
 ## Try the preview
 
-Install [3.30.0-beta.1](https://github.com/newivy2/TierScope/blob/beta/expanded-comparisons/tierscope.user.js) over the existing TierScope script, then refresh your room tabs. Stable `main` remains on 3.29.0 until this preview is approved.
+Install [3.30.0-beta.2](https://github.com/newivy2/TierScope/blob/beta/expanded-comparisons/tierscope.user.js) over the existing TierScope script, then refresh your room tabs. Stable `main` remains on 3.29.0 until this preview is approved.
 
 Open **Library → Compare** and choose **Saved sessions**, **Live models**, or **Last 24h**. The current-session card, Sessions tab and model-history actions also provide **Last 24h · all models** shortcuts.
 
@@ -19,6 +19,8 @@ This view always reads the complete saved Library. Model, search, favorite and d
 - The chart uses actual dated timestamps, including midnight crossings. It shows the portion inside the last day, with recording gaps preserved and no line extended past its final sample.
 
 The metric strip changes the displayed tier or total. **Freeze comparison** holds both the session snapshots and displayed date window; **Resume comparison** catches up. The refresh button reads saved sessions again. Saved updates are checked every ten seconds while this view is open, and the rolling window advances periodically.
+
+Unchecked sessions and a selected time range stay as chosen when the rolling view updates. Compatible automatic Library replacements inherit the same visibility choice; conflicting recordings remain separate. A selected range is clamped only if it moves outside the rolling day.
 
 Last 24h uses sessions already kept in the Library. It does not automatically keep unsaved recordings or scan additional rooms. Live models remains the view for currently open tracking tabs.
 

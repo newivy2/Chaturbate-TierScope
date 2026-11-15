@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.30.0-beta.1
+// @version      3.30.0-beta.2
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -6652,7 +6652,7 @@ underlying system, so should run in the browser, Node, or Plask.
       savedState.hidden.forEach((index) => {
         if (index >= 0 && index < series.length) hidden.add(index);
       });
-      if (hidden.size === series.length) hidden.delete(0);
+      if (hidden.size === series.length && !config.allowAllHidden) hidden.delete(0);
       fitWindow(savedState.axisMs, datedAxis() ? (savedState.originAt || 0) - (config.originAt || 0) : 0);
     }
     let plotCache = null;
@@ -6697,7 +6697,7 @@ underlying system, so should run in the browser, Node, or Plask.
     }
     refreshSeriesStyling();
     const legendLabels = /* @__PURE__ */ new Map(), rows = /* @__PURE__ */ new Map();
-    const paged = series.length > ANALYSIS_LINE_PAGE_SIZE;
+    const paged = series.length > ANALYSIS_LINE_PAGE_SIZE || !!(savedState == null ? void 0 : savedState.lineQuery);
     let linePage = (savedState == null ? void 0 : savedState.linePage) || 0, lineQuery = (savedState == null ? void 0 : savedState.lineQuery) || "";
     let matchingLines = series.map((_, index) => index), pageIndices = [], legendDark = true, legendBackground = "";
     const canvas = toolNode(parent, "canvas");
@@ -7888,7 +7888,9 @@ underlying system, so should run in the browser, Node, or Plask.
       notice: "",
       page: 0,
       chartState: null,
-      chartIds: []
+      chartIds: [],
+      chartSources: [],
+      hiddenSources: /* @__PURE__ */ new Set()
     };
   }
   function captureEntry(entry) {
@@ -7952,9 +7954,43 @@ underlying system, so should run in the browser, Node, or Plask.
     }, "tools-recent-next");
     toolNode(root, "p", "Actual dates and clock times share one timeline. Recording gaps stay blank and each line ends at its last accepted sample. The newest 12 sessions use progressively lighter colors; older sessions remain visible in faint gray. Sessions from the same model remain separate.", "tools-muted");
     let disposed = false, refreshing = false, view = null, observer = null, plotSignature = "", paintSignature = "", selectionSignature = "", selection = null;
+    function rememberChart() {
+      if (!view) return;
+      state.chartState = view.capture();
+      const hidden = new Set(state.chartState.hidden);
+      state.chartSources.forEach((source, index) => {
+        if (hidden.has(index)) state.hiddenSources.add(source.id);
+        else state.hiddenSources.delete(source.id);
+      });
+    }
+    function retainedChartState(ids) {
+      const previous2 = state.chartState;
+      if (!previous2) return null;
+      const present = new Set(ids), previousIds = new Set(state.chartSources.map((source) => source.id)), byLineage = /* @__PURE__ */ new Map();
+      selection.entries.forEach((entry, index) => {
+        if (!entry.lineage || previousIds.has(ids[index])) return;
+        if (!byLineage.has(entry.lineage)) byLineage.set(entry.lineage, []);
+        byLineage.get(entry.lineage).push({ id: ids[index], entry });
+      });
+      for (const source of state.chartSources) {
+        if (present.has(source.id) || !state.hiddenSources.has(source.id) || !source.entry.lineage) continue;
+        const compatible = (byLineage.get(source.entry.lineage) || []).filter((candidate) => {
+          try {
+            return compareLibrarySessions(source.entry.archive, candidate.entry.archive) !== null;
+          } catch (_) {
+            return false;
+          }
+        });
+        if (compatible.length === 1) {
+          state.hiddenSources.delete(source.id);
+          state.hiddenSources.add(compatible[0].id);
+        }
+      }
+      return __spreadProps(__spreadValues({}, previous2), { sourceIds: ids, hidden: ids.flatMap((id, index) => state.hiddenSources.has(id) ? [index] : []) });
+    }
     function clearChart() {
       if (view) {
-        state.chartState = view.capture();
+        rememberChart();
         view.dispose();
         view = null;
       }
@@ -7992,6 +8028,7 @@ underlying system, so should run in the browser, Node, or Plask.
       const at = (state.frozen ? state.frozenAt : state.displayAt) || Date.now(), metric = getMetric();
       const nextPaintSignature = [state.revision, at, metric, state.frozen, state.loaded, state.notice].join("|");
       if (!force && nextPaintSignature === paintSignature) return;
+      rememberChart();
       const nextSelectionSignature = state.revision + ":" + at;
       if (selectionSignature !== nextSelectionSignature) {
         selection = selectRecentComparisonEntries(state.entries, at);
@@ -8002,20 +8039,21 @@ underlying system, so should run in the browser, Node, or Plask.
       const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
       if ((signature !== plotSignature || force) && ids.length) {
         const data = buildLiveModelSeries(selection.entries.map((entry) => entry.archive), metric, { now: selection.now, windowMs: RECENT_COMPARISON_MS });
-        const config = { originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map((item) => item.startAt) };
+        const config = { originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map((item) => item.startAt), allowAllHidden: true };
         if (!same) {
           clearChart();
-          state.chartState = null;
+          state.chartState = retainedChartState(ids);
         }
         if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[metric], "timeline", config);
         else {
           const labels = selection.metadata.map((item) => item.room + " · " + new Date(item.startAt).toLocaleString());
-          view = renderAnalysisChart(chartHost, data.series, labels, data.axisMs, ANALYSIS_METRICS[metric], same ? state.chartState : null, "timeline", config);
+          view = renderAnalysisChart(chartHost, data.series, labels, data.axisMs, ANALYSIS_METRICS[metric], state.chartState, "timeline", config);
           if (window.ResizeObserver) {
             observer = new window.ResizeObserver(view.draw);
             observer.observe(view.canvas);
           }
         }
+        state.chartSources = selection.entries.map((entry, index) => ({ id: ids[index], entry }));
       } else if (!ids.length) clearChart();
       state.chartIds = ids;
       plotSignature = signature;
@@ -8087,7 +8125,7 @@ underlying system, so should run in the browser, Node, or Plask.
       disposed = true;
       clearInterval(timer);
       if (view) {
-        state.chartState = view.capture();
+        rememberChart();
         view.dispose();
       }
       if (observer) observer.disconnect();
@@ -12183,7 +12221,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.30.0-beta.1";
+    runtime.TIERSCOPE_VERSION = "3.30.0-beta.2";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

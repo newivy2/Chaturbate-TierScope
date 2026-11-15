@@ -3,13 +3,15 @@ import { freezeRecordingData } from './immutable-data.js';
 import { buildLiveModelSeries } from './live-model-chart-data.js';
 import { RECENT_COMPARISON_MS, selectRecentComparisonEntries } from './recent-comparison-data.js';
 import { ANALYSIS_METRICS } from './session-analysis.js';
+import { compareLibrarySessions } from './session-library.js';
 import { toolNode as node, toolButton as button } from './tools-view-helpers.js';
 
 const READ_INTERVAL_MS = 10000, WINDOW_INTERVAL_MS = 30000, REPORT_PAGE_SIZE = 25;
 
 export function createRecentComparisonState() {
     return {frozen: false, frozenAt: 0, displayAt: 0, entries: [], snapshots: new Map(), inputSources: new Map(),
-        loaded: false, attemptedAt: null, revision: 0, notice: '', page: 0, chartState: null, chartIds: []};
+        loaded: false, attemptedAt: null, revision: 0, notice: '', page: 0, chartState: null, chartIds: [],
+        chartSources: [], hiddenSources: new Set()};
 }
 
 function captureEntry(entry) {
@@ -60,8 +62,41 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
     node(root, 'p', 'Actual dates and clock times share one timeline. Recording gaps stay blank and each line ends at its last accepted sample. The newest 12 sessions use progressively lighter colors; older sessions remain visible in faint gray. Sessions from the same model remain separate.', 'tools-muted');
     let disposed = false, refreshing = false, view = null, observer = null, plotSignature = '', paintSignature = '', selectionSignature = '', selection = null;
 
+    function rememberChart() {
+        if (!view) return;
+        state.chartState = view.capture();
+        const hidden = new Set(state.chartState.hidden);
+        state.chartSources.forEach((source, index) => {
+            if (hidden.has(index)) state.hiddenSources.add(source.id); else state.hiddenSources.delete(source.id);
+        });
+    }
+    function retainedChartState(ids) {
+        const previous = state.chartState;
+        if (!previous) return null;
+        const present = new Set(ids), previousIds = new Set(state.chartSources.map(source => source.id)), byLineage = new Map();
+        selection.entries.forEach((entry, index) => {
+            if (!entry.lineage || previousIds.has(ids[index])) return;
+            if (!byLineage.has(entry.lineage)) byLineage.set(entry.lineage, []);
+            byLineage.get(entry.lineage).push({id: ids[index], entry});
+        });
+        for (const source of state.chartSources) {
+            if (present.has(source.id) || !state.hiddenSources.has(source.id) || !source.entry.lineage) continue;
+            // Auto keeping replaces a record ID while retaining its lineage.
+            // Only an unambiguous compatible replacement inherits the choice;
+            // conflicting recordings sharing a lineage stay independent.
+            const compatible = (byLineage.get(source.entry.lineage) || []).filter(candidate => {
+                try { return compareLibrarySessions(source.entry.archive, candidate.entry.archive) !== null; }
+                catch (_) { return false; }
+            });
+            if (compatible.length === 1) {
+                state.hiddenSources.delete(source.id);
+                state.hiddenSources.add(compatible[0].id);
+            }
+        }
+        return {...previous, sourceIds: ids, hidden: ids.flatMap((id, index) => state.hiddenSources.has(id) ? [index] : [])};
+    }
     function clearChart() {
-        if (view) {state.chartState = view.capture(); view.dispose(); view = null;}
+        if (view) {rememberChart(); view.dispose(); view = null;}
         if (observer) {observer.disconnect(); observer = null;}
         chartHost.replaceChildren();
     }
@@ -91,6 +126,7 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         const at = (state.frozen ? state.frozenAt : state.displayAt) || Date.now(), metric = getMetric();
         const nextPaintSignature = [state.revision, at, metric, state.frozen, state.loaded, state.notice].join('|');
         if (!force && nextPaintSignature === paintSignature) return;
+        rememberChart();
         const nextSelectionSignature = state.revision + ':' + at;
         if (selectionSignature !== nextSelectionSignature) {
             selection = selectRecentComparisonEntries(state.entries, at); selectionSignature = nextSelectionSignature;
@@ -100,14 +136,17 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
         if ((signature !== plotSignature || force) && ids.length) {
             const data = buildLiveModelSeries(selection.entries.map(entry => entry.archive), metric, {now: selection.now, windowMs: RECENT_COMPARISON_MS});
-            const config = {originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map(item => item.startAt)};
-            if (!same) {clearChart(); state.chartState = null;}
+            const config = {originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map(item => item.startAt), allowAllHidden: true};
+            if (!same) {
+                clearChart(); state.chartState = retainedChartState(ids);
+            }
             if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[metric], 'timeline', config);
             else {
                 const labels = selection.metadata.map(item => item.room + ' · ' + new Date(item.startAt).toLocaleString());
-                view = renderAnalysisChart(chartHost, data.series, labels, data.axisMs, ANALYSIS_METRICS[metric], same ? state.chartState : null, 'timeline', config);
+                view = renderAnalysisChart(chartHost, data.series, labels, data.axisMs, ANALYSIS_METRICS[metric], state.chartState, 'timeline', config);
                 if (window.ResizeObserver) {observer = new window.ResizeObserver(view.draw); observer.observe(view.canvas);}
             }
+            state.chartSources = selection.entries.map((entry, index) => ({id: ids[index], entry}));
         } else if (!ids.length) clearChart();
         state.chartIds = ids; plotSignature = signature;
         freeze.textContent = state.frozen ? 'Resume comparison' : 'Freeze comparison';
@@ -166,7 +205,7 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
     const timer = setInterval(() => refresh(), READ_INTERVAL_MS);
     return {refresh, draw() {if (view) view.draw();}, dispose() {
         if (disposed) return; disposed = true; clearInterval(timer);
-        if (view) {state.chartState = view.capture(); view.dispose();}
+        if (view) {rememberChart(); view.dispose();}
         if (observer) observer.disconnect();
         freeze.onclick = null; refreshButton.onclick = null; previous.onclick = null; next.onclick = null;
     }};
