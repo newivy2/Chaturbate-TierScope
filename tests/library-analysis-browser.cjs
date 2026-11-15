@@ -243,42 +243,46 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   // Thirty slots: twelve progressively faded foreground lines, eighteen faint background traces.
   await page.evaluate(()=>ViewerTracker.__organized.extended());await page.click('#tools-refresh-library');
   await page.click('#tools-library-clear');await page.selectOption('#tools-library-model','extended_model');
-  // Hidden selections count toward the mixed-model cap without restricting export.
+  // Mixed-model selections beyond twelve remain comparable, including hidden selections.
   await page.locator('#tools-library-selection').evaluate(e=>e.open=true);
   for(let i=19;i<=30;i++)await page.locator('[data-library-id="extended_'+i+'"] input[type=checkbox]').check();
   await page.selectOption('#tools-library-model','alpha_model');await page.locator('[data-library-id="organized_0"] input[type=checkbox]').check();
-  assert.match(await page.locator('#tools-library-selected').textContent(),/^13 selected.*Comparison limit: 12/);
-  assert(await page.locator('#tools-compare-selected').isDisabled());assert(await page.locator('#tools-export-selected').isEnabled());
-  assert.match(await page.locator('#tools-compare-selected').getAttribute('title'),/12 across models/);
-  await page.selectOption('#tools-library-model','extended_model');await page.locator('[data-library-id="extended_19"] input[type=checkbox]').uncheck();
-  assert(await page.locator('#tools-compare-selected').isEnabled());await page.click('#tools-compare-selected');
+  assert.match(await page.locator('#tools-library-selected').textContent(),/^13 selected/);
+  assert.doesNotMatch(await page.locator('#tools-library-selected').textContent(),/limit/i);
+  assert(await page.locator('#tools-compare-selected').isEnabled());assert(await page.locator('#tools-export-selected').isEnabled());
+  await page.click('#tools-compare-selected');
   await page.locator('#tools-recording-picker').evaluate(e=>e.open=true);
-  assert.equal(await page.locator('#tools-compare-slots').textContent(),'12 / 12 slots');
-  assert(await page.locator('#tools-compare-add').isDisabled());assert.equal(await page.locator('#tools-summary-table thead th').count(),13);
-  // Returning all slots to one model enables expansion and skips unrelated snapshots.
-  await page.selectOption('#tools-source-l','extended_19');assert.equal(await page.locator('#tools-compare-slots').textContent(),'12 / 30 slots');
-  assert(await page.locator('#tools-compare-add').isEnabled());await page.click('#tools-compare-add');
-  const thirteenth=await page.locator('#tools-source-m').inputValue();assert.match(thirteenth,/^extended_/);
+  assert.equal(await page.locator('#tools-compare-slots').textContent(),'13 sessions selected');
+  assert(await page.locator('#tools-compare-add').isEnabled());
+  assert.equal(await page.locator('#tools-summary-table thead th').count(),14);
+  assert.equal(await page.locator('#tools-analysis-chart').count(),1);
+  assert.equal(await page.locator('#tools-source-m').inputValue(),'organized_0');
+  await page.selectOption('#tools-source-m','extended_0');
+  assert.equal(await page.locator('#tools-analysis-chart').count(),1,'changing model mix does not invalidate a comparison');
   assert.equal(await page.locator('#tools-summary-table thead th').count(),14);
   await page.selectOption('#tools-source-m','organized_0');
-  assert.equal(await page.locator('#tools-compare-slots').textContent(),'13 / 12 slots');assert(await page.locator('#tools-compare-add').isDisabled());
-  assert.equal(await page.locator('#tools-analysis-chart').count(),0);assert.equal(await page.locator('#tools-summary-table').count(),0);
-  assert.match(await page.locator('#tools-analysis-output').textContent(),/twelve sessions across different models/);
-  await page.selectOption('#tools-source-m',thirteenth);assert.equal(await page.locator('#tools-analysis-chart').count(),1);
-  assert.equal(await page.locator('#tools-summary-table thead th').count(),14);
+  assert.equal(await page.locator('#tools-analysis-chart').count(),1,'all mixed-model recordings remain drawn');
   await page.click('[data-tools-tab=library]');await page.click('#tools-clear-selection');await page.selectOption('#tools-library-model','extended_model');
   await page.locator('#tools-library-selection').evaluate(e=>e.open=true);await page.click('#tools-select-matching');
-  assert(await page.locator('#tools-compare-selected').isDisabled(),'thirty-one selected sessions cannot be compared');
+  assert(await page.locator('#tools-compare-selected').isEnabled(),'thirty-one selected sessions remain comparable');
+  await page.click('#tools-compare-selected');
+  assert.equal(await page.locator('#tools-compare-slots').textContent(),'31 sessions selected');
+  assert.equal(await page.locator('#tools-chart-inspection tbody tr').count(),30,'inspection pages controls without dropping chart lines');
+  await page.click('#tools-chart-lines-next');assert.equal(await page.locator('#tools-chart-inspection tbody tr').count(),1);
+  assert.equal(await page.locator('#tools-summary-table thead th').count(),26,'large reports show twenty-five session columns per page');
+  await page.click('#tools-report-next');assert.equal(await page.locator('#tools-summary-table thead th').count(),7);
+  await page.click('[data-tools-tab=library]');await page.selectOption('#tools-library-model','extended_model');
   await page.locator('[data-library-id="extended_0"] input[type=checkbox]').uncheck();
   assert(await page.locator('#tools-compare-selected').isEnabled());await page.click('#tools-compare-selected');
-  assert.equal(await page.locator('[id^=tools-source-]').count(),30);assert(await page.locator('#tools-compare-add').isDisabled());
+  assert.equal(await page.locator('[id^=tools-source-]').count(),30);assert(await page.locator('#tools-compare-add').isEnabled());
   assert.equal(await page.locator('#tools-summary-table thead th').count(),31);
+  await page.locator('#tools-recording-picker').evaluate(e=>e.open=true);await page.selectOption('#tools-analysis-model','extended_model');
   const lastSlot=await page.locator('#tools-source-ad').inputValue();
   await page.getByRole('button',{name:'Remove AD',exact:true}).click();assert.equal(await page.locator('[id^=tools-source-]').count(),29);
   assert(await page.locator('#tools-compare-add').isEnabled());await page.click('#tools-compare-add');
-  assert.match(await page.locator('#tools-source-ad').inputValue(),/^extended_/,'Add stays in the selected model above twelve sessions');
+  assert.match(await page.locator('#tools-source-ad').inputValue(),/^extended_/,'Add follows the selected source filter');
   await page.selectOption('#tools-source-ad',lastSlot);assert.equal(await page.locator('[id^=tools-source-]').count(),30);
-  assert(await page.locator('#tools-compare-add').isDisabled());
+  assert(await page.locator('#tools-compare-add').isEnabled(),'an available thirty-first session is not blocked by a cap');
   const styles=()=>page.locator('.tools-chart-legend label').evaluateAll(labels=>labels.map(e=>({opacity:Number(e.querySelector('.tools-series-swatch').style.opacity),dash:e.querySelector('.tools-series-swatch').style.borderTopStyle,color:e.style.color})));
   let thirty=await styles();assert.deepEqual(thirty.map(s=>Math.round(s.opacity*100)),[100,95,90,85,80,75,70,65,60,55,50,45,...Array(18).fill(12)]);
   assert.equal(thirty[0].dash,'solid');assert(thirty.slice(1).every(s=>s.dash==='dashed'));
@@ -320,6 +324,6 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   assert(shadowAlpha>=20&&shadowAlpha<=32,'eighteen coincident background traces remain around 12% opacity: '+shadowAlpha);
   assert.deepEqual(await page.evaluate(()=>ViewerTracker.__organized.state()),before);
   await page.evaluate(()=>{history.pushState({},'', '/next_room/');ViewerTracker.__organized.checkUrlChange();});assert.equal(await page.locator('#tierscope-session-tools').count(),0);
-  assert.deepEqual(errors,[]);console.log(engine+': filtered library, metadata, bulk transfer, twelve-model/thirty-session limits, progressive fading and composited shadows, cursor/gaps, zoom/pan, themes and isolation passed');
+  assert.deepEqual(errors,[]);console.log(engine+': filtered library, metadata, bulk transfer, unlimited mixed-model selection, paged controls/reports, progressive fading and composited shadows, cursor/gaps, zoom/pan, themes and isolation passed');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

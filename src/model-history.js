@@ -1,4 +1,4 @@
-import { ANALYSIS_METRICS, MAX_COMPARE_RECORDINGS, summarizeSession } from './session-analysis.js';
+import { ANALYSIS_METRICS, summarizeSession } from './session-analysis.js';
 
 /** @typedef {import('./session-analysis.js').AnalysisArchive} HistoryArchive */
 /** @typedef {{id:string, title:string, archive:HistoryArchive}} HistoryEntry */
@@ -37,8 +37,10 @@ export function createModelHistoryReader() {
             if (time < latestEnd) overlaps = true;
             latestEnd = Math.max(latestEnd, time + stats.spanMs);
             const position = matching.length - selected.length + index;
-            const comparisonIds = matching.slice(Math.max(0, position - MAX_COMPARE_RECORDINGS + 1), position + 1).reverse().map(record => record.id);
-            return { id: entry.id, title: entry.title || entry.archive.room, time, comparisonIds, ...stats };
+            // Materialize only when a selected history point needs the shortcut,
+            // rather than allocating every prefix of a large model history.
+            return { id: entry.id, title: entry.title || entry.archive.room, time,
+                get comparisonIds() { return matching.slice(0, position + 1).reverse().map(record => record.id); }, ...stats };
         });
         return { room: room.toLowerCase(), metric, totalCount: matching.length, recordings, overlaps,
             coveredMs, gapMs, peak, mean: coveredMs ? weighted / coveredMs : null,
@@ -58,7 +60,7 @@ export function previousModelSessionIds(entries, archive) {
     const start = recordingStart(archive), room = archive.room.toLowerCase();
     return entries.filter(entry => entry.archive.room.toLowerCase() === room && recordingStart(entry.archive) < start)
         .sort((a, b) => recordingStart(b.archive) - recordingStart(a.archive) || b.id.localeCompare(a.id))
-        .slice(0, MAX_COMPARE_RECORDINGS - 1).map(entry => entry.id);
+        .map(entry => entry.id);
 }
 
 // Card shortcut uses complete stored history, independently of browse filters.
@@ -66,5 +68,5 @@ export function previousModelSessionIds(entries, archive) {
 export function latestModelSessionIds(entries, room) {
     return entries.filter(entry => entry.archive.room.toLowerCase() === room.toLowerCase())
         .sort((a, b) => b.archive.session.history.timestamps[0] - a.archive.session.history.timestamps[0] || b.id.localeCompare(a.id))
-        .slice(0, MAX_COMPARE_RECORDINGS).map(entry => entry.id);
+        .map(entry => entry.id);
 }

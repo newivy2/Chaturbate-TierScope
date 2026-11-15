@@ -95,18 +95,20 @@ export function compareSessions(a, b, metric = 'room', threshold = 100, sharedLe
         limitMs, axisMs: sharedLength ? limitMs : Math.max(spanA, spanB) };
 }
 
-export const MAX_COMPARE_RECORDINGS = 30;
-export const MIXED_MODEL_COMPARE_RECORDINGS = 12;
+// Storage capacity bounds available recordings; comparison adds no separate cap.
+export const MAX_COMPARE_RECORDINGS = Infinity;
+export const MIXED_MODEL_COMPARE_RECORDINGS = Infinity;
 /** @param {{room:string}[]} archives */
 export function comparisonRecordingLimit(archives) {
-    return new Set(archives.map(archive => archive.room.toLowerCase())).size > 1 ? MIXED_MODEL_COMPARE_RECORDINGS : MAX_COMPARE_RECORDINGS;
+    return Infinity;
 }
 /** @param {AnalysisArchive[]} archives @param {string} metric @param {number} threshold @param {boolean} sharedLength */
 export function compareRecordingSet(archives, metric = 'room', threshold = 100, sharedLength = true) {
-    if (!archives.length || archives.length > MAX_COMPARE_RECORDINGS) throw new Error('Compare up to thirty sessions.');
-    if (archives.length > comparisonRecordingLimit(archives)) throw new Error('Compare up to twelve sessions across different models. Select one model for up to thirty sessions.');
+    if (!archives.length) throw new Error('Choose at least one session to compare.');
     const spans = archives.map(archive => analysisSeries(archive, metric).times.at(-1) || 0);
-    const limitMs = sharedLength ? Math.min(...spans) : Infinity;
+    let minimum = Infinity, maximum = 0;
+    for (const span of spans) { minimum = Math.min(minimum, span); maximum = Math.max(maximum, span); }
+    const limitMs = sharedLength ? minimum : Infinity;
     return {summaries: archives.map(archive => summarizeSession(archive, metric, threshold, limitMs)),
-        axisMs: sharedLength ? limitMs : Math.max(...spans), limitMs};
+        axisMs: sharedLength ? limitMs : maximum, limitMs};
 }

@@ -60,6 +60,35 @@ test('discovery key scans are cached and invalidated by notifications without ca
     assert.match(h.exchange.readSources().error, /unavailable/);
 });
 
+test('all valid live publishers remain discoverable beyond two hundred without parsing histories', async () => {
+    const h = await fixture();
+    for (let i = 0; i < 240; i++) h.seed('tab-' + i, 'model_' + String(i).padStart(3, '0'));
+    const found = h.exchange.readSources();
+    assert.equal(found.error, ''); assert.equal(found.sources.length, 240);
+    assert.equal(found.sources[0].room, 'model_000'); assert.equal(found.sources.at(-1).room, 'model_239');
+    assert.equal(h.stats().validations, 0, 'listing models reads no recording bodies');
+    assert.equal(h.stats().reads, 240, 'each publisher has one metadata read');
+});
+
+test('selected archives keep unchanged revisions cached beyond twenty-four sources', async () => {
+    const h = await fixture(), sources = [];
+    for (let i = 0; i < 40; i++) sources.push(h.seed('tab-' + i, 'model_' + String(i).padStart(3, '0')));
+    const archives = sources.map(source => h.exchange.readArchive(source));
+    assert.equal(h.stats().validations, 40);
+    sources.forEach((source, index) => assert.equal(h.exchange.readArchive(source), archives[index]));
+    assert.equal(h.stats().validations, 40, 'refreshing all sources cannot churn a smaller archive cache');
+    h.values.delete(h.data.LIVE_MODEL_PREFIX + sources[0].publisherId);
+    h.exchange.readSources(true);
+    assert.throws(() => h.exchange.readArchive(sources[0]), /unavailable/);
+    sources.slice(1).forEach((source, index) => assert.equal(h.exchange.readArchive(source), archives[index + 1]));
+    assert.equal(h.stats().validations, 40, 'removing a publisher does not invalidate remaining cached histories');
+    h.exchange.retain(new Set([sources[1].id, sources[2].id]));
+    assert.equal(h.exchange.readArchive(sources[1]), archives[1]);
+    assert.equal(h.stats().validations, 40, 'selected revisions remain cached when other models are unchecked');
+    assert.notEqual(h.exchange.readArchive(sources[3]), archives[3]);
+    assert.equal(h.stats().validations, 41, 'unchecked sources release cached recording bodies');
+});
+
 test('metadata cleanup removes only supported expired announcements and discovery is not starved by old keys', async () => {
     const h = await fixture(); h.advance(20000000);
     const oldAt = h.now() - 10800001;

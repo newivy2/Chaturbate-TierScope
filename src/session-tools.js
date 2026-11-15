@@ -17,6 +17,8 @@ import { readAutomaticKeepingMinutes, saveAutomaticKeepingMinutes, readLibraryLi
 import { renderAutomaticKeepingSettings, renderLibraryCapacity } from './library-capacity-view.js';
 import { libraryShell } from './library-shell.js';
 import { createLiveComparisonState, renderLiveModelsComparison } from './live-model-comparison.js';
+import { createRecentComparisonState, renderRecentComparison } from './recent-comparison.js';
+import { RECENT_COMPARISON_MS } from './recent-comparison-data.js';
 import { migrateRecordingFavorites, readModelFavorites, readModelFavorite } from './library-models.js';
 import { createLibraryDrafts } from './library-drafts.js';
 import { renderLibraryBrowser, renderRecordingNotes } from './library-browser-view.js';
@@ -34,7 +36,7 @@ import { getStorageKey } from './record-validation.js';
 import { downloadRecording } from './recording-exports.js';
 import { downloadTrackingReport } from './reports.js';
 import { runtime } from './runtime.js';
-import { ANALYSIS_METRICS, analysisSeries, averageAnalysisThresholds, compareRecordingSet, comparisonRecordingLimit, parseAnalysisThresholds, summarizeAudience, summarizeSession, summarizeThresholds } from './session-analysis.js';
+import { ANALYSIS_METRICS, analysisSeries, averageAnalysisThresholds, compareRecordingSet, parseAnalysisThresholds, summarizeAudience, summarizeSession, summarizeThresholds } from './session-analysis.js';
 import { captureSessionFile, captureLiveSessionFile } from './session-capture.js';
 import { validateSessionFile } from './session-file-format.js';
 import { getSessionSaveState } from './session-health.js';
@@ -103,8 +105,9 @@ export function openSessionTools(focusTarget) {
     let refreshCapacity = null, capacityCheckpoint = '';
     let detachDock = null, historyView = null, followControls = null, liveCapture = null, historyDiscovery = '';
     let currentArchiveIsReplay = isPlaybackCurrent(runtime.playback);
-    let compareMode = 'saved', liveModelsView = null;
+    let compareMode = 'saved', liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
+    const recentState = createRecentComparisonState();
     const followers = {summary: createAnalysisFollower(), compare: createAnalysisFollower(), history: createAnalysisFollower()};
     try { currentArchive = captureSessionFile(); } catch (error) { /* Tools also work on directory pages. */ }
     const content = dialog.querySelector('#tools-content'), message = dialog.querySelector('#tools-message');
@@ -320,6 +323,7 @@ export function openSessionTools(focusTarget) {
         if (followers[tab]) followers[tab].reset();
     }
     function refreshCurrent() {
+        if (tab === 'compare' && recentView) { recentView.refresh(); return; }
         if (tab === 'compare' && liveModelsView) { liveModelsView.refresh(); return; }
         if (followers[tab] && updateFollowing()) refreshFollowedView();
         const checkpoint = automaticLibraryStatus(getModelName());
@@ -457,6 +461,11 @@ export function openSessionTools(focusTarget) {
         if (!replay) button(shortcuts, 'Compare with previous', compareLiveWithPrevious, 'tools-compare-previous').className = 'tools-primary';
         const history = button(shortcuts, 'History · 0', () => openHistory(star.dataset.favoriteRoom.toLowerCase()), 'tools-room-history' + suffix);
         history.dataset.cardHistory = '';
+        if (!replay) {
+            const comparisons = node(card, 'div', undefined, 'tools-actions');
+            button(comparisons, 'Live sessions', openLiveComparison, 'tools-compare-live').title = 'Compare models being tracked in your open TierScope tabs.';
+            button(comparisons, 'Last 24h sessions', openRecentComparison, 'tools-compare-last24h').title = 'Compare all models with saved samples in the last 24 hours.';
+        }
         if (replay) {
             const exports = node(card, 'div', undefined, 'tools-actions tools-exports');
             node(exports, 'span', 'Download', 'tools-muted');
@@ -481,6 +490,15 @@ export function openSessionTools(focusTarget) {
         Object.assign(analysisFilters, {room: snapshot.room.toLowerCase(), query: '', from: '', to: ''});
         pickerOpen.compare = false; compareMode = 'saved'; render('compare');
         (dialog.querySelector('#tools-analysis-chart') || dialog.querySelector('#tools-session-picker > summary'))?.focus();
+    }
+    function openLiveComparison() {
+        compareMode = 'live'; render('compare');
+        dialog.querySelector('#tools-live-models')?.scrollIntoView({block: 'nearest'});
+    }
+    function openRecentComparison() {
+        recentState.windowMs = RECENT_COMPARISON_MS;
+        compareMode = 'recent'; render('compare');
+        dialog.querySelector('#tools-recent-comparison')?.scrollIntoView({block: 'nearest'});
     }
     function openHistory(room) {
         readLibrary();
@@ -507,9 +525,7 @@ export function openSessionTools(focusTarget) {
         if (state.favoriteError) node(content, 'p', state.favoriteError, 'tools-muted');
         libraryFilters.room = libraryRoom || '';
         if (libraryRoom && libraryRoom !== '*' && !state.entries.some(entry => entry.archive.room.toLowerCase() === libraryRoom)) libraryFilters.room = libraryRoom = '';
-        const archiveById = new Map(state.entries.map(entry => [entry.id, entry.archive]));
         const callbacks = {
-            comparisonLimit: ids => comparisonRecordingLimit(ids.map(id => archiveById.get(id)).filter(archive => !!archive)),
             cardSummary: entries => modelCardReader.read(entries),
             modelComparisonIds: room => latestModelSessionIds(state.entries, room),
             compareModel: room => {
@@ -551,6 +567,7 @@ export function openSessionTools(focusTarget) {
             });
         }
         const actions = node(content, 'div', undefined, 'tools-actions tools-library-management'); actions.id = 'tools-library-management';
+        button(actions, 'Compare last 24h · all models', openRecentComparison, 'tools-last24h');
         button(actions, 'Open saved file…', () => chooseFile(runtime.SESSION_FILE_MAX_BYTES, value => {
             openSessionReplay(validateSessionFile(value)); observedSignature = ''; refreshCurrent();
             tell('File opened in replay. Use Keep in library to store it here.');
@@ -646,26 +663,49 @@ export function openSessionTools(focusTarget) {
         try { filteredSources = filterLibraryEntries(sourceOptions(), analysisFilters); }
         catch (error) { filteredSources = []; tell(error.message, true); }
         node(picker, 'p', filteredSources.length + ' matching sessions. Existing selections stay available when outside the filters.', 'tools-muted');
-        if (comparing) node(picker, 'p', 'Compare up to 30 sessions from one model, or 12 across models.', 'tools-muted');
+        if (comparing) node(picker, 'p', 'Compare any number of saved sessions. The newest twelve remain distinct; older sessions form a faint gray background.', 'tools-muted');
         const sourceControls = node(picker, 'div', undefined, 'tools-actions');
         if (liveComparisonArchive) button(sourceControls, 'Refresh live snapshot', () => { liveComparisonArchive = captureLiveSessionFile(); selectNewFollowSource(); render(tab); }, 'tools-refresh-live-snapshot');
         if (currentArchive) button(sourceControls, 'Refresh current / replayed snapshot', () => { currentArchive = captureSessionFile(); currentArchiveIsReplay = isPlaybackCurrent(runtime.playback); selectNewFollowSource(); render(tab); }, 'tools-refresh-snapshot');
         selectedA = selectSource(sourceControls, comparing ? 'A ' : 'Session ', 'tools-source-a', selectedA, value => { selectedA = value; selectNewFollowSource(); render(tab); });
         if (comparing) {
+            const matchingSaved = filteredSources.filter(item => item.id !== 'current' && item.id !== 'live');
+            const all = button(picker, 'Compare all matching saved sessions', () => {
+                [selectedA, selectedB] = matchingSaved.map(item => item.id); selectedExtra = matchingSaved.slice(2).map(item => item.id);
+                followers.compare.reset(); selectionPage = reportPage = 0; pickerOpen.compare = false; render('compare');
+            }, 'tools-compare-all-matching');
+            all.disabled = matchingSaved.length < 2;
             if (!selectedB) selectedB = (sourceOptions().find(item => item.id !== selectedA) || sourceOptions()[0]).id;
             selectedB = selectSource(sourceControls, 'B ', 'tools-source-b', selectedB, value => { selectedB = value; selectNewFollowSource(); render(tab); });
-            selectedExtra.forEach((id, index) => {
+            selectionPage = Math.min(selectionPage, Math.max(0, Math.ceil(selectedExtra.length / 25) - 1));
+            const visibleExtra = selectedExtra.length > 28 ? selectedExtra.slice(selectionPage * 25, (selectionPage + 1) * 25) : selectedExtra;
+            const selectedList = selectedExtra.length > 28 ? node(sourceControls, 'div', undefined, 'tools-selected-sessions') : null;
+            if (selectedList) selectedList.id = 'tools-selected-sessions';
+            visibleExtra.forEach((id, offset) => {
+                const index = selectedList ? selectionPage * 25 + offset : offset;
+                if (selectedList) {
+                    const item = sourceOptions().find(item => item.id === id), row = node(selectedList, 'div', undefined, 'tools-actions');
+                    row.dataset.compareId = id; row.dataset.selectedSession = id;
+                    node(row, 'span', comparisonLabel(index + 2) + ' · ' + (item?.title || 'Session unavailable'));
+                    button(row, 'Remove ' + comparisonLabel(index + 2), () => {selectedExtra.splice(index, 1); render(tab);});
+                    return;
+                }
                 selectedExtra[index] = selectSource(sourceControls, comparisonLabel(index + 2) + ' ', 'tools-source-' + comparisonLabel(index + 2).toLowerCase(), id, value => { selectedExtra[index] = value; selectNewFollowSource(); render(tab); });
                 button(sourceControls, 'Remove ' + comparisonLabel(index + 2), () => { selectedExtra.splice(index, 1); render(tab); });
             });
+            if (selectedList) {
+                const pages = node(sourceControls, 'div', undefined, 'tools-actions');
+                const back = button(pages, '‹ Previous selected', () => {selectionPage--; render(tab);}, 'tools-selection-previous'); back.disabled = selectionPage === 0;
+                node(pages, 'span', 'Extra sessions ' + (selectionPage * 25 + 1) + '–' + Math.min(selectedExtra.length, (selectionPage + 1) * 25) + ' of ' + selectedExtra.length, 'tools-muted').id = 'tools-selection-page';
+                const next = button(pages, 'Next selected ›', () => {selectionPage++; render(tab);}, 'tools-selection-next'); next.disabled = (selectionPage + 1) * 25 >= selectedExtra.length;
+            }
             const used = new Set([selectedA, selectedB, ...selectedExtra]);
-            const archives = sourceOptions().filter(item => used.has(item.id)).map(item => item.archive);
-            const count = 2 + selectedExtra.length, limit = comparisonRecordingLimit(archives);
-            const next = filteredSources.find(item => !used.has(item.id) && count + 1 <= comparisonRecordingLimit([...archives, item.archive]));
-            const add = button(sourceControls, 'Add session', () => { if (next && count < limit) { selectedExtra.push(next.id); render(tab); } }, 'tools-compare-add');
-            add.disabled = count >= limit || !next;
-            add.title = 'Up to 30 sessions from one model, or 12 across models. Additional sessions must match this limit and the filters.';
-            node(sourceControls, 'span', count + ' / ' + limit + ' slots', 'tools-muted').id = 'tools-compare-slots';
+            const count = 2 + selectedExtra.length;
+            const next = filteredSources.find(item => !used.has(item.id));
+            const add = button(sourceControls, 'Add session', () => { if (next) { selectedExtra.push(next.id); render(tab); } }, 'tools-compare-add');
+            add.disabled = !next;
+            add.title = 'Add another session matching the filters. There is no separate comparison count limit.';
+            node(sourceControls, 'span', count + ' sessions selected', 'tools-muted').id = 'tools-compare-slots';
 
         }
         followControl(content);
@@ -692,6 +732,7 @@ export function openSessionTools(focusTarget) {
         followControl(content);
         const overview = modelHistoryReader.read(followedEntries(), libraryRoom, metric, historyLimit);
         const view = renderModelHistoryView(content, overview, {
+            recent: openRecentComparison,
             metricLabel: ANALYSIS_METRICS[metric], duration: formatElapsedTime,
             selected: historySelected, select: id => { historySelected = id; },
             summary: action(id => { selectedA = id; render('summary'); }),
@@ -756,6 +797,15 @@ export function openSessionTools(focusTarget) {
         node(parent, 'p', 'Includes samples equal to the threshold. Percentages use covered session time; gaps and time after the final sample are excluded.', 'tools-muted');
     }
     function summaryTable(summaries, labels, comparing, parent) {
+        const total = summaries.length;
+        if (comparing && total > 30) {
+            reportPage = Math.min(reportPage, Math.max(0, Math.ceil(total / 25) - 1));
+            const pages = node(parent, 'div', undefined, 'tools-actions');
+            const previous = button(pages, '‹ Previous statistics', () => {reportPage--; refreshAnalysis(false);}, 'tools-report-previous'); previous.disabled = reportPage === 0;
+            node(pages, 'span', 'Session statistics ' + (reportPage * 25 + 1) + '–' + Math.min(total, (reportPage + 1) * 25) + ' of ' + total, 'tools-muted').id = 'tools-report-page';
+            const next = button(pages, 'Next statistics ›', () => {reportPage++; refreshAnalysis(false);}, 'tools-report-next'); next.disabled = (reportPage + 1) * 25 >= total;
+            summaries = summaries.slice(reportPage * 25, (reportPage + 1) * 25); labels = labels.slice(reportPage * 25, (reportPage + 1) * 25);
+        }
         const scroll = node(parent, 'div', undefined, 'tools-scroll'), table = node(scroll, 'table'); table.id = 'tools-summary-table';
         node(table, 'caption', ANALYSIS_METRICS[metric] + ' — retained session statistics');
         const head = node(table, 'thead'), headRow = node(head, 'tr'); node(headRow, 'th', 'Measure');
@@ -795,13 +845,21 @@ export function openSessionTools(focusTarget) {
         if (comparing) {
             const mode = node(content, 'div', undefined, 'tools-actions tools-comparison-mode');
             mode.setAttribute('role', 'group'); mode.setAttribute('aria-label', 'Comparison source');
-            for (const [value, title] of [['saved', 'Saved sessions'], ['live', 'Live models']]) {
+            for (const [value, title] of [['saved', 'Saved sessions'], ['live', 'Live models'], ['recent', 'Last 24h']]) {
                 const control = button(mode, title, () => {compareMode = value; render('compare');}, 'tools-compare-' + value);
                 control.className = compareMode === value ? 'tools-primary' : '';
                 control.setAttribute('aria-pressed', String(compareMode === value));
             }
+            if (compareMode === 'recent') {
+                recentView = renderRecentComparison(content, {state: recentState, currentRoom: getModelName(), readEntries: () => {
+                    const saved = readLibrary();
+                    return {entries: saved.entries, error: saved.unavailable.length || saved.damaged.length ? 'Some saved sessions could not be read; the displayed set may be incomplete.' : ''};
+                },
+                    getMetric: () => metric, metricControl: (parent, changed) => metricStrip(parent, changed, 'tools-recent-metric')});
+                chartDraw = recentView.draw; return;
+            }
             if (compareMode === 'live') {
-                liveModelsView = renderLiveModelsComparison(content, {state: liveModelsState, getMetric: () => metric,
+                liveModelsView = renderLiveModelsComparison(content, {state: liveModelsState, currentRoom: getModelName(), getMetric: () => metric,
                     metricControl: (parent, changed) => metricStrip(parent, changed, 'tools-live-metric')});
                 chartDraw = liveModelsView.draw;
                 return;
@@ -821,18 +879,15 @@ export function openSessionTools(focusTarget) {
         const {overview, controls, results} = analysisReports;
         syncComparisonAxis();
         overview.replaceChildren(); results.replaceChildren(); controls.hidden = false; message.textContent = '';
-        const a = options.find(item => item.id === selectedA), b = options.find(item => item.id === selectedB);
-        if (!a || comparing && (!b || selectedExtra.some(id => !options.some(item => item.id === id)))) {
+        const optionById = new Map(options.map(item => [item.id, item]));
+        const a = optionById.get(selectedA), b = optionById.get(selectedB);
+        if (!a || comparing && (!b || selectedExtra.some(id => !optionById.has(id)))) {
             controls.hidden = true; node(overview, 'p', 'Choose available sessions in each slot. A previous selection may have changed or been removed; clear filters to find another session.'); return;
         }
         if (comparing) {
             if (new Set([selectedA, selectedB, ...selectedExtra]).size !== 2 + selectedExtra.length) { controls.hidden = true; node(overview, 'p', 'Choose a different session in each comparison slot.'); return; }
-            const ids = [...new Set([selectedA, selectedB, ...selectedExtra])], recordings = ids.map(id => options.find(item => item.id === id)).filter(item => !!item);
+            const ids = [...new Set([selectedA, selectedB, ...selectedExtra])], recordings = ids.map(id => optionById.get(id)).filter(item => !!item);
             const archives = recordings.map(item => item.archive), clock = compareAxis === 'clock';
-            if (archives.length > comparisonRecordingLimit(archives)) {
-                clearAnalysisChart(); controls.hidden = true;
-                node(overview, 'p', 'Compare up to twelve sessions across different models. Select one model for up to thirty sessions.', 'tools-muted'); return;
-            }
             const result = compareRecordingSet(archives, metric, threshold, !clock && sharedLength);
             const tooLong = clock ? archives.flatMap((archive, index) => clockSessionDuration(archive) > CLOCK_DAY_MS ? [comparisonLabel(index)] : []) : [];
             if (tooLong.length) {
@@ -910,6 +965,7 @@ export function openSessionTools(focusTarget) {
         }
     }
     function render(next, revealSessions = false) {
+        if (recentView) { recentView.dispose(); recentView = null; }
         if (liveModelsView) { liveModelsView.dispose(); liveModelsView = null; }
         refreshCapacity = null; historyView = null; followControls = null;
         const focusedId = dialog.contains(document.activeElement) ? document.activeElement.id : '';
@@ -945,6 +1001,7 @@ export function openSessionTools(focusTarget) {
         }
     }
     function close() {
+        if (recentView) { recentView.dispose(); recentView = null; }
         if (liveModelsView) { liveModelsView.dispose(); liveModelsView = null; }
         fileRequest++; refreshSessionTools = null; refreshCapacity = null; chartDraw = null; historyView = null; followControls = null; liveCapture = null;
         if (chartDispose) { chartDispose(); chartDispose = null; }

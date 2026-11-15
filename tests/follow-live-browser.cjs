@@ -7,7 +7,7 @@ const source=prepareSource(fs.readFileSync(path.join(__dirname,'../tierscope.use
  STORAGE_HISTORY_SERIES.forEach(k=>h[k]=[0,0,0,0]);h.total=[10,20,30,40];h.red=h.total.slice();h.withTokens=h.total.slice();h.anonymous=[5,5,5,5];
  restoreSessionState(normalizeStoredSession({timestamp:now,history:h,sessionStartedAt:now-180000,sessionStartEstimated:false,isPaused:false,pausedElapsedTime:180000}));
  isAutoRefreshOn=false;isMinimized=true;createPanel();toggleView();repaintLivePresentation();
- const archive=captureLiveSessionFile();for(let i=1;i<=29;i++){const a=JSON.parse(JSON.stringify(archive)),d=i*86400000,s=a.session;s.timestamp-=d;s.sessionStartedAt-=d;s.history.timestamps=s.history.timestamps.map(t=>t-d);if(s.roomTotalHighTime!==null)s.roomTotalHighTime-=d;Object.values(s.sessionHighs).forEach(h=>{if(h.time!=null)h.time-=d;});keepSessionInLibrary(a,'Previous '+i);}
+ const archive=captureLiveSessionFile();for(let i=1;i<=30;i++){const a=JSON.parse(JSON.stringify(archive)),d=i*86400000,s=a.session;s.timestamp-=d;s.sessionStartedAt-=d;s.history.timestamps=s.history.timestamps.map(t=>t-d);if(s.roomTotalHighTime!==null)s.roomTotalHighTime-=d;Object.values(s.sessionHighs).forEach(h=>{if(h.time!=null)h.time-=d;});keepSessionInLibrary(a,'Previous '+i);}
  setModelFavorite(getModelName(),true,true);saveSession(getModelName(),true);
  const original=captureLiveSessionFile;window.followCaptures=0;captureLiveSessionFile=function(...args){window.followCaptures++;return original(...args);};},
  status:updateSessionToolsStatus,library:readSessionLibrary,live:captureLiveSessionFile,forceSave:()=>saveSession(getModelName(),true),
@@ -28,6 +28,22 @@ const source=prepareSource(fs.readFileSync(path.join(__dirname,'../tierscope.use
  await page.goto('https://tierscope.test/live_model/');await page.addScriptTag({content:instrument(source)});await page.evaluate(()=>ViewerTracker.__follow.setup());await page.waitForTimeout(250);
  const scan=async(n,ms=10000)=>{registered=n;await page.evaluate(ms=>{window.testNow+=ms;return ViewerTracker.__follow.scan();},ms);};
  const samples=()=>page.locator('#tools-summary-table tbody tr').first().locator('td').allTextContents();
+ const selectedSources=async()=>{
+  const picker=page.locator('#tools-recording-picker'),wasOpen=await picker.evaluate(element=>element.open);
+  if(!wasOpen)await picker.locator(':scope > summary').click();
+  const ids=await page.locator('[id^=tools-source-]').evaluateAll(elements=>elements.map(element=>element.value));
+  if(await page.locator('#tools-selected-sessions').count()){
+   while(await page.locator('#tools-selection-previous').isEnabled())await page.click('#tools-selection-previous');
+   do{
+    ids.push(...await page.locator('#tools-selected-sessions [data-selected-session]').evaluateAll(elements=>elements.map(element=>element.dataset.selectedSession)));
+    if(await page.locator('#tools-selection-next').isDisabled())break;
+    await page.click('#tools-selection-next');
+   }while(true);
+   while(await page.locator('#tools-selection-previous').isEnabled())await page.click('#tools-selection-previous');
+  }
+  if(!wasOpen)await picker.locator(':scope > summary').click();
+  return ids;
+ };
  const nav=async tab=>{await page.locator('[data-tools-tab='+tab+']').click();};
  await page.click('#btn-control-library');
  const priority=await page.evaluate(()=>{const keep=document.getElementById('tools-keep'),compare=document.getElementById('tools-compare-previous');return {quiet:keep.classList.contains('tools-quiet'),primary:compare.classList.contains('tools-primary'),keepBorder:getComputedStyle(keep).borderColor,historyBorder:getComputedStyle(document.getElementById('tools-room-history')).borderColor,keepBackground:getComputedStyle(keep).backgroundColor,historyBackground:getComputedStyle(document.getElementById('tools-room-history')).backgroundColor,top:keep.getBoundingClientRect().top<compare.getBoundingClientRect().top};});
@@ -54,13 +70,23 @@ const source=prepareSource(fs.readFileSync(path.join(__dirname,'../tierscope.use
  const savedBefore=await page.evaluate(()=>JSON.stringify(ViewerTracker.__follow.library().entries));await scan(600,61000);assert.deepEqual(await samples(),['10']);assert.match(await page.locator('#tools-follow-status').textContent(),/Library save pending/);
  assert.equal(await page.evaluate(()=>JSON.stringify(ViewerTracker.__follow.library().entries)),savedBefore);
  await page.evaluate(()=>{window.GM_setValue=window.originalSet;ViewerTracker.__follow.forceSave();});
- await nav('library');await page.click('#tools-compare-previous');assert(await page.locator('#tools-follow-live').isChecked());assert.equal((await samples()).length,30);
+ await nav('library');await page.click('#tools-compare-previous');assert(await page.locator('#tools-follow-live').isChecked());
+ const allCompared=await selectedSources();assert.equal(allCompared.length,31,'Compare with previous includes the live session and all thirty earlier sessions');
+ assert.equal(new Set(allCompared).size,31);assert.equal(allCompared[0],'live');
+ assert.match(await page.locator('#tools-compare-slots').textContent(),/31 sessions selected/);
+ assert.equal((await samples()).length,25,'reports render only a page of sessions without truncating the comparison');
+ await page.click('#tools-report-next');assert.equal((await samples()).length,6);
+ await page.click('#tools-report-previous');
+ assert.equal(await page.locator('#tools-chart-inspection tbody tr').count(),30);
+ await page.click('#tools-chart-lines-next');assert.equal(await page.locator('#tools-chart-inspection tbody tr').count(),1);
+ assert.equal(await page.locator('.tools-chart-legend [data-analysis-series]').last().getAttribute('data-analysis-series'),'30');
+ await page.click('#tools-chart-lines-previous');
  await page.uncheck('#tools-shared-length');
  await page.uncheck('[data-analysis-series="1"]');await page.click('#tools-chart-zoom-in');await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('End');
  const compareBefore=await samples(),compareZoom=(await page.locator('#tools-chart-range').textContent()).split(' · ')[0],compareCursor=await page.locator('#tools-chart-inspection caption').textContent();
- await page.fill('#tools-threshold','42');const slots=await page.locator('[id^=tools-source-]').evaluateAll(es=>es.map(e=>e.value));await scan(700);
+ const slots=await selectedSources();await page.fill('#tools-threshold','42');await scan(700);
  const compareAfter=await samples();assert.equal(Number(compareAfter[0]),Number(compareBefore[0])+1);assert.deepEqual(compareAfter.slice(1),compareBefore.slice(1));
- assert.equal(await page.locator('#tools-threshold').inputValue(),'42');assert(!(await page.locator('[data-analysis-series="1"]').isChecked()));assert.deepEqual(await page.locator('[id^=tools-source-]').evaluateAll(es=>es.map(e=>e.value)),slots);
+ assert.equal(await page.locator('#tools-threshold').inputValue(),'42');assert(!(await page.locator('[data-analysis-series="1"]').isChecked()));assert.deepEqual(await selectedSources(),slots);
  assert.equal((await page.locator('#tools-chart-range').textContent()).split(' · ')[0],compareZoom);assert.equal(await page.locator('#tools-chart-inspection caption').textContent(),compareCursor);
  // File replay remains isolated while the explicitly live comparison grows.
  await page.evaluate(()=>ViewerTracker.__follow.replay());const replayBefore=await page.evaluate(()=>ViewerTracker.__follow.state());await scan(800);const replayAfter=await page.evaluate(()=>ViewerTracker.__follow.state());assert.equal(replayAfter.mode,replayBefore.mode);assert.equal(replayAfter.position,replayBefore.position);assert.equal(Number((await samples())[0]),Number(compareAfter[0])+1);
@@ -90,6 +116,6 @@ const source=prepareSource(fs.readFileSync(path.join(__dirname,'../tierscope.use
  await scan(60);const covered=await page.locator('#tools-summary-table tbody tr').nth(2).textContent(),mean=await page.locator('#tools-audience-table tbody tr').first().locator('td').first().textContent();
  await scan(80,600000);assert.deepEqual(await samples(),['3']);assert.equal(await page.locator('#tools-summary-table tbody tr').nth(2).textContent(),covered);assert.equal(await page.locator('#tools-audience-table tbody tr').first().locator('td').first().textContent(),mean,'new gap does not add viewer-time to the average');
  await page.evaluate(()=>{window.history.pushState({},'', '/next_model/');ViewerTracker.__follow.checkUrlChange();});assert.equal(await page.locator('#tierscope-session-tools').count(),0);
- assert.deepEqual(errors,[]);console.log('PASS Follow live in Summary, thirty-way Compare and Model History; freeze/catch-up, controls/thresholds, Auto lineage, storage failure, replay, favorite revocation, Reset/navigation, themes and layout');
+ assert.deepEqual(errors,[]);console.log('PASS Follow live in Summary, unrestricted thirty-one-session Compare and Model History; paged controls/reports, freeze/catch-up, thresholds, Auto lineage, storage failure, replay, favorite revocation, Reset/navigation, themes and layout');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

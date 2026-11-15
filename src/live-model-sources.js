@@ -33,13 +33,10 @@ export function createLiveModelExchange(effects) {
                 sources.push(Object.freeze(source));
             } catch (_) { errors.push(key); }
         }
-        // Old or corrupt metadata cannot consume the discovery bound and hide
-        // later publishers. Bound the result only after checking freshness.
-        sources.sort((a, b) => b.lastSeenAt - a.lastSeenAt || a.id.localeCompare(b.id));
-        const selected = sources.slice(0, 200);
-        selected.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
-        return {sources: selected, error: errors.length ? 'Some live tabs could not be read. Their previous snapshots are retained.' :
-            sources.length > 200 ? 'Showing the 200 most recently active source tabs.' : ''};
+        sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
+        const currentIds = new Set(sources.map(source => source.id));
+        for (const id of archives.keys()) if (!currentIds.has(id)) archives.delete(id);
+        return {sources, error: errors.length ? 'Some live tabs could not be read. Their previous snapshots are retained.' : ''};
     }
     function readArchive(source) {
         const at = effects.now(), key = LIVE_MODEL_PREFIX + source.publisherId;
@@ -62,10 +59,13 @@ export function createLiveModelExchange(effects) {
         // an old publisher appear current again.
         if (effects.epoch(current.room) !== current.roomEpoch) throw new Error('This room was reset. Choose its new session.');
         archives.set(current.id, {revision: current.revision, archive});
-        if (archives.size > 24) archives.delete(archives.keys().next().value);
         return archive;
     }
     function clear() { archives.clear(); invalidate(); }
+    function retain(ids) {
+        const selected = ids instanceof Set ? ids : new Set(ids);
+        for (const id of archives.keys()) if (!selected.has(id)) archives.delete(id);
+    }
     function cleanupExpired() {
         if (!effects.remove) return;
         try {
@@ -81,7 +81,7 @@ export function createLiveModelExchange(effects) {
             invalidate();
         } catch (_) { /* Metadata cleanup is optional and never blocks tracking. */ }
     }
-    return {readSources, readArchive, clear, invalidate, cleanupExpired};
+    return {readSources, readArchive, clear, retain, invalidate, cleanupExpired};
 }
 
 const exchange = createLiveModelExchange({
@@ -154,6 +154,7 @@ export function stopLiveModelSources() {
 }
 export function readLiveModelSources(force = false) { return exchange.readSources(force); }
 export function readLiveModelArchive(source) { return exchange.readArchive(source); }
+export function retainLiveModelArchives(ids) { exchange.retain(ids); }
 
 export function subscribeLiveModelSources(changed) {
     let disposed = false, pending = null, listener = null;
