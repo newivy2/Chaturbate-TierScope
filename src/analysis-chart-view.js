@@ -178,7 +178,7 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
     }
     function draw() {
         if (disposed) return;
-        width = Math.max(260, canvas.clientWidth); right = width - 14; ratio = window.devicePixelRatio || 1;
+        width = Math.max(260, canvas.clientWidth); right = width - 14; ratio = (window.devicePixelRatio || 1) * (Number(canvas.closest('#tierscope-session-tools')?.dataset.renderScale) || 1);
         canvas.width = bitmap.width = width * ratio; canvas.height = bitmap.height = height * ratio;
         const ctx = bitmap.getContext('2d'); ctx.scale(ratio, ratio);
         const style = window.getComputedStyle(parent), isDark = parent.closest('[data-theme]')?.dataset.theme !== 'bright';

@@ -4,6 +4,8 @@ Detailed reference for **3.30.0**. [Connection recovery guide](docs/connection-r
 
 [Expanded comparisons and Last 24h](docs/expanded-comparisons.md) are available in **3.30.0**.
 
+Preview: [Independent Library size and transparency](docs/library-appearance.md) is available in **3.31.0-beta.1**.
+
 ## Contents
 
 [Live models comparison across tabs](docs/live-models-comparison.md) is available in **3.30.0**.
@@ -557,6 +559,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.31.0-beta.1** | Preview independent whole-Library scaling, a pink resize grip and 100% reset, and a fixed footer opacity slider. Remember Library appearance separately from Scope, preserve responsive docking and Scope overlap priority, and keep scaled chart inspection sharp. |
 | **3.30.0** | Release expanded saved/live comparisons, all-model Last 24h with range presets and direct shortcuts, persistent visibility/zoom during rolling updates, and pink current-session / solid tracked / dashed historical styling. Include paged controls and reports, updated documentation and reliable theme-redraw verification. |
 | **3.30.0-beta.4** | Keep this room’s current tracked session pink in rolling and live comparisons. Draw ongoing tracked sessions as solid lines and history as dashed lines in Last 24h; update indicators from tab metadata while preserving chart choices. |
 | **3.30.0-beta.3** | Add Current Live Session shortcuts for Live sessions and Last 24h sessions, plus one-, four-, twelve- and twenty-four-hour rolling comparison presets. Preserve visibility and manual zoom through updates; changing a preset opens its full range. |

@@ -12,6 +12,7 @@ import { displayedHighRoom } from './high-selectors.js';
 import { readAllTimeHighs, sessionAllTimeHighs, storeAllTimeHighs } from './highs-store.js';
 import { repaintHighMode } from './highs.js';
 import { attachLibraryDock } from './library-dock.js';
+import { readLibraryAppearance, saveLibraryAppearance } from './library-appearance.js';
 import { LIBRARY_TRANSFER_MAX_COUNT } from './library-capacity-data.js';
 import { readAutomaticKeepingMinutes, saveAutomaticKeepingMinutes, readLibraryLimits, saveLibraryLimits } from './library-capacity.js';
 import { renderAutomaticKeepingSettings, renderLibraryCapacity } from './library-capacity-view.js';
@@ -1039,6 +1040,7 @@ export function openSessionTools(focusTarget) {
     dialog.addEventListener('close', () => { if (dialog.isConnected) close(); });
     dialog.querySelectorAll('[data-tools-tab]').forEach(button => { button.onclick = () => render(button.dataset.toolsTab); });
     dialog.show();
-    detachDock = attachLibraryDock(document.getElementById('tracker-container'), dialog, () => { if (chartDraw) chartDraw(); });
+    detachDock = attachLibraryDock(document.getElementById('tracker-container'), dialog, () => { if (chartDraw) chartDraw(); },
+        {...readLibraryAppearance(), save: saveLibraryAppearance});
     render('library'); dialog.querySelector('#tools-close').focus();
 }

@@ -23,10 +23,14 @@ const source = prepareSource(fs.readFileSync(path.join(__dirname, '../tierscope.
   await page.evaluate(() => {window.store=new Map();window.GM_getValue=(k,d)=>store.has(k)?store.get(k):d;window.GM_setValue=(k,v)=>store.set(k,v);window.GM_listValues=()=>[...store.keys()];window.GM_deleteValue=k=>store.delete(k);});
   await page.addScriptTag({content:instrument(source)});await page.evaluate(()=>ViewerTracker.__chartControls.setup());
   const state=await page.evaluate(()=>ViewerTracker.__chartControls.state());
-  const opacity=async value=>page.locator('#opacity-slider').evaluate((e,value)=>{e.value=String(value);e.dispatchEvent(new Event('input'));},value);
-  const background=()=>page.waitForFunction(()=>getComputedStyle(document.getElementById('tierscope-session-tools')).backgroundColor===getComputedStyle(document.getElementById('tracker-container')).backgroundColor, null, {timeout:5000});
-  await opacity(30);await page.click('#btn-control-library');await background();
-  assert.equal(await page.locator('#tierscope-session-tools').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(20, 20, 30, 0.3)','opening Library uses current transparency');
+  const opacity=async value=>page.locator('#tools-opacity-slider').evaluate((e,value)=>{e.value=String(value);e.dispatchEvent(new Event('input'));},value);
+  const background=()=>page.waitForFunction(()=>{
+   const lib=document.getElementById('tierscope-session-tools'),theme=document.getElementById('tracker-container').dataset.theme;
+   const alpha=Number(document.getElementById('tools-opacity-slider').value)/100,rgb=theme==='bright'?'248, 249, 252':'20, 20, 30';
+   return lib.dataset.theme===theme&&getComputedStyle(lib).backgroundColor===(alpha===1?'rgb('+rgb+')':'rgba('+rgb+', '+alpha+')');
+  });
+  await page.click('#btn-control-library');await opacity(30);await background();
+  assert.equal(await page.locator('#tierscope-session-tools').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(20, 20, 30, 0.3)');
   await opacity(100);await background();assert.equal(await page.locator('#tierscope-session-tools').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(20, 20, 30)');
   const textColor=await page.locator('#tools-title').evaluate(e=>getComputedStyle(e).color);
   await opacity(45);await background();assert.equal(await page.locator('#tools-title').evaluate(e=>getComputedStyle(e).color),textColor);
@@ -86,8 +90,8 @@ const source = prepareSource(fs.readFileSync(path.join(__dirname, '../tierscope.
    await page.screenshot({path:'/tmp/tierscope-library-chart-controls-'+engine+'-'+(bright?'bright':'dark')+'.png'});
   }
   assert.deepEqual(await page.evaluate(()=>ViewerTracker.__chartControls.state()),state,'presentation changes preserve live session and replay');
-  await page.click('#tools-close');await opacity(30);await page.click('#btn-control-library');await background();
-  assert.equal(await page.locator('#tierscope-session-tools').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(248, 249, 252, 0.3)','reopened Library inherits the latest setting');
+  await opacity(30);await background();await page.click('#tools-close');await page.click('#btn-control-library');await background();
+  assert.equal(await page.locator('#tierscope-session-tools').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(248, 249, 252, 0.3)','reopened Library retains its independent setting');
   assert.deepEqual(errors,[]);console.log('PASS Library background transparency, single metric icon selection/order/counts, keyboard/focus, shared-length/threshold placement, history, themes/scales/narrow layout and live-state preservation');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

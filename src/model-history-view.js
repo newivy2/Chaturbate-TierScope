@@ -65,7 +65,7 @@ export function renderModelHistoryView(parent, overview, actions) {
     const values = node(detail, 'p'); values.setAttribute('aria-live', 'polite');
     let positions = [], shown = 50;
     function draw() {
-        const width = Math.max(240, canvas.clientWidth), height = 200, ratio = window.devicePixelRatio || 1;
+        const width = Math.max(240, canvas.clientWidth), height = 200, ratio = (window.devicePixelRatio || 1) * (Number(canvas.closest('#tierscope-session-tools')?.dataset.renderScale) || 1);
         canvas.width = width * ratio; canvas.height = height * ratio;
         const ctx = canvas.getContext('2d'); ctx.scale(ratio, ratio);
         const style = window.getComputedStyle(parent), color = name => style.getPropertyValue(name).trim();
