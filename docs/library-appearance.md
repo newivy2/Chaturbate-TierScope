@@ -1,6 +1,6 @@
-# Independent Library appearance — 3.31.0 beta
+# Independent Library appearance — 3.31.0
 
-Install the [beta userscript](https://github.com/newivy2/TierScope/blob/beta/library-appearance/tierscope.user.js) over your existing script, then refresh room tabs. Official main remains 3.30.0.
+Install the [official userscript](https://raw.githubusercontent.com/newivy2/TierScope/main/tierscope.user.js), replacing your beta if installed, then refresh room tabs. Keep only one enabled TierScope copy.
 
 - Drag Library’s pink upper-left grip left to enlarge it or right to shrink it. Fonts, charts, controls and spacing scale together, independently of Scope.
 - Click the percentage button beside Close to restore Library to 100%. With the grip focused, arrow keys adjust the scale; Home restores 100%.
