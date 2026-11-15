@@ -4,23 +4,23 @@ This preview adds an all-model **Last 24h** comparison and removes the separate 
 
 ## Try the preview
 
-Install [3.30.0-beta.2](https://github.com/newivy2/TierScope/blob/beta/expanded-comparisons/tierscope.user.js) over the existing TierScope script, then refresh your room tabs. Stable `main` remains on 3.29.0 until this preview is approved.
+Install [3.30.0-beta.3](https://github.com/newivy2/TierScope/blob/beta/expanded-comparisons/tierscope.user.js) over the existing TierScope script, then refresh your room tabs. Stable `main` remains on 3.29.0 until this preview is approved.
 
-Open **Library → Compare** and choose **Saved sessions**, **Live models**, or **Last 24h**. The current-session card, Sessions tab and model-history actions also provide **Last 24h · all models** shortcuts.
+Open **Library → Compare** and choose **Saved sessions**, **Live models**, or **Last 24h**. The **Current Live Session** card provides **Live sessions** and **Last 24h sessions** shortcuts beside the existing comparison actions. The Sessions tab and model-history actions also provide **Last 24h · all models** shortcuts.
 
 ## Last 24h — all saved models
 
 This view always reads the complete saved Library. Model, search, favorite and date filters from other views do not restrict it.
 
-- The window rolls from exactly 24 hours before now through now, including both endpoints.
+- The default window rolls from exactly 24 hours before now through now, including both endpoints. **Range** offers **Last hour**, **Last 4 hours**, **Last 12 hours** and **Last 24 hours**. Each preset includes sessions with actual samples in that range and displays that portion of their histories.
 - A session is included when it has at least one recorded sample inside that window. A session that started earlier is included if it contains recent samples.
 - Empty sessions, future samples and old sessions without a sample inside the window are excluded. A gap crossing the window by itself does not qualify a session.
 - All qualifying sessions appear, including separate sessions from the same model. Their audiences and histories are never added together.
-- The chart uses actual dated timestamps, including midnight crossings. It shows the portion inside the last day, with recording gaps preserved and no line extended past its final sample.
+- The chart uses actual dated timestamps, including midnight crossings. It shows the selected rolling range, with recording gaps preserved and no line extended past its final sample.
 
-The metric strip changes the displayed tier or total. **Freeze comparison** holds both the session snapshots and displayed date window; **Resume comparison** catches up. The refresh button reads saved sessions again. Saved updates are checked every ten seconds while this view is open, and the rolling window advances periodically.
+The metric strip changes the displayed tier or total. **Freeze comparison** holds the session snapshots and end time; **Resume comparison** catches up. Presets remain available while frozen, using the captured day without another storage read. The refresh button reads saved sessions again. Saved updates are checked every ten seconds while this view is open, and the rolling window advances periodically.
 
-Unchecked sessions and a selected time range stay as chosen when the rolling view updates. Compatible automatic Library replacements inherit the same visibility choice; conflicting recordings remain separate. A selected range is clamped only if it moves outside the rolling day.
+Unchecked sessions and a selected time range stay as chosen when the rolling view updates. Compatible automatic Library replacements inherit the same visibility choice; conflicting recordings remain separate. A manually zoomed range is clamped only if it moves outside the selected rolling window. Choosing a different preset opens its full range while retaining unchecked lines. The preset stays selected across metric changes and tab navigation while Library is open; the **Last 24h sessions** shortcut opens the full day.
 
 Last 24h uses sessions already kept in the Library. It does not automatically keep unsaved recordings or scan additional rooms. Live models remains the view for currently open tracking tabs.
 

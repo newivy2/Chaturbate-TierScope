@@ -11,7 +11,7 @@ const READ_INTERVAL_MS = 10000, WINDOW_INTERVAL_MS = 30000, REPORT_PAGE_SIZE = 2
 export function createRecentComparisonState() {
     return {frozen: false, frozenAt: 0, displayAt: 0, entries: [], snapshots: new Map(), inputSources: new Map(),
         loaded: false, attemptedAt: null, revision: 0, notice: '', page: 0, chartState: null, chartIds: [],
-        chartSources: [], hiddenSources: new Set()};
+        chartSources: [], hiddenSources: new Set(), hiddenSourceEntries: new Map(), windowMs: RECENT_COMPARISON_MS, chartWindowMs: RECENT_COMPARISON_MS};
 }
 
 function captureEntry(entry) {
@@ -38,7 +38,7 @@ function sameSource(left, right) {
 export function renderRecentComparison(parent, {readEntries, getMetric, metricControl, state = createRecentComparisonState()}) {
     const root = node(parent, 'section'); root.id = 'tools-recent-comparison';
     node(root, 'h3', 'Last 24 hours · all models');
-    node(root, 'p', 'All saved models with samples in the last 24 hours. Library filters do not apply.', 'tools-muted');
+    node(root, 'p', 'All saved models with samples in the selected range. Library filters do not apply.', 'tools-muted');
     const controls = node(root, 'div', undefined, 'tools-actions');
     const freeze = button(controls, '', () => {
         state.frozen = !state.frozen;
@@ -46,6 +46,12 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         if (state.frozen) paint(true); else refresh(true);
     }, 'tools-recent-freeze'); freeze.className = 'tools-primary';
     const refreshButton = button(controls, 'Refresh', () => refresh(true), 'tools-recent-refresh');
+    const rangeLabel = node(controls, 'label', 'Range '), range = node(rangeLabel, 'select'); range.id = 'tools-recent-range';
+    for (const [value, label] of [[3600000, 'Last hour'], [14400000, 'Last 4 hours'], [43200000, 'Last 12 hours'], [RECENT_COMPARISON_MS, 'Last 24 hours']]) {
+        const option = node(range, 'option', label); option.value = String(value);
+    }
+    range.value = String(state.windowMs);
+    range.onchange = () => {state.windowMs = Number(range.value); state.page = 0; paint(true);};
     const status = node(root, 'p', '', 'tools-muted'); status.id = 'tools-recent-status'; status.setAttribute('role', 'status');
     const windowLabel = node(root, 'p', '', 'tools-muted'); windowLabel.id = 'tools-recent-window';
     metricControl(root, () => paint(true));
@@ -67,7 +73,11 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         state.chartState = view.capture();
         const hidden = new Set(state.chartState.hidden);
         state.chartSources.forEach((source, index) => {
-            if (hidden.has(index)) state.hiddenSources.add(source.id); else state.hiddenSources.delete(source.id);
+            if (hidden.has(index)) {
+                state.hiddenSources.add(source.id); state.hiddenSourceEntries.set(source.id, source.entry);
+            } else {
+                state.hiddenSources.delete(source.id); state.hiddenSourceEntries.delete(source.id);
+            }
         });
     }
     function retainedChartState(ids) {
@@ -79,18 +89,20 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
             if (!byLineage.has(entry.lineage)) byLineage.set(entry.lineage, []);
             byLineage.get(entry.lineage).push({id: ids[index], entry});
         });
-        for (const source of state.chartSources) {
-            if (present.has(source.id) || !state.hiddenSources.has(source.id) || !source.entry.lineage) continue;
+        for (const [id, entry] of state.hiddenSourceEntries) {
+            if (present.has(id) || !entry.lineage) continue;
             // Auto keeping replaces a record ID while retaining its lineage.
             // Only an unambiguous compatible replacement inherits the choice;
-            // conflicting recordings sharing a lineage stay independent.
-            const compatible = (byLineage.get(source.entry.lineage) || []).filter(candidate => {
-                try { return compareLibrarySessions(source.entry.archive, candidate.entry.archive) !== null; }
+            // conflicting recordings sharing a lineage stay independent. Keep
+            // the choice even while a shorter preset omits this recording.
+            const compatible = (byLineage.get(entry.lineage) || []).filter(candidate => {
+                try { return compareLibrarySessions(entry.archive, candidate.entry.archive) !== null; }
                 catch (_) { return false; }
             });
             if (compatible.length === 1) {
-                state.hiddenSources.delete(source.id);
+                state.hiddenSources.delete(id); state.hiddenSourceEntries.delete(id);
                 state.hiddenSources.add(compatible[0].id);
+                state.hiddenSourceEntries.set(compatible[0].id, compatible[0].entry);
             }
         }
         return {...previous, sourceIds: ids, hidden: ids.flatMap((id, index) => state.hiddenSources.has(id) ? [index] : [])};
@@ -124,18 +136,27 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
     function paint(force = false) {
         if (disposed) return;
         const at = (state.frozen ? state.frozenAt : state.displayAt) || Date.now(), metric = getMetric();
-        const nextPaintSignature = [state.revision, at, metric, state.frozen, state.loaded, state.notice].join('|');
+        const nextPaintSignature = [state.revision, at, metric, state.windowMs, state.frozen, state.loaded, state.notice].join('|');
         if (!force && nextPaintSignature === paintSignature) return;
         rememberChart();
-        const nextSelectionSignature = state.revision + ':' + at;
+        if (state.chartWindowMs !== state.windowMs) {
+            clearChart();
+            // An explicit preset opens its full range, even when it is empty.
+            // Ordinary updates retain the user's absolute zoom and cursor.
+            const axisMs = Math.max(1000, Math.min(at, state.windowMs));
+            if (state.chartState) state.chartState = {...state.chartState,
+                start: 0, end: axisMs, axisMs, originAt: Math.max(0, at - state.windowMs), cursor: 0, pinned: false};
+            state.chartWindowMs = state.windowMs;
+        }
+        const nextSelectionSignature = state.revision + ':' + at + ':' + state.windowMs;
         if (selectionSignature !== nextSelectionSignature) {
-            selection = selectRecentComparisonEntries(state.entries, at); selectionSignature = nextSelectionSignature;
+            selection = selectRecentComparisonEntries(state.entries, at, state.windowMs); selectionSignature = nextSelectionSignature;
         }
         const ids = selection.metadata.map(item => item.sourceId);
-        const signature = [metric, state.revision, at, ...ids].join('|');
+        const signature = [metric, state.revision, at, state.windowMs, ...ids].join('|');
         const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
         if ((signature !== plotSignature || force) && ids.length) {
-            const data = buildLiveModelSeries(selection.entries.map(entry => entry.archive), metric, {now: selection.now, windowMs: RECENT_COMPARISON_MS});
+            const data = buildLiveModelSeries(selection.entries.map(entry => entry.archive), metric, {now: selection.now, windowMs: state.windowMs});
             const config = {originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map(item => item.startAt), allowAllHidden: true};
             if (!same) {
                 clearChart(); state.chartState = retainedChartState(ids);
@@ -181,6 +202,8 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
                     const changed = !state.loaded || inputSources.size !== state.inputSources.size ||
                         [...inputSources].some(([id, source]) => !sameSource(state.inputSources.get(id), source));
                     if (changed || windowChanged) {
+                        // Retain the whole day's snapshots so a frozen view can
+                        // switch to a wider preset without reading storage.
                         const result = selectRecentComparisonEntries(incoming, at), snapshots = new Map();
                         state.entries = result.entries.map((entry, index) => {
                             const id = result.metadata[index].sourceId, previous = state.snapshots.get(id);
@@ -207,6 +230,6 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         if (disposed) return; disposed = true; clearInterval(timer);
         if (view) {rememberChart(); view.dispose();}
         if (observer) observer.disconnect();
-        freeze.onclick = null; refreshButton.onclick = null; previous.onclick = null; next.onclick = null;
+        freeze.onclick = null; refreshButton.onclick = null; range.onchange = null; previous.onclick = null; next.onclick = null;
     }};
 }

@@ -2,7 +2,7 @@
 
 Detailed reference for **3.29.0**. [Connection recovery guide](docs/connection-recovery.md). [Comparison fading and history guide](docs/comparison-history-shadows.md). [24h comparison guide](docs/clock-comparison.md). [Library chart controls guide](docs/library-chart-controls.md). [Follow live guide](docs/follow-live.md). [Audience trends and ratio guide](docs/audience-trends.md). [Sessions Book guide](docs/sessions-book.md). [ATH cleanup guide](docs/ath-retention.md). The simplified Current Live Session card provides Keep in Library, Auto, Compare with previous, and History. File controls are below the session list, and exports remain on stored-session menus and the separate replay card. Development uses modular sources and a single installable script; see [BUILDING.md](BUILDING.md). For installation instructions, see the [README](readme.md).
 
-Preview: [Expanded comparisons and Last 24h](docs/expanded-comparisons.md) are available in **3.30.0-beta.2**.
+Preview: [Expanded comparisons and Last 24h](docs/expanded-comparisons.md) are available in **3.30.0-beta.3**.
 
 ## Contents
 
@@ -557,6 +557,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.30.0-beta.3** | Add Current Live Session shortcuts for Live sessions and Last 24h sessions, plus one-, four-, twelve- and twenty-four-hour rolling comparison presets. Preserve visibility and manual zoom through updates; changing a preset opens its full range. |
 | **3.30.0-beta.2** | Preserve hidden sessions, selected absolute time ranges, pinned inspection and line-control state in Last 24h when sessions arrive, expire, reorder or receive a compatible automatic Library replacement. |
 | **3.30.0-beta.1** | Preview all-model Last 24h comparison and expanded saved/live selections without separate count limits. Add bulk matching selection, paged source/statistics/line controls, more live colors and gray background traces. Keep recording gaps, actual timestamps, frozen inspection and independent tracking/storage behavior. |
 | **3.29.0** | Release cross-tab live comparisons for up to twelve models, selecting the session with the most samples for duplicate rooms. Include real-time chart updates, Freeze/Resume, source status and safe session boundaries. Also release coordinated API pacing with live-scan priority, optional user-list header compatibility and improved retry diagnostics. |

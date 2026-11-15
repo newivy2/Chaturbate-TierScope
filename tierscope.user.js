@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.30.0-beta.2
+// @version      3.30.0-beta.3
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -7829,10 +7829,11 @@ underlying system, so should run in the browser, Node, or Plask.
   function timestamp2(value) {
     return Number.isSafeInteger(value) && value >= 0 && value <= 864e13;
   }
-  function selectRecentComparisonEntries(entries, now) {
+  function selectRecentComparisonEntries(entries, now, windowMs = RECENT_COMPARISON_MS) {
     var _a;
     if (!Array.isArray(entries) || !timestamp2(now)) throw new Error("Invalid recent comparison input.");
-    const cutoffAt = Math.max(0, now - RECENT_COMPARISON_MS), selected = [];
+    const rangeMs = Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
+    const cutoffAt = Math.max(0, now - rangeMs), selected = [];
     for (const [index, entry] of entries.entries()) {
       const archive = entry == null ? void 0 : entry.archive, session = archive == null ? void 0 : archive.session, times = (_a = session == null ? void 0 : session.history) == null ? void 0 : _a.timestamps;
       if (!Array.isArray(times) || typeof archive.room !== "string") continue;
@@ -7890,7 +7891,10 @@ underlying system, so should run in the browser, Node, or Plask.
       chartState: null,
       chartIds: [],
       chartSources: [],
-      hiddenSources: /* @__PURE__ */ new Set()
+      hiddenSources: /* @__PURE__ */ new Set(),
+      hiddenSourceEntries: /* @__PURE__ */ new Map(),
+      windowMs: RECENT_COMPARISON_MS,
+      chartWindowMs: RECENT_COMPARISON_MS
     };
   }
   function captureEntry(entry) {
@@ -7914,7 +7918,7 @@ underlying system, so should run in the browser, Node, or Plask.
     const root = toolNode(parent, "section");
     root.id = "tools-recent-comparison";
     toolNode(root, "h3", "Last 24 hours · all models");
-    toolNode(root, "p", "All saved models with samples in the last 24 hours. Library filters do not apply.", "tools-muted");
+    toolNode(root, "p", "All saved models with samples in the selected range. Library filters do not apply.", "tools-muted");
     const controls = toolNode(root, "div", void 0, "tools-actions");
     const freeze = toolButton(controls, "", () => {
       state.frozen = !state.frozen;
@@ -7924,6 +7928,18 @@ underlying system, so should run in the browser, Node, or Plask.
     }, "tools-recent-freeze");
     freeze.className = "tools-primary";
     const refreshButton = toolButton(controls, "Refresh", () => refresh(true), "tools-recent-refresh");
+    const rangeLabel = toolNode(controls, "label", "Range "), range = toolNode(rangeLabel, "select");
+    range.id = "tools-recent-range";
+    for (const [value, label] of [[36e5, "Last hour"], [144e5, "Last 4 hours"], [432e5, "Last 12 hours"], [RECENT_COMPARISON_MS, "Last 24 hours"]]) {
+      const option = toolNode(range, "option", label);
+      option.value = String(value);
+    }
+    range.value = String(state.windowMs);
+    range.onchange = () => {
+      state.windowMs = Number(range.value);
+      state.page = 0;
+      paint(true);
+    };
     const status = toolNode(root, "p", "", "tools-muted");
     status.id = "tools-recent-status";
     status.setAttribute("role", "status");
@@ -7959,8 +7975,13 @@ underlying system, so should run in the browser, Node, or Plask.
       state.chartState = view.capture();
       const hidden = new Set(state.chartState.hidden);
       state.chartSources.forEach((source, index) => {
-        if (hidden.has(index)) state.hiddenSources.add(source.id);
-        else state.hiddenSources.delete(source.id);
+        if (hidden.has(index)) {
+          state.hiddenSources.add(source.id);
+          state.hiddenSourceEntries.set(source.id, source.entry);
+        } else {
+          state.hiddenSources.delete(source.id);
+          state.hiddenSourceEntries.delete(source.id);
+        }
       });
     }
     function retainedChartState(ids) {
@@ -7972,18 +7993,20 @@ underlying system, so should run in the browser, Node, or Plask.
         if (!byLineage.has(entry.lineage)) byLineage.set(entry.lineage, []);
         byLineage.get(entry.lineage).push({ id: ids[index], entry });
       });
-      for (const source of state.chartSources) {
-        if (present.has(source.id) || !state.hiddenSources.has(source.id) || !source.entry.lineage) continue;
-        const compatible = (byLineage.get(source.entry.lineage) || []).filter((candidate) => {
+      for (const [id, entry] of state.hiddenSourceEntries) {
+        if (present.has(id) || !entry.lineage) continue;
+        const compatible = (byLineage.get(entry.lineage) || []).filter((candidate) => {
           try {
-            return compareLibrarySessions(source.entry.archive, candidate.entry.archive) !== null;
+            return compareLibrarySessions(entry.archive, candidate.entry.archive) !== null;
           } catch (_) {
             return false;
           }
         });
         if (compatible.length === 1) {
-          state.hiddenSources.delete(source.id);
+          state.hiddenSources.delete(id);
+          state.hiddenSourceEntries.delete(id);
           state.hiddenSources.add(compatible[0].id);
+          state.hiddenSourceEntries.set(compatible[0].id, compatible[0].entry);
         }
       }
       return __spreadProps(__spreadValues({}, previous2), { sourceIds: ids, hidden: ids.flatMap((id, index) => state.hiddenSources.has(id) ? [index] : []) });
@@ -8026,19 +8049,32 @@ underlying system, so should run in the browser, Node, or Plask.
     function paint(force = false) {
       if (disposed) return;
       const at = (state.frozen ? state.frozenAt : state.displayAt) || Date.now(), metric = getMetric();
-      const nextPaintSignature = [state.revision, at, metric, state.frozen, state.loaded, state.notice].join("|");
+      const nextPaintSignature = [state.revision, at, metric, state.windowMs, state.frozen, state.loaded, state.notice].join("|");
       if (!force && nextPaintSignature === paintSignature) return;
       rememberChart();
-      const nextSelectionSignature = state.revision + ":" + at;
+      if (state.chartWindowMs !== state.windowMs) {
+        clearChart();
+        const axisMs = Math.max(1e3, Math.min(at, state.windowMs));
+        if (state.chartState) state.chartState = __spreadProps(__spreadValues({}, state.chartState), {
+          start: 0,
+          end: axisMs,
+          axisMs,
+          originAt: Math.max(0, at - state.windowMs),
+          cursor: 0,
+          pinned: false
+        });
+        state.chartWindowMs = state.windowMs;
+      }
+      const nextSelectionSignature = state.revision + ":" + at + ":" + state.windowMs;
       if (selectionSignature !== nextSelectionSignature) {
-        selection = selectRecentComparisonEntries(state.entries, at);
+        selection = selectRecentComparisonEntries(state.entries, at, state.windowMs);
         selectionSignature = nextSelectionSignature;
       }
       const ids = selection.metadata.map((item) => item.sourceId);
-      const signature = [metric, state.revision, at, ...ids].join("|");
+      const signature = [metric, state.revision, at, state.windowMs, ...ids].join("|");
       const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
       if ((signature !== plotSignature || force) && ids.length) {
-        const data = buildLiveModelSeries(selection.entries.map((entry) => entry.archive), metric, { now: selection.now, windowMs: RECENT_COMPARISON_MS });
+        const data = buildLiveModelSeries(selection.entries.map((entry) => entry.archive), metric, { now: selection.now, windowMs: state.windowMs });
         const config = { originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map((item) => item.startAt), allowAllHidden: true };
         if (!same) {
           clearChart();
@@ -8131,6 +8167,7 @@ underlying system, so should run in the browser, Node, or Plask.
       if (observer) observer.disconnect();
       freeze.onclick = null;
       refreshButton.onclick = null;
+      range.onchange = null;
       previous.onclick = null;
       next.onclick = null;
     } };
@@ -9610,7 +9647,11 @@ underlying system, so should run in the browser, Node, or Plask.
       if (!replay) button(shortcuts, "Compare with previous", compareLiveWithPrevious, "tools-compare-previous").className = "tools-primary";
       const history = button(shortcuts, "History · 0", () => openHistory(star.dataset.favoriteRoom.toLowerCase()), "tools-room-history" + suffix);
       history.dataset.cardHistory = "";
-      if (!replay) button(node(card, "div", void 0, "tools-actions"), "Last 24h · all models", openRecentComparison, "tools-compare-last24h");
+      if (!replay) {
+        const comparisons = node(card, "div", void 0, "tools-actions");
+        button(comparisons, "Live sessions", openLiveComparison, "tools-compare-live").title = "Compare models being tracked in your open TierScope tabs.";
+        button(comparisons, "Last 24h sessions", openRecentComparison, "tools-compare-last24h").title = "Compare all models with saved samples in the last 24 hours.";
+      }
       if (replay) {
         const exports = node(card, "div", void 0, "tools-actions tools-exports");
         node(exports, "span", "Download", "tools-muted");
@@ -9655,8 +9696,15 @@ underlying system, so should run in the browser, Node, or Plask.
       render("compare");
       (_a = dialog.querySelector("#tools-analysis-chart") || dialog.querySelector("#tools-session-picker > summary")) == null ? void 0 : _a.focus();
     }
+    function openLiveComparison() {
+      var _a;
+      compareMode = "live";
+      render("compare");
+      (_a = dialog.querySelector("#tools-live-models")) == null ? void 0 : _a.scrollIntoView({ block: "nearest" });
+    }
     function openRecentComparison() {
       var _a;
+      recentState.windowMs = RECENT_COMPARISON_MS;
       compareMode = "recent";
       render("compare");
       (_a = dialog.querySelector("#tools-recent-comparison")) == null ? void 0 : _a.scrollIntoView({ block: "nearest" });
@@ -12221,7 +12269,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.30.0-beta.2";
+    runtime.TIERSCOPE_VERSION = "3.30.0-beta.3";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

@@ -70,3 +70,53 @@ test('selected long sessions project onto one actual-date window without future 
     assert.equal(alice.timestamps.at(-1), now - 1000);
     assert.equal(alice.times.at(-1), day - 1000, 'the line ends at a real accepted sample');
 });
+
+test('rolling hour, four-hour, twelve-hour and day windows include both exact boundaries', async () => {
+    const {selectRecentComparisonEntries} = await import('../src/recent-comparison-data.js');
+    for (const windowMs of [3600000, 4 * 3600000, 12 * 3600000, day]) {
+        const cutoff = now - windowMs;
+        const entries = [entry('before', 'alice', [cutoff - 1]), entry('cutoff', 'brenda', [cutoff]),
+            entry('now', 'carol', [now]), entry('after', 'diana', [now + 1])];
+        const result = selectRecentComparisonEntries(entries, now, windowMs);
+        assert.deepEqual(result.entries.map(item => item.id), ['now', 'cutoff']);
+        assert.equal(result.cutoffAt, cutoff); assert.equal(result.now, now);
+        assert.equal(result.roomCount, 2); assert.equal(result.sampleCount, 2);
+    }
+});
+
+test('shorter windows select real recent samples from old sessions and exclude earlier coverage', async () => {
+    const {selectRecentComparisonEntries} = await import('../src/recent-comparison-data.js');
+    const hour = 3600000, cutoff = now - hour;
+    const ongoing = entry('ongoing', 'alice', [now - 3 * day, cutoff - 1, cutoff, now - 1000, now + 1],
+        {sessionStartedAt: now - 4 * day});
+    const earlier = entry('earlier', 'brenda', [now - 2 * hour]);
+    const before = JSON.stringify([ongoing, earlier]);
+    const result = selectRecentComparisonEntries([ongoing, earlier], now, hour);
+    assert.deepEqual(result.entries, [ongoing]);
+    assert.equal(result.metadata[0].startAt, now - 4 * day, 'a recent sample qualifies regardless of session start');
+    assert.equal(result.metadata[0].sampleCount, 2); assert.equal(result.metadata[0].latestIndex, 3);
+    assert.equal(result.metadata[0].latestAt, now - 1000);
+    assert.equal(JSON.stringify([ongoing, earlier]), before, 'the shorter window never trims stored histories');
+    assert.equal(selectRecentComparisonEntries([ongoing, earlier], now).entries.length, 2, 'omitting the range retains the original day default');
+});
+
+test('invalid or oversized rolling ranges fall back to the unchanged day selection', async () => {
+    const {selectRecentComparisonEntries} = await import('../src/recent-comparison-data.js');
+    const entries = [entry('yesterday', 'alice', [now - day]), entry('earlier', 'brenda', [now - 8 * 3600000]),
+        entry('current', 'carol', [now]), entry('old', 'diana', [now - day - 1])];
+    const expected = selectRecentComparisonEntries(entries, now);
+    for (const invalid of [undefined, null, false, true, '', '3600000', NaN, Infinity, -Infinity, 0, -1, 1.5,
+        day + 1, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1, {}, []]) {
+        assert.deepEqual(selectRecentComparisonEntries(entries, now, invalid), expected);
+    }
+    const narrow = selectRecentComparisonEntries([entry('cutoff', 'alice', [now - 1]),
+        entry('too-old', 'brenda', [now - 2]), entry('now', 'carol', [now])], now, 1);
+    assert.deepEqual(narrow.entries.map(item => item.id), ['now', 'cutoff'], 'any positive safe integer within the day bound is accepted');
+});
+
+test('rolling cutoff is clamped at the timestamp origin', async () => {
+    const {selectRecentComparisonEntries} = await import('../src/recent-comparison-data.js');
+    const result = selectRecentComparisonEntries([entry('origin', 'alice', [0]), entry('current', 'brenda', [100])], 100, 3600000);
+    assert.equal(result.cutoffAt, 0); assert.equal(result.sampleCount, 2);
+    assert.deepEqual(result.entries.map(item => item.id), ['current', 'origin']);
+});

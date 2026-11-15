@@ -6,9 +6,10 @@ function timestamp(value) { return Number.isSafeInteger(value) && value >= 0 && 
 // Eligibility depends on accepted samples, not the recording's start, export
 // date, or an interval that merely crosses the window without a real sample.
 // The caller supplies the complete validated Library, independent of filters.
-export function selectRecentComparisonEntries(entries, now) {
+export function selectRecentComparisonEntries(entries, now, windowMs = RECENT_COMPARISON_MS) {
     if (!Array.isArray(entries) || !timestamp(now)) throw new Error('Invalid recent comparison input.');
-    const cutoffAt = Math.max(0, now - RECENT_COMPARISON_MS), selected = [];
+    const rangeMs = Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
+    const cutoffAt = Math.max(0, now - rangeMs), selected = [];
     for (const [index, entry] of entries.entries()) {
         const archive = entry?.archive, session = archive?.session, times = session?.history?.timestamps;
         if (!Array.isArray(times) || typeof archive.room !== 'string') continue;

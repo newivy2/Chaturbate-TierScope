@@ -244,9 +244,109 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         assert.equal(await (await line('hidden_one')).isChecked(), false); assert.equal(await (await line('hidden_two')).isChecked(), false);
         assert.equal(await page.locator('#tools-chart-inspection tbody tr:visible').count(), 0, 'all remaining lines may stay hidden after expiry');
         await recentViewDispose();
+
+        // Presets change the actual sample window, rather than merely cropping
+        // a 24-hour plot; frozen views retain the wider snapshot for expansion.
+        await page.evaluate(() => {
+            document.getElementById('view').replaceChildren(); metric = 'room';
+            const hour = 3600000;
+            savedEntries = [
+                makeRecentEntry('preset_hour', 'preset_hour_model', [testNow - hour / 2, testNow - 600000], [10, 20]),
+                makeRecentEntry('preset_four', 'preset_four_model', [testNow - 3 * hour, testNow - 2 * hour], [30, 40]),
+                makeRecentEntry('preset_twelve', 'preset_twelve_model', [testNow - 10 * hour, testNow - 8 * hour], [50, 60]),
+                makeRecentEntry('preset_day', 'preset_day_model', [testNow - 23 * hour, testNow - 20 * hour], [70, 80]),
+                makeRecentEntry('preset_long', 'preset_long_model', [testNow - 30 * hour, testNow - 1200000], [90, 100], testNow - 40 * hour),
+                makeRecentEntry('preset_exact_hour', 'preset_exact_model', [testNow - hour], [110]),
+                makeRecentEntry('preset_old', 'preset_old_model', [testNow - 25 * hour], [120]),
+                makeRecentEntry('preset_future', 'preset_future_model', [testNow + hour], [130])
+            ].map(tokenRecentEntry);
+            recentState = recentFixture.createRecentComparisonState(); recentView = renderRecentFixture(recentState);
+        });
+        assert.equal(await page.locator('#tools-recent-range').inputValue(), '86400000', 'saved-session comparison starts at 24 hours');
+        assert.deepEqual(await page.locator('#tools-recent-range option').evaluateAll(options => options.map(option => option.value)),
+            ['3600000', '14400000', '43200000', '86400000']);
+        const hourIds = ['preset_hour', 'preset_long', 'preset_exact_hour'], fourIds = [...hourIds, 'preset_four'];
+        const twelveIds = [...fourIds, 'preset_twelve']; let dayId = 'preset_day', dayIds = [...twelveIds, dayId];
+        const presetReads = await page.evaluate(() => readCount);
+        async function preset(windowMs, ids) {
+            await page.selectOption('#tools-recent-range', String(windowMs));
+            assert.deepEqual(new Set(await page.evaluate(() => recentState.chartIds)), new Set(ids), 'preset eligibility uses actual in-range samples');
+            const full = await page.evaluate(ms => {
+                const at = recentState.frozen ? recentState.frozenAt : recentState.displayAt;
+                return 'Chart window ' + new Date(at - ms).toLocaleString() + ' – ' + new Date(at).toLocaleString();
+            }, windowMs);
+            assert.equal(await page.locator('#tools-chart-range').textContent(), full, 'intentional preset selection resets zoom to its full time window');
+        }
+        await (await line('preset_hour')).uncheck(); await (await line('preset_day')).uncheck();
+        await page.click('#tools-chart-zoom-in'); const manualPresetZoom = await page.locator('#tools-chart-range').textContent();
+        await preset(14400000, fourIds); assert.notEqual(await page.locator('#tools-chart-range').textContent(), manualPresetZoom);
+        assert(!(await (await line('preset_hour')).isChecked()), 'an intentional preset change preserves hidden session choices');
+        await page.click('#tools-recent-metric-total'); assert.equal(await page.locator('#tools-recent-range').inputValue(), '14400000');
+        await page.click('#tools-recent-refresh'); assert.equal(await page.locator('#tools-recent-range').inputValue(), '14400000');
+        await preset(43200000, twelveIds); await preset(3600000, hourIds);
+        await page.evaluate(() => {
+            const index = savedEntries.findIndex(entry => entry.id === 'preset_day'), previous = savedEntries[index], session = previous.archive.session;
+            const replacement = makeRecentEntry('preset_day_auto', previous.archive.room, [...session.history.timestamps, testNow - 15 * 3600000],
+                [...session.history.total, 90], session.sessionStartedAt);
+            replacement.lineage = previous.lineage; savedEntries[index] = tokenRecentEntry(replacement); recentView.refresh(true);
+        });
+        dayId = 'preset_day_auto'; dayIds = [...twelveIds, dayId];
+        assert(!(await page.evaluate(id => recentState.chartIds.includes(id), dayId)), 'the grown recording remains outside the one-hour preset');
+        await preset(86400000, dayIds);
+        assert(!(await (await line(dayId)).isChecked()), 'an Auto replacement outside the selected preset retains its hidden choice when widening');
+        await preset(3600000, hourIds);
+        await page.click('#tools-recent-freeze');
+        const frozenPresetReads = await page.evaluate(() => readCount);
+        assert.equal(await page.evaluate(() => recentState.entries.length), 6, 'the frozen snapshot retains all eligible 24-hour recordings');
+        await page.evaluate(() => {
+            const entry = savedEntries.find(entry => entry.id === 'preset_hour'); entry.archive.session.history.total[1] = 999; tokenRecentEntry(entry);
+            savedEntries.push(tokenRecentEntry(makeRecentEntry('preset_added', 'preset_added_model', [testNow - 300000], [200])));
+            tickRecent(60000);
+        });
+        await preset(14400000, fourIds); await preset(43200000, twelveIds); await preset(86400000, dayIds);
+        assert(!(await (await line(dayId)).isChecked()), 'widening a frozen preset restores the earlier hidden choice');
+        assert.equal(await count('preset_hour_model'), '20', 'changing frozen presets does not reread updated source values');
+        assert.equal(await page.evaluate(() => readCount), frozenPresetReads, 'frozen preset changes perform no Library reads');
+        await preset(3600000, hourIds);
+        await page.evaluate(() => {recentView.dispose(); document.getElementById('view').replaceChildren(); recentView = renderRecentFixture(recentState);});
+        assert.equal(await page.locator('#tools-recent-range').inputValue(), '3600000', 'preset survives disposal/recreation');
+        assert.equal(await page.evaluate(() => readCount), frozenPresetReads, 'reopening a frozen preset does not reread storage');
+        assert(!(await (await line('preset_hour')).isChecked()));
+        await page.click('#tools-recent-freeze');
+        assert.equal(await page.locator('#tools-recent-range').inputValue(), '3600000', 'Resume retains the selected preset');
+        assert.deepEqual(new Set(await page.evaluate(() => recentState.chartIds)), new Set(['preset_hour', 'preset_long', 'preset_added']));
+        assert.equal(await count('preset_hour_model'), '999', 'Resume catches up within the selected time window');
+        assert(!(await (await line('preset_hour')).isChecked()));
+        await preset(86400000, [...dayIds, 'preset_added']);
+        assert(!(await (await line(dayId)).isChecked()));
+        assert(await page.evaluate(() => readCount) >= presetReads);
+        await recentViewDispose();
+
+        // An intentionally empty preset still resets the old viewport, while
+        // hidden choices survive until those recordings qualify again.
+        await page.evaluate(() => {
+            document.getElementById('view').replaceChildren(); metric = 'room';
+            savedEntries = [
+                tokenRecentEntry(makeRecentEntry('empty_old_one', 'empty_old_one_model', [testNow - 4 * 3600000, testNow - 3 * 3600000], [10, 20])),
+                tokenRecentEntry(makeRecentEntry('empty_old_two', 'empty_old_two_model', [testNow - 8 * 3600000, testNow - 7 * 3600000], [30, 40]))
+            ];
+            recentState = recentFixture.createRecentComparisonState(); recentView = renderRecentFixture(recentState);
+        });
+        const fullBeforeEmpty = await page.locator('#tools-chart-range').textContent();
+        await (await line('empty_old_one')).uncheck(); await page.click('#tools-chart-zoom-in');
+        await page.locator('#tools-analysis-chart').focus(); await page.keyboard.press('End');
+        assert.notEqual(await page.locator('#tools-chart-range').textContent(), fullBeforeEmpty);
+        assert.match(await page.locator('#tools-chart-inspection caption').textContent(), /pinned/);
+        await page.selectOption('#tools-recent-range', '3600000');
+        assert.equal(await page.locator('#tools-analysis-chart').count(), 0); assert(await page.locator('#tools-recent-empty').isVisible());
+        await page.selectOption('#tools-recent-range', '86400000');
+        assert.equal(await page.locator('#tools-chart-range').textContent(), fullBeforeEmpty, 'returning from an empty preset opens its full range');
+        assert.doesNotMatch(await page.locator('#tools-chart-inspection caption').textContent(), /pinned/, 'the intentional range change discards the old pin');
+        assert(!(await (await line('empty_old_one')).isChecked()), 'returning from an empty preset retains hidden recording choices');
+        await recentViewDispose();
         async function recentViewDispose() {await page.evaluate(() => recentView.dispose()); assert.equal(await page.evaluate(() => activeTimers.size), 0);}
         assert.equal(await page.evaluate(() => fetchCount), 0, 'selection reconciliation never adds API requests');
         assert.deepEqual(errors, []);
-        console.log(engine + ': Last24h global selection, frozen immutable snapshots, read-error retention and cleanup; hidden recording identity and absolute zoom/cursor survive new entries, expiry, reorder, compatible Auto replacements, metrics, Freeze/Resume and recreated views; conflicting lineages stay independent');
+        console.log(engine + ': recent-session presets filter actual samples and expand frozen snapshots without reads; global selection, read-error retention, hidden identities and manual zoom survive updates, Auto replacements, metrics, Freeze/Resume and recreated views');
     } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

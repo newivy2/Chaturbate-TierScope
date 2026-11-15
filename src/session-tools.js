@@ -18,6 +18,7 @@ import { renderAutomaticKeepingSettings, renderLibraryCapacity } from './library
 import { libraryShell } from './library-shell.js';
 import { createLiveComparisonState, renderLiveModelsComparison } from './live-model-comparison.js';
 import { createRecentComparisonState, renderRecentComparison } from './recent-comparison.js';
+import { RECENT_COMPARISON_MS } from './recent-comparison-data.js';
 import { migrateRecordingFavorites, readModelFavorites, readModelFavorite } from './library-models.js';
 import { createLibraryDrafts } from './library-drafts.js';
 import { renderLibraryBrowser, renderRecordingNotes } from './library-browser-view.js';
@@ -460,7 +461,11 @@ export function openSessionTools(focusTarget) {
         if (!replay) button(shortcuts, 'Compare with previous', compareLiveWithPrevious, 'tools-compare-previous').className = 'tools-primary';
         const history = button(shortcuts, 'History · 0', () => openHistory(star.dataset.favoriteRoom.toLowerCase()), 'tools-room-history' + suffix);
         history.dataset.cardHistory = '';
-        if (!replay) button(node(card, 'div', undefined, 'tools-actions'), 'Last 24h · all models', openRecentComparison, 'tools-compare-last24h');
+        if (!replay) {
+            const comparisons = node(card, 'div', undefined, 'tools-actions');
+            button(comparisons, 'Live sessions', openLiveComparison, 'tools-compare-live').title = 'Compare models being tracked in your open TierScope tabs.';
+            button(comparisons, 'Last 24h sessions', openRecentComparison, 'tools-compare-last24h').title = 'Compare all models with saved samples in the last 24 hours.';
+        }
         if (replay) {
             const exports = node(card, 'div', undefined, 'tools-actions tools-exports');
             node(exports, 'span', 'Download', 'tools-muted');
@@ -486,7 +491,12 @@ export function openSessionTools(focusTarget) {
         pickerOpen.compare = false; compareMode = 'saved'; render('compare');
         (dialog.querySelector('#tools-analysis-chart') || dialog.querySelector('#tools-session-picker > summary'))?.focus();
     }
+    function openLiveComparison() {
+        compareMode = 'live'; render('compare');
+        dialog.querySelector('#tools-live-models')?.scrollIntoView({block: 'nearest'});
+    }
     function openRecentComparison() {
+        recentState.windowMs = RECENT_COMPARISON_MS;
         compareMode = 'recent'; render('compare');
         dialog.querySelector('#tools-recent-comparison')?.scrollIntoView({block: 'nearest'});
     }
