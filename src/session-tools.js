@@ -13,6 +13,7 @@ import { readAllTimeHighs, sessionAllTimeHighs, storeAllTimeHighs } from './high
 import { repaintHighMode } from './highs.js';
 import { attachLibraryDock } from './library-dock.js';
 import { readLibraryAppearance, saveLibraryAppearance } from './library-appearance.js';
+import { attachChartOnlyView } from './library-chart-only-view.js';
 import { LIBRARY_TRANSFER_MAX_COUNT } from './library-capacity-data.js';
 import { readAutomaticKeepingMinutes, saveAutomaticKeepingMinutes, readLibraryLimits, saveLibraryLimits } from './library-capacity.js';
 import { renderAutomaticKeepingSettings, renderLibraryCapacity } from './library-capacity-view.js';
@@ -104,7 +105,7 @@ export function openSessionTools(focusTarget) {
     let libraryRoom = null, chartDraw = null, analysisPreferenceError = savedAnalysis.error;
     let observedSource = null, observedSignature = '';
     let refreshCapacity = null, capacityCheckpoint = '';
-    let detachDock = null, historyView = null, followControls = null, liveCapture = null, historyDiscovery = '';
+    let detachDock = null, compactView = null, historyView = null, followControls = null, liveCapture = null, historyDiscovery = '';
     let currentArchiveIsReplay = isPlaybackCurrent(runtime.playback);
     let compareMode = 'saved', liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
@@ -1002,6 +1003,7 @@ export function openSessionTools(focusTarget) {
         }
     }
     function close() {
+        if (compactView) {compactView.dispose(); compactView = null;}
         if (recentView) { recentView.dispose(); recentView = null; }
         if (liveModelsView) { liveModelsView.dispose(); liveModelsView = null; }
         fileRequest++; refreshSessionTools = null; refreshCapacity = null; chartDraw = null; historyView = null; followControls = null; liveCapture = null;
@@ -1042,5 +1044,25 @@ export function openSessionTools(focusTarget) {
     dialog.show();
     detachDock = attachLibraryDock(document.getElementById('tracker-container'), dialog, () => { if (chartDraw) chartDraw(); },
         {...readLibraryAppearance(), save: saveLibraryAppearance});
+    compactView = attachChartOnlyView(dialog, {
+        getChart: () => tab === 'compare' && (compareMode !== 'saved' || analysisReports && !analysisReports.controls.hidden) ? content.querySelector('#tools-analysis-chart') : null,
+        describe: () => {
+            const state = content.querySelector(compareMode === 'live' ? '#tools-live-status' : compareMode === 'recent' ? '#tools-recent-status' : '#tools-follow-status');
+            let status = state?.textContent || 'Saved comparison';
+            let sourceWarning = false;
+            if (compareMode === 'live') {
+                const counts = new Map();
+                for (const id of liveModelsState.selected) {
+                    const source = liveModelsState.known.get(id);
+                    if (source && source.status !== 'tracking') counts.set(source.status, (counts.get(source.status) || 0) + 1);
+                }
+                if (counts.size) status = [...counts].map(([name, count]) => count + ' ' + name).join(' · ') + ' · ' + status;
+                sourceWarning = [...counts.keys()].some(name => !['paused', 'waiting'].includes(name));
+            }
+            return {label: ({saved: 'Saved sessions', live: 'Live models', recent: 'Last 24h'})[compareMode] + ' · ' + ANALYSIS_METRICS[metric],
+                status, warning: sourceWarning || (compareMode === 'recent' ? !!(recentState.notice || recentState.liveNotice) : /unavailable|stale|pending|failed/i.test(status))};
+        },
+        modeChanged: enabled => detachDock.setChartOnly(enabled), redraw: () => detachDock.redraw()
+    });
     render('library'); dialog.querySelector('#tools-close').focus();
 }

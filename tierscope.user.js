@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.31.0-beta.2
+// @version      3.31.0-beta.3
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -6322,19 +6322,24 @@ underlying system, so should run in the browser, Node, or Plask.
   }
 
   // src/library-dock.js
-  function attachLibraryDock(panel, library, onTheme, appearance = {}) {
+  function attachLibraryDock(panel, library, onTheme, appearance2 = {}) {
     const original = { left: panel.style.left, top: panel.style.top, right: panel.style.right };
     let lastPosition = __spreadValues({}, original), movedByUser = false, borrowed = false, frame = 0, closed = false;
     let previousTheme = "", previousLayout = "", drag = null;
-    let scale = appearance.scale || 1, opacity = appearance.opacity || 95;
+    const profiles = {
+      full: { scale: appearance2.scale || 1, opacity: appearance2.opacity || 95 },
+      compact: { scale: appearance2.compactScale || 1, opacity: appearance2.compactOpacity || 95 }
+    };
+    let compact = false, scale = profiles.full.scale, opacity = profiles.full.opacity;
     const baseHeight = Math.max(420, panel.offsetHeight);
     const grip = library.querySelector("#tools-resize-handle"), reset = library.querySelector("#tools-standard-size");
     const slider = library.querySelector("#tools-opacity-slider"), value = library.querySelector("#tools-opacity-value");
     const notice = library.querySelector("#tools-appearance-status");
     const position = () => ({ left: panel.style.left, top: panel.style.top, right: panel.style.right });
     function persist() {
+      profiles[compact ? "compact" : "full"] = { scale, opacity };
       try {
-        if (appearance.save) appearance.save({ scale, opacity });
+        if (appearance2.save) appearance2.save(__spreadProps(__spreadValues({}, profiles.full), { compactScale: profiles.compact.scale, compactOpacity: profiles.compact.opacity }));
         notice.textContent = "";
       } catch (_) {
         notice.textContent = "Appearance applies while Library is open; saving failed. Adjust again to retry.";
@@ -6348,7 +6353,7 @@ underlying system, so should run in the browser, Node, or Plask.
       let rect = panel.getBoundingClientRect();
       const margin = 8, availableWidth = Math.max(1, window.innerWidth - margin * 2), availableHeight = Math.max(1, window.innerHeight - margin * 2);
       const effective = Math.min(scale, availableWidth / 260, availableHeight / 220);
-      const width = Math.min(370 * effective, availableWidth), height = Math.min(baseHeight * effective, availableHeight);
+      const width = Math.min(370 * effective, availableWidth), height = Math.min((compact ? 300 : baseHeight) * effective, availableHeight);
       const docked = window.innerWidth >= rect.width + width + margin * 2;
       if (docked) {
         const left = Math.max(width + margin - 1, Math.min(rect.left, window.innerWidth - rect.width - margin));
@@ -6381,14 +6386,14 @@ underlying system, so should run in the browser, Node, or Plask.
       slider.setAttribute("aria-valuetext", opacity + "% background opacity");
       value.textContent = opacity + "%";
       reset.textContent = Math.round(effective * 100) + "%";
-      reset.title = "Restore Library to 100% (preferred scale " + Math.round(scale * 100) + "%)";
+      reset.title = "Restore " + (compact ? "comparison" : "Library") + " to 100% (preferred scale " + Math.round(scale * 100) + "%)";
       const theme = panel.getAttribute("data-theme") || "dark";
       if (theme !== previousTheme) {
         previousTheme = theme;
         library.dataset.theme = theme;
         setThemeVariables(library);
       }
-      const layout = [theme, effective, styles.width, styles.height].join("|");
+      const layout = [theme, compact, effective, styles.width, styles.height].join("|");
       if (layout !== previousLayout) {
         previousLayout = layout;
         if (onTheme && !drag) onTheme();
@@ -6449,7 +6454,7 @@ underlying system, so should run in the browser, Node, or Plask.
     mutation.observe(panel, { attributes: true, attributeFilter: ["style", "data-scale", "data-theme"] });
     window.addEventListener("resize", schedule);
     arrange();
-    return () => {
+    const detach = () => {
       closed = true;
       stopDrag(false);
       if (frame) window.cancelAnimationFrame(frame);
@@ -6461,27 +6466,119 @@ underlying system, so should run in the browser, Node, or Plask.
       delete panel.dataset.libraryOpen;
       if (borrowed && !movedByUser) for (const [key, val] of Object.entries(original)) panel.style[key] = val;
     };
+    detach.setChartOnly = (enabled) => {
+      if (closed || compact === enabled) return;
+      stopDrag(true);
+      profiles[compact ? "compact" : "full"] = { scale, opacity };
+      compact = enabled;
+      ({ scale, opacity } = profiles[compact ? "compact" : "full"]);
+      previousLayout = "";
+      schedule();
+    };
+    detach.redraw = () => {
+      previousLayout = "";
+      schedule();
+    };
+    return detach;
   }
 
   // src/library-appearance.js
   var LIBRARY_APPEARANCE_KEY = "tierscope:library-appearance:v1";
-  function valid(value) {
-    return value && value.schemaVersion === 1 && Number.isFinite(value.scale) && value.scale >= 0.5 && value.scale <= 3 && Number.isFinite(value.opacity) && value.opacity >= 30 && value.opacity <= 100;
+  function appearance(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value) || value.schemaVersion !== 1) return null;
+    const compactScale = Object.prototype.hasOwnProperty.call(value, "compactScale") ? value.compactScale : 1;
+    const compactOpacity = Object.prototype.hasOwnProperty.call(value, "compactOpacity") ? value.compactOpacity : 95;
+    if (![value.scale, compactScale].every((scale) => Number.isFinite(scale) && scale >= 0.5 && scale <= 3) || ![value.opacity, compactOpacity].every((opacity) => Number.isFinite(opacity) && opacity >= 30 && opacity <= 100)) return null;
+    return { scale: value.scale, opacity: value.opacity, compactScale, compactOpacity };
   }
   function readLibraryAppearance() {
     try {
       const raw = GM_getValue(LIBRARY_APPEARANCE_KEY, null), value = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (valid(value)) return { scale: value.scale, opacity: value.opacity };
+      const settings = appearance(value);
+      if (settings) return settings;
     } catch (_) {
     }
-    return { scale: 1, opacity: 95 };
+    return { scale: 1, opacity: 95, compactScale: 1, compactOpacity: 95 };
   }
   function saveLibraryAppearance(value) {
-    const record = { schemaVersion: 1, scale: value.scale, opacity: value.opacity };
-    if (!valid(record)) throw new Error("Invalid Library appearance.");
+    const settings = appearance(value && typeof value === "object" && !Array.isArray(value) ? __spreadProps(__spreadValues({}, value), { schemaVersion: 1 }) : null);
+    if (!settings) throw new Error("Invalid Library appearance.");
+    const record = __spreadValues({ schemaVersion: 1 }, settings);
     const raw = JSON.stringify(record);
     GM_setValue(LIBRARY_APPEARANCE_KEY, raw);
     if (GM_getValue(LIBRARY_APPEARANCE_KEY, null) !== raw) throw new Error("Library appearance could not be saved.");
+  }
+
+  // src/library-chart-only-view.js
+  function attachChartOnlyView(library, { getChart, describe, modeChanged, redraw }) {
+    const content = library.querySelector("#tools-content"), toggle = library.querySelector("#tools-chart-only");
+    const subtitle = library.querySelector("#tools-compact-subtitle"), status = library.querySelector("#tools-compact-status");
+    let compact = false, markedChart = null, path = [], previousScroll = 0, closed = false;
+    function clearPath() {
+      path.forEach((node) => {
+        delete node.dataset.compactPath;
+      });
+      path = [];
+      markedChart = null;
+    }
+    function setMode(enabled) {
+      if (closed || compact === enabled || enabled && !getChart()) return;
+      if (enabled) previousScroll = content.scrollTop;
+      compact = enabled;
+      library.dataset.chartOnly = String(compact);
+      toggle.textContent = compact ? "Expand" : "Chart only";
+      toggle.title = compact ? "Restore the full Library" : "Keep only the current comparison chart visible";
+      toggle.setAttribute("aria-pressed", String(compact));
+      toggle.setAttribute("aria-label", compact ? "Expand Library" : "Show comparison chart only");
+      if (!compact) {
+        clearPath();
+        content.scrollTop = previousScroll;
+      } else content.scrollTop = 0;
+      modeChanged(compact);
+      sync();
+      (toggle.disabled ? library.querySelector("#tools-close") : toggle).focus({ preventScroll: true });
+    }
+    function sync() {
+      if (closed) return;
+      const chart = getChart();
+      if (compact && !chart) {
+        setMode(false);
+        return;
+      }
+      toggle.disabled = !compact && !chart;
+      if (!compact) {
+        toggle.title = chart ? "Keep only the current comparison chart visible" : "Open a comparison to use chart-only view";
+        return;
+      }
+      if (markedChart !== chart) {
+        clearPath();
+        markedChart = chart;
+        for (let node = chart; node && node !== content; node = node.parentElement) {
+          node.dataset.compactPath = "";
+          path.push(node);
+        }
+        redraw();
+      }
+      const info = describe();
+      if (subtitle.textContent !== info.label) subtitle.textContent = info.label;
+      subtitle.title = info.label;
+      const text = (info.warning ? "Notice: " : "") + info.status;
+      if (status.textContent !== text) status.textContent = text;
+      status.title = text;
+      status.dataset.warning = String(!!info.warning);
+    }
+    toggle.onclick = () => setMode(!compact);
+    const observer = new window.MutationObserver(sync);
+    observer.observe(content, { childList: true, subtree: true });
+    observer.observe(library.querySelector("#tools-message"), { childList: true, subtree: true });
+    library.dataset.chartOnly = "false";
+    sync();
+    return { sync, dispose() {
+      closed = true;
+      observer.disconnect();
+      toggle.onclick = null;
+      clearPath();
+    } };
   }
 
   // src/library-capacity-view.js
@@ -6601,6 +6698,18 @@ underlying system, so should run in the browser, Node, or Plask.
 #tierscope-session-tools .tools-danger{color:var(--panel-negative)}
 #tierscope-session-tools .tools-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px 9px 20px;border-bottom:1px solid #ff69b4;background:rgba(255,105,180,.06);flex-shrink:0}
 #tierscope-session-tools .tools-head-actions{display:flex;gap:5px;align-items:center}
+#tierscope-session-tools .tools-head-labels{min-width:0;flex:1}
+#tierscope-session-tools .tools-subtitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tierscope-session-tools #tools-compact-label,#tierscope-session-tools #tools-compact-status{display:none}
+#tierscope-session-tools #tools-chart-only{font-size:.9em}
+#tierscope-session-tools[data-chart-only=true] .tools-head-labels>h2,#tierscope-session-tools[data-chart-only=true] .tools-head-labels>.tools-subtitle,#tierscope-session-tools[data-chart-only=true]>nav,#tierscope-session-tools[data-chart-only=true]>#tools-review-notes,#tierscope-session-tools[data-chart-only=true]>#gif-export-controls{display:none!important}
+#tierscope-session-tools[data-chart-only=true] #tools-compact-label{display:block}
+#tierscope-session-tools[data-chart-only=true] #tools-compact-status{display:block;font-size:.85em;color:var(--panel-muted);padding:4px 9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex-shrink:0}
+#tierscope-session-tools[data-chart-only=true] #tools-compact-status[data-warning=true]{color:var(--panel-warning)}
+#tierscope-session-tools[data-chart-only=true] #tools-content{padding:5px;overflow:hidden}
+#tierscope-session-tools[data-chart-only=true] #tools-content>:not([data-compact-path]),#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-path]>:not([data-compact-path]){display:none!important}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-path]{width:100%;height:100%;min-width:0;min-height:0;margin:0;padding:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content #tools-chart-view>.tools-chart-inspection-scroll{display:block!important;position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
 #tierscope-session-tools #tools-resize-handle{position:absolute;left:0;top:0;width:16px;height:16px;padding:0;border:0;border-radius:6px 0 0;background:linear-gradient(135deg,#ff69b4 50%,transparent 50%);cursor:ew-resize;touch-action:none;z-index:2}
 #tierscope-session-tools .tools-appearance{flex-shrink:0;border-top:1px solid var(--panel-divider);padding:7px 12px}
 #tierscope-session-tools .tools-opacity-controls{display:grid;grid-template-columns:auto minmax(0,1fr) 4ch;gap:7px;align-items:center;width:100%;font-size:.9em}
@@ -6728,7 +6837,8 @@ underlying system, so should run in the browser, Node, or Plask.
 #gif-export-controls{padding:8px 12px;gap:6px;align-items:center;flex-shrink:0;border-bottom:1px solid var(--panel-divider)}
 </style>
 <button id="tools-resize-handle" type="button" aria-label="Resize Library" title="Drag left to enlarge Library, right to shrink. Arrow keys adjust; Home restores 100%."></button>
-<div class="tools-head"><div><h2 id="tools-title">Library</h2><div class="tools-subtitle">Session Storage and Analysis</div></div><div class="tools-head-actions"><button id="tools-standard-size" type="button" aria-label="Restore Library to 100%">100%</button><button id="tools-close" type="button" aria-label="Close library" title="Close library (Escape)">×</button></div></div>
+<div class="tools-head"><div class="tools-head-labels"><h2 id="tools-title">Library</h2><div class="tools-subtitle">Session Storage and Analysis</div><div id="tools-compact-label"><h2>Comparison</h2><div id="tools-compact-subtitle" class="tools-subtitle"></div></div></div><div class="tools-head-actions"><button id="tools-chart-only" type="button" aria-pressed="false" title="Open a comparison to use chart-only view" disabled>Chart only</button><button id="tools-standard-size" type="button" aria-label="Restore Library to 100%">100%</button><button id="tools-close" type="button" aria-label="Close library" title="Close library (Escape)">×</button></div></div>
+<div id="tools-compact-status" role="status"></div>
 <nav aria-label="Session tools"><button data-tools-tab="library">Sessions</button><button data-tools-tab="summary">Summary</button><button data-tools-tab="compare">Compare</button><button data-tools-tab="backup">Backup</button></nav>
 <button id="tools-review-notes" type="button" hidden></button>
 <div id="tools-message" role="status" aria-live="polite"></div>
@@ -6822,7 +6932,7 @@ underlying system, so should run in the browser, Node, or Plask.
     parent.insertBefore(range, legend);
     const settings = toolNode(parent, "div");
     const hint = toolNode(parent, "p", "", "tools-muted");
-    const scroll = toolNode(parent, "div", void 0, "tools-scroll"), table = toolNode(scroll, "table");
+    const scroll = toolNode(parent, "div", void 0, "tools-scroll tools-chart-inspection-scroll"), table = toolNode(scroll, "table");
     table.id = "tools-chart-inspection";
     const caption = toolNode(table, "caption");
     const header = toolNode(toolNode(table, "thead"), "tr");
@@ -6984,6 +7094,8 @@ underlying system, so should run in the browser, Node, or Plask.
       width = Math.max(260, canvas.clientWidth);
       right = width - 14;
       ratio = (window.devicePixelRatio || 1) * (Number((_a = canvas.closest("#tierscope-session-tools")) == null ? void 0 : _a.dataset.renderScale) || 1);
+      height = Math.max(100, canvas.clientHeight || 200);
+      bottom = height - 36;
       canvas.width = bitmap.width = width * ratio;
       canvas.height = bitmap.height = height * ratio;
       const ctx = bitmap.getContext("2d");
@@ -9365,7 +9477,7 @@ underlying system, so should run in the browser, Node, or Plask.
     let libraryRoom = null, chartDraw = null, analysisPreferenceError = savedAnalysis.error;
     let observedSource = null, observedSignature = "";
     let refreshCapacity = null, capacityCheckpoint = "";
-    let detachDock = null, historyView = null, followControls = null, liveCapture = null, historyDiscovery = "";
+    let detachDock = null, compactView = null, historyView = null, followControls = null, liveCapture = null, historyDiscovery = "";
     let currentArchiveIsReplay = isPlaybackCurrent(runtime.playback);
     let compareMode = "saved", liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
@@ -10694,6 +10806,10 @@ underlying system, so should run in the browser, Node, or Plask.
       }
     }
     function close() {
+      if (compactView) {
+        compactView.dispose();
+        compactView = null;
+      }
       if (recentView) {
         recentView.dispose();
         recentView = null;
@@ -10783,6 +10899,30 @@ underlying system, so should run in the browser, Node, or Plask.
       },
       __spreadProps(__spreadValues({}, readLibraryAppearance()), { save: saveLibraryAppearance })
     );
+    compactView = attachChartOnlyView(dialog, {
+      getChart: () => tab === "compare" && (compareMode !== "saved" || analysisReports && !analysisReports.controls.hidden) ? content.querySelector("#tools-analysis-chart") : null,
+      describe: () => {
+        const state = content.querySelector(compareMode === "live" ? "#tools-live-status" : compareMode === "recent" ? "#tools-recent-status" : "#tools-follow-status");
+        let status = (state == null ? void 0 : state.textContent) || "Saved comparison";
+        let sourceWarning = false;
+        if (compareMode === "live") {
+          const counts = /* @__PURE__ */ new Map();
+          for (const id of liveModelsState.selected) {
+            const source = liveModelsState.known.get(id);
+            if (source && source.status !== "tracking") counts.set(source.status, (counts.get(source.status) || 0) + 1);
+          }
+          if (counts.size) status = [...counts].map(([name, count]) => count + " " + name).join(" · ") + " · " + status;
+          sourceWarning = [...counts.keys()].some((name) => !["paused", "waiting"].includes(name));
+        }
+        return {
+          label: { saved: "Saved sessions", live: "Live models", recent: "Last 24h" }[compareMode] + " · " + ANALYSIS_METRICS[metric],
+          status,
+          warning: sourceWarning || (compareMode === "recent" ? !!(recentState.notice || recentState.liveNotice) : /unavailable|stale|pending|failed/i.test(status))
+        };
+      },
+      modeChanged: (enabled) => detachDock.setChartOnly(enabled),
+      redraw: () => detachDock.redraw()
+    });
     render("library");
     dialog.querySelector("#tools-close").focus();
   }
@@ -12463,7 +12603,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.31.0-beta.2";
+    runtime.TIERSCOPE_VERSION = "3.31.0-beta.3";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

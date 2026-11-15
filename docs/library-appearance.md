@@ -9,3 +9,12 @@ Install the [beta userscript](https://github.com/newivy2/TierScope/blob/beta/lib
 Library remembers its own scale and opacity across reopenings, rooms and page reloads. The initial settings are 100% scale and 95% background opacity. Dark/bright mode remains shared with Scope. If saving fails, Library explains that the temporary appearance applies while it is open; adjusting again retries the save.
 
 Narrow windows temporarily fit Library to the available space without overwriting the preferred scale. Widening the window restores that scale. Existing docking, sheet layout and Scope’s priority above an overlapping Library remain in place. Appearance changes preserve live tracking, replay, chart selections and recordings.
+
+
+## Chart-only comparison view
+
+Open a comparison in **Saved sessions**, **Live models** or **Last 24h**, then select **Chart only** in Library’s header. It shows the current chart with a small header and status line, hiding tabs, selectors, legends and reports. Select **Expand** to return to the same comparison and its controls.
+
+The pink upper-left grip, percentage reset and bottom transparency slider remain available. Chart-only view remembers its own scale and opacity separately from the full Library. Library opens in its full view next time; chart-only appearance choices remain saved.
+
+Switching views keeps the same chart, selected sessions, metric, hidden lines, zoom, pinned cursor and Freeze state. Live and recent comparisons continue updating as before. Status text and notices remain visible; expand to review detailed source status or inspection values. Keyboard chart inspection remains available to screen readers. If the comparison becomes empty or a saved selection becomes invalid, Library expands so the controls and explanation are available.
