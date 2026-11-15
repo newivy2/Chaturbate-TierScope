@@ -48,6 +48,9 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
  GM_setValue('tierscope:live:v1:changed',{version:1,at,token:'updated-live'});},
  addRecent(){const archive=this.archive('new_recent_model',150,[Date.now()-120000,Date.now()-60000]);
  GM_setValue('tierscope:library:v1:new_recent',JSON.stringify({schemaVersion:1,addedAt:Date.now(),title:'New recent session',archive}));},
+ addCompactRecent(suffix=''){const archive=this.archive('compact_model'+suffix,170,[Date.now()-120000,Date.now()-60000]);
+ GM_setValue('tierscope:library:v1:compact_recent'+suffix,JSON.stringify({schemaVersion:1,addedAt:Date.now(),title:'Compact recent session'+suffix,archive}));},
+ refreshTools:()=>updateSessionToolsStatus(),
  seedCurrentStyles(){const now=Date.now(),room=getModelName(),current=JSON.parse(JSON.stringify(window.expandedBase));
  GM_setValue('tierscope:library:v1:current_ongoing',JSON.stringify({schemaVersion:1,addedAt:now,title:'Current ongoing session',archive:current}));
  const older=this.archive(room,5,[now-3*3600000,now-3*3600000+60000]);
@@ -222,8 +225,272 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   style=await currentLiveStyle();assert.equal(style.color,'rgb(255, 105, 180)');
   assert.deepEqual(await page.evaluate(()=>ViewerTracker.__expanded.saved()),styleSavedBefore,'metadata styling never rewrites saved sessions');
   assert.deepEqual(await page.evaluate(()=>ViewerTracker.__expanded.state()),liveBefore);assert.equal(requests,0);
+
+  // Chart-only comparison is a second presentation of the existing view. Its
+  // geometry/preferences are independent, while the chart and user choices live on.
+  const library=page.locator('#tierscope-session-tools');
+  const opacity=async value=>page.locator('#tools-opacity-slider').evaluate((element,value)=>{
+   element.value=String(value);element.dispatchEvent(new Event('input'));
+  },value);
+  const resized=async scale=>page.waitForFunction(scale=>Math.abs(Number(document.getElementById('tierscope-session-tools').dataset.scale)-scale)<.001,scale);
+  const appearance=()=>page.evaluate(()=>{
+   const value=GM_getValue('tierscope:library-appearance:v1');return typeof value==='string'?JSON.parse(value):value;
+  });
+  async function captureChart(){return page.evaluate(()=>({
+   range:document.getElementById('tools-chart-range').textContent,
+   cursor:document.querySelector('#tools-chart-inspection caption').textContent,
+   legend:[...document.querySelectorAll('.tools-chart-legend input')].map(element=>[element.dataset.analysisSeries,element.checked]),
+   metric:document.querySelector('.tools-metric-strip [aria-checked=true]')?.id
+  }));}
+  async function chooseChart(query){
+   await page.fill('#tools-chart-line-search',query);
+   assert.equal(await page.locator('.tools-chart-legend input').count(),1);
+   await page.locator('.tools-chart-legend input').uncheck();
+   await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('End');await page.click('#tools-chart-zoom-in');
+   assert.match(await page.locator('#tools-chart-inspection caption').textContent(),/pinned/);
+   await page.evaluate(()=>{
+    window.compactCanvas=document.getElementById('tools-analysis-chart');
+    window.compactControls=[...document.querySelectorAll('.tools-comparison-mode,.tools-metric-strip,#tools-live-window,#tools-recent-range,#tools-compare-axis,#tools-shared-length')]
+     .map(element=>({element,parent:element.parentElement}));
+   });
+   return captureChart();
+  }
+  async function toggleCompact(enabled){
+   await page.click('#tools-chart-only');
+   await page.waitForFunction(enabled=>document.getElementById('tierscope-session-tools').dataset.chartOnly===String(enabled),enabled);
+   await page.waitForFunction(enabled=>{
+    const library=document.getElementById('tierscope-session-tools'),expected=(enabled?400:Math.max(420,document.getElementById('tracker-container').offsetHeight))*Number(library.dataset.renderScale);
+    return Math.abs(library.getBoundingClientRect().height-Math.min(expected,innerHeight-16))<2;
+   },enabled);
+  }
+  async function assertDefaultPlot(reason){
+   await page.waitForFunction(()=>{
+    const content=document.getElementById('tools-content'),chart=document.getElementById('tools-analysis-chart'),scale=Number(document.getElementById('tierscope-session-tools').dataset.renderScale);
+    return content&&chart&&Math.abs(chart.getBoundingClientRect().top-content.getBoundingClientRect().top)<=8*scale;
+   });
+   assert(await library.evaluate(element=>{
+    const chart=element.querySelector('#tools-analysis-chart').getBoundingClientRect(),content=element.querySelector('#tools-content').getBoundingClientRect(),scale=Number(element.dataset.renderScale);
+    return chart.height>=199*scale&&chart.height>=content.height-12*scale;
+   }),reason+': the plot fills the content viewport with at least the regular chart height');
+  }
+  async function assertCompactChart(before,reason){
+   assert(await page.evaluate(()=>window.compactCanvas===document.getElementById('tools-analysis-chart')),reason+': the existing canvas is retained');
+   assert.deepEqual(await captureChart(),before,reason+': hidden lines, zoom, cursor and metric stay intact');
+   assert(await page.locator('#tools-analysis-chart').isVisible());assert(await page.locator('#tools-compact-status').isVisible());
+   for(const selector of ['#tierscope-session-tools nav','.tools-chart-legend'])
+    assert(!(await page.locator(selector).isVisible()),reason+': analysis controls are hidden');
+   assert(await page.locator('.tools-metric-strip').isVisible(),reason+': tier selection stays visible');
+   for(const selector of ['#tools-compare-saved','#tools-compare-live','#tools-compare-recent'])
+    assert(await page.locator(selector).isVisible(),reason+': comparison shortcuts remain reachable');
+   assert(await page.locator('#tools-chart-zoom-in').isVisible(),reason+': chart range controls stay visible');
+   for(const selector of ['#tools-live-window','#tools-recent-range','#tools-compare-axis','#tools-shared-length'])
+    if(await page.locator(selector).count())assert(await page.locator(selector).isVisible(),reason+': comparison range stays visible');
+   assert(await page.evaluate(()=>compactControls.every(({element,parent})=>
+    element.isConnected&&element.parentElement===parent&&(!element.id||document.getElementById(element.id)===element))),reason+': compact controls retain their original DOM nodes and parents');
+   assert(await page.locator('#tools-standard-size').isVisible());assert(await page.locator('#tools-opacity-slider').isVisible());
+   assert(await library.evaluate(element=>{
+    const panel=element.getBoundingClientRect(),chart=element.querySelector('#tools-analysis-chart').getBoundingClientRect(),scale=Number(element.dataset.renderScale);
+    return element.scrollWidth<=element.clientWidth+1&&chart.width>150&&chart.height>=199*scale&&chart.left>=panel.left-1&&chart.right<=panel.right+1;
+   }),reason+': the regular-height chart fits horizontally inside the scrollable compact Library');
+  }
+  await page.click('#tools-compare-saved');await picker();await page.click('#tools-analysis-clear');
+  await page.fill('#tools-analysis-search','Bulk session');await page.click('#tools-compare-all-matching');
+  await page.locator('#tools-recording-picker').evaluate(element=>element.open=false);await page.click('#tools-metric-total');
+  const savedCompact=await chooseChart('Bulk session 059');
+  await page.locator('#tools-resize-handle').focus();await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowLeft');await resized(1.1);
+  await opacity(75);await page.waitForFunction(()=>document.getElementById('tools-opacity-slider').value==='75');
+  await toggleCompact(true);await resized(1);
+  await assertDefaultPlot('Saved comparison minimizes');
+  assert.equal(await page.locator('#tools-opacity-slider').inputValue(),'95','compact appearance starts independently of the full Library');
+  await assertCompactChart(savedCompact,'Saved comparison minimizes');
+  await page.click('#tools-metric-withTokens');
+  assert.equal(await page.locator('#tools-metric-withTokens').getAttribute('aria-checked'),'true');
+  assert.match(await page.locator('#tools-compact-subtitle').textContent(),/Viewers with tokens/);
+  assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/Viewers with tokens/);
+  await page.click('#tools-metric-total');await assertCompactChart(savedCompact,'Saved compact metric round trip');
+  const sharedLength=await page.locator('#tools-shared-length').isChecked();
+  await page.locator('#tools-shared-length').setChecked(!sharedLength);
+  assert.equal(await page.locator('#tools-shared-length').isChecked(),!sharedLength);
+  await page.locator('#tools-shared-length').setChecked(sharedLength);
+  await assertCompactChart(savedCompact,'Saved compact shared length round trip');
+  await opacity(40);await page.locator('#tools-resize-handle').focus();await page.keyboard.press('ArrowLeft');await resized(1.05);
+  await page.click('#tools-standard-size');await resized(1);
+  assert.equal(await page.locator('#tools-opacity-slider').inputValue(),'40','100% resets scale without changing compact opacity');
+  await page.locator('#tools-resize-handle').focus();await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowLeft');await resized(1.1);
+  await assertCompactChart(savedCompact,'Compact resizing');
+  await page.screenshot({path:'/tmp/tierscope-chart-only-saved-'+engine+'.png'});
+  await toggleCompact(false);await resized(1.1);
+  assert.equal(await page.locator('#tools-opacity-slider').inputValue(),'75');assert.deepEqual(await captureChart(),savedCompact);
+  assert(await page.evaluate(()=>window.compactCanvas===document.getElementById('tools-analysis-chart')),'expanding keeps the same Saved chart');
+  assert(await page.locator('.tools-chart-legend').isVisible());assert.equal(await page.locator('#tools-compare-saved').getAttribute('aria-pressed'),'true');
+  const appearanceAfterSaved=await appearance();
+  assert.equal(appearanceAfterSaved.scale,1.1);assert.equal(appearanceAfterSaved.opacity,75);
+  assert.equal(appearanceAfterSaved.compactScale,1.1);assert.equal(appearanceAfterSaved.compactOpacity,40);
+  await toggleCompact(true);await page.selectOption('#tools-compare-axis','clock');
+  assert.equal(await library.getAttribute('data-chart-only'),'true');assert(await page.locator('#tools-shared-length').isDisabled());
+  assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/local time of day/);
+  await page.selectOption('#tools-compare-axis','elapsed');assert(await page.locator('#tools-shared-length').isEnabled());
+  assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/real elapsed time/);
+  await toggleCompact(false);assert.equal(await page.locator('#tools-compare-axis').inputValue(),'elapsed');
+  const savedBeforeModeSwitch=await captureChart();await toggleCompact(true);await assertDefaultPlot('Saved comparison opens again');
+  for(const mode of ['live','recent','saved']){
+   await page.click('#tools-compare-'+mode);
+   await page.waitForFunction(mode=>document.getElementById('tierscope-session-tools').dataset.chartOnly==='true'&&
+    document.getElementById('tools-compare-'+mode)?.getAttribute('aria-pressed')==='true',mode);
+   await assertDefaultPlot('Compact '+mode+' shortcut');
+  }
+  assert.deepEqual(await captureChart(),savedBeforeModeSwitch,'compact mode shortcuts restore the saved comparison choices');
+  await page.locator('#tools-content').evaluate(async element=>{element.scrollTop=0;await new Promise(requestAnimationFrame);});
+  await page.click('#tools-compare-saved');await assertDefaultPlot('The current Saved shortcut returns to its plot');
+  assert.deepEqual(await captureChart(),savedBeforeModeSwitch,'reselecting the current compact mode preserves its comparison choices');
+  await toggleCompact(false);
+
+  await page.click('#tools-compare-recent');await page.click('#tools-recent-metric-total');
+  let recentCompact=await chooseChart('cross_day_model');await page.click('#tools-recent-freeze');
+  await toggleCompact(true);await assertCompactChart(recentCompact,'Recent comparison minimizes');
+  assert.match(await page.locator('#tools-compact-status').textContent(),/frozen/i,'the minimized strip makes frozen charts recognizable');
+  assert.equal(await page.locator('#tools-compact-status').getAttribute('title'),await page.locator('#tools-compact-status').textContent(),'the status tooltip preserves its full explanation');
+  assert.match(await page.locator('#tools-chart-only').getAttribute('aria-label'),/expand/i);
+  await page.click('#tools-recent-metric-withTokens');
+  assert.match(await page.locator('#tools-compact-subtitle').textContent(),/Viewers with tokens/);
+  await page.click('#tools-recent-metric-total');await assertCompactChart(recentCompact,'Recent compact metric round trip');
+  await page.selectOption('#tools-recent-range','14400000');
+  assert.equal(await library.getAttribute('data-chart-only'),'true');assert.equal(await page.locator('#tools-recent-range').inputValue(),'14400000');
+  assert.match(await page.locator('#tools-compact-status').textContent(),/frozen/i);
+  assert(!(await page.locator('.tools-chart-legend input').isChecked()),'narrowing a frozen Recent range retains the hidden session');
+  assert.doesNotMatch(await page.locator('#tools-chart-inspection caption').textContent(),/pinned/,'an intentional preset resets inspection and zoom');
+  await page.selectOption('#tools-recent-range','86400000');
+  assert(!(await page.locator('.tools-chart-legend input').isChecked()));
+  await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('End');
+  recentCompact=await captureChart();await page.evaluate(()=>{window.compactCanvas=document.getElementById('tools-analysis-chart');});
+  await page.evaluate(()=>{window.testNow+=30000;ViewerTracker.__expanded.addCompactRecent();ViewerTracker.__expanded.refreshTools();});
+  await assertCompactChart(recentCompact,'Frozen Recent chart ignores incoming saved data');
+  await toggleCompact(false);assert.deepEqual(await captureChart(),recentCompact);
+  assert.equal(await page.locator('#tools-recent-freeze').getAttribute('aria-pressed'),'true');
+  await page.click('#tools-recent-freeze');
+  await page.fill('#tools-chart-line-search','compact_model');assert.equal(await page.locator('.tools-chart-legend label').count(),1,'expanding and resuming catches the saved session added while compact');
+  await page.fill('#tools-chart-line-search','cross_day_model');
+  await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('End');await page.click('#tools-chart-zoom-in');
+  const topologyBefore=await captureChart();await page.evaluate(()=>{window.compactCanvas=document.getElementById('tools-analysis-chart');});
+  await toggleCompact(true);await assertDefaultPlot('Recent comparison opens');
+  const topologyScroll=await page.locator('#tools-content').evaluate(async element=>{element.scrollTop=35;await new Promise(requestAnimationFrame);return element.scrollTop;});
+  await page.evaluate(()=>{window.testNow+=30000;ViewerTracker.__expanded.addCompactRecent('_next');ViewerTracker.__expanded.refreshTools();});
+  await page.waitForFunction(()=>{
+   const canvas=document.getElementById('tools-analysis-chart');return canvas!==window.compactCanvas&&canvas?.hasAttribute('data-compact-path');
+  });
+  assert.equal(await library.getAttribute('data-chart-only'),'true','a new eligible saved session preserves compact presentation during chart rebuild');
+  assert(await page.locator('#tools-analysis-chart').isVisible());assert(!(await page.locator('.tools-chart-legend').isVisible()));
+  const topologyAfter=await captureChart();
+  assert.equal(topologyAfter.range,topologyBefore.range);assert.equal(topologyAfter.cursor,topologyBefore.cursor);
+  assert.equal(topologyAfter.metric,topologyBefore.metric);assert.equal(topologyAfter.legend[0][1],false,'the existing model remains hidden after its chart index changes');
+  assert(Math.abs(await page.locator('#tools-content').evaluate(element=>element.scrollTop)-topologyScroll)<1,'same-mode chart replacement preserves the user scroll position');
+  await page.screenshot({path:'/tmp/tierscope-chart-only-recent-'+engine+'.png'});
+  await toggleCompact(false);
+
+  await page.click('#tools-compare-live');await page.click('#tools-live-metric-total');
+  const liveCompact=await chooseChart('live_model_39');
+  const liveCountBefore=await lastLiveCount();await page.click('#tools-live-freeze');
+  await toggleCompact(true);await assertDefaultPlot('Live comparison minimizes');await assertCompactChart(liveCompact,'Live comparison minimizes');
+  await page.locator('#tools-content').evaluate(async element=>{element.scrollTop=0;await new Promise(requestAnimationFrame);});
+  assert.match(await page.locator('#tools-compact-status').textContent(),/frozen/i);
+  for(const status of ['stopped','paused','offline','tracking']){
+   await page.evaluate(status=>{
+    const key='tierscope:live:v1:source:publisher-00',meta=GM_getValue(key);
+    GM_setValue(key,{...meta,status,lastSeenAt:Date.now()});
+    GM_setValue('tierscope:live:v1:changed',{version:1,at:Date.now(),token:'compact-status-'+status});
+    ViewerTracker.__expanded.refreshTools();
+   },status);
+   const strip=page.locator('#tools-compact-status');
+   if(status==='tracking')assert(!/stopped|offline/.test(await strip.textContent()),'the compact source warning clears when tracking recovers');
+   else assert.match(await strip.textContent(),new RegExp('\\b\\d+ '+status+'\\b'),'compact view reports '+status+' sources');
+   assert.match(await strip.textContent(),/frozen/i);assert.equal(await strip.getAttribute('title'),await strip.textContent());
+   assert.equal(await strip.getAttribute('data-warning'),String(['stopped','offline'].includes(status)));
+   await assertCompactChart(liveCompact,'Compact source status '+status);
+   assert.equal(await page.locator('#tools-content').evaluate(element=>element.scrollTop),0,'source metadata updates preserve the user scroll at the controls');
+  }
+  for(const viewport of [{width:380,height:850},{width:1250,height:1050}]){
+   await page.setViewportSize(viewport);
+   const scroll=await page.locator('#tools-content').evaluate(async element=>{
+    await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);return element.scrollTop;
+   });
+   assert.equal(scroll,0,'resizing preserves the user scroll at the compact controls');
+  }
+  await page.evaluate(()=>{window.testNow+=30000;ViewerTracker.__expanded.updateLive(39,360);ViewerTracker.__expanded.refreshTools();});
+  assert.equal(await lastLiveCount(),liveCountBefore);await assertCompactChart(liveCompact,'Frozen Live comparison retains its values');
+  await toggleCompact(false);assert.deepEqual(await captureChart(),liveCompact);
+  await page.click('#tools-live-freeze');assert.equal(await lastLiveCount(),'360');
+  await toggleCompact(true);
+  const liveScroll=await page.locator('#tools-content').evaluate(async element=>{element.scrollTop=23;await new Promise(requestAnimationFrame);return element.scrollTop;});
+  await page.evaluate(()=>{window.testNow+=30000;ViewerTracker.__expanded.updateLive(39,390);ViewerTracker.__expanded.refreshTools();});
+  await page.waitForFunction(()=>document.querySelector('#tools-live-samples [data-live-report="live_model_39"] td')?.textContent==='390');
+  assert.equal(await library.getAttribute('data-chart-only'),'true','ongoing scans update the compact chart without expanding it');
+  assert(!(await page.locator('.tools-chart-legend input').isChecked()),'ongoing compact updates preserve the hidden Live model');
+  assert(Math.abs(await page.locator('#tools-content').evaluate(element=>element.scrollTop)-liveScroll)<1,'ordinary new samples preserve the user scroll position');
+  const liveSelected=await page.locator('[data-live-source]:checked').count();
+  await page.click('#tools-live-metric-withTokens');
+  assert.match(await page.locator('#tools-compact-subtitle').textContent(),/Viewers with tokens/);
+  assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/Viewers with tokens/);
+  await page.selectOption('#tools-live-window','14400000');
+  assert.equal(await library.getAttribute('data-chart-only'),'true');assert.equal(await page.locator('#tools-live-window').inputValue(),'14400000');
+  assert.equal(await page.locator('[data-live-source]:checked').count(),liveSelected,'compact Live window changes retain the chosen models');
+  await page.selectOption('#tools-live-window','3600000');await page.click('#tools-live-metric-total');
+  assert.equal(await page.locator('#tools-live-window').inputValue(),'3600000');
+  await page.screenshot({path:'/tmp/tierscope-chart-only-live-'+engine+'.png'});
+  await page.setViewportSize({width:380,height:850});
+  await page.waitForFunction(()=>document.getElementById('tierscope-session-tools').dataset.layout==='sheet');
+  assert(await library.evaluate(element=>{
+   const rect=element.getBoundingClientRect();return rect.left>=0&&rect.right<=innerWidth&&rect.top>=0&&rect.bottom<=innerHeight&&element.scrollWidth<=element.clientWidth+1;
+  }),'compact Library fits narrow windows');
+  await page.locator('#tracker-container').evaluate(element=>{element.style.left='90px';element.style.top='80px';element.style.right='auto';});
+  await page.waitForFunction(()=>Math.abs(document.getElementById('tierscope-session-tools').getBoundingClientRect().top-80)<1);
+  assert(await page.locator('#tracker-container').evaluate(panel=>{
+   const p=panel.getBoundingClientRect(),l=document.getElementById('tierscope-session-tools').getBoundingClientRect(),left=Math.max(p.left,l.left,0),right=Math.min(p.right,l.right,innerWidth),top=Math.max(p.top,l.top,0),bottom=Math.min(p.bottom,l.bottom,innerHeight);
+   return right>left&&bottom>top&&panel.contains(document.elementFromPoint((left+right)/2,(top+bottom)/2));
+  }),'Scope receives input above its overlapping compact Library');
+  await page.setViewportSize({width:320,height:240});
+  await page.locator('#tracker-container').evaluate(element=>{element.style.left='330px';});
+  const shortLayout=await library.evaluate(async element=>{
+   const heights=[];for(let i=0;i<8;i++){await new Promise(requestAnimationFrame);heights.push(element.getBoundingClientRect().height);}
+   const content=element.querySelector('#tools-content'),footer=element.querySelector('.tools-appearance').getBoundingClientRect(),rect=element.getBoundingClientRect();
+   return {heights,scrollHeight:content.scrollHeight,clientHeight:content.clientHeight,overflow:getComputedStyle(content).overflowY,
+    footerTop:footer.top,footerBottom:footer.bottom,left:rect.left,right:rect.right,bottom:rect.bottom,horizontal:element.scrollWidth-element.clientWidth};
+  });
+  assert(Math.max(...shortLayout.heights)-Math.min(...shortLayout.heights)<1,'short-window chart height settles without a resize loop');
+  assert(shortLayout.left>=0&&shortLayout.right<=320&&shortLayout.bottom<=240&&shortLayout.horizontal<=1);
+  assert(shortLayout.footerTop>=0&&shortLayout.footerBottom<=240,'the transparency footer stays within a short viewport');
+  assert(shortLayout.scrollHeight>shortLayout.clientHeight&&['auto','scroll'].includes(shortLayout.overflow),'short compact views scroll the chart controls vertically');
+  assert(await page.locator('#tools-analysis-chart').evaluate(element=>element.getBoundingClientRect().height/Number(document.getElementById('tierscope-session-tools').dataset.renderScale)>=199),'short views retain at least 200 logical pixels for the chart');
+  for(const selector of ['#tools-compare-saved','#tools-compare-live','#tools-compare-recent','.tools-metric-strip','#tools-live-window','#tools-chart-zoom-in','#tools-analysis-chart']){
+   const control=page.locator(selector);await control.evaluate(element=>element.scrollIntoView({block:'center',inline:'nearest'}));
+   assert(await control.evaluate(element=>{
+    const rect=element.getBoundingClientRect(),view=document.getElementById('tools-content').getBoundingClientRect();
+    return rect.bottom>view.top&&rect.top<view.bottom&&rect.left>=view.left-1&&rect.right<=view.right+1;
+   }),selector+' remains reachable by scrolling in a short compact view');
+  }
+  await page.screenshot({path:'/tmp/tierscope-chart-only-short-'+engine+'.png'});
+  await page.setViewportSize({width:1250,height:1050});await toggleCompact(false);
+  await toggleCompact(true);
+  await page.locator('#tools-live-clear').evaluate(element=>element.click());
+  await page.waitForFunction(()=>document.getElementById('tierscope-session-tools').dataset.chartOnly==='false');
+  assert.equal(await page.locator('#tools-analysis-chart').count(),0);assert(await page.locator('#tools-chart-only').isDisabled());
+  assert(await page.locator('#tierscope-session-tools nav').isVisible(),'an empty comparison restores its navigation');
+  await page.locator('#tools-live-chooser').evaluate(element=>element.open=true);await page.click('#tools-live-select-all');
+  assert(await page.locator('#tools-chart-only').isEnabled());
+  await page.click('[data-tools-tab=library]');assert(await page.locator('#tools-chart-only').isDisabled());
+  await page.click('[data-tools-tab=summary]');assert(await page.locator('#tools-chart-only').isDisabled(),'chart-only is reserved for comparison charts');
+  await page.click('[data-tools-tab=compare]');await toggleCompact(true);
+  await page.click('#tools-close');await page.click('#btn-control-library');
+  assert.equal(await library.getAttribute('data-chart-only'),'false','reopening begins with the full Library');
+  assert.equal(await page.locator('#tools-opacity-slider').inputValue(),'75');await resized(1.1);
+  await page.click('#tools-compare-live');await toggleCompact(true);await resized(1.1);
+  assert.equal(await page.locator('#tools-opacity-slider').inputValue(),'40','compact preferences survive closing and reopening');
+  await toggleCompact(false);
+  const compactSavedAfter=await page.evaluate(()=>ViewerTracker.__expanded.saved());
+  for(const [key,value]of Object.entries(styleSavedBefore))assert.equal(compactSavedAfter[key],value,'chart-only actions never rewrite '+key);
+  assert.equal(Object.keys(compactSavedAfter).length,Object.keys(styleSavedBefore).length+2,'only the explicit incoming fixtures add recordings');
+  assert.deepEqual(await page.evaluate(()=>ViewerTracker.__expanded.state()),liveBefore);assert.equal(requests,0,'chart-only views add no API traffic');
   await page.evaluate(()=>ViewerTracker.__expanded.stopSources());
-  assert.deepEqual(errors,[]);console.log(engine+': 60 mixed saved sessions, 40 live models, bounded controls with all lines selectable, frozen tail updates, and globally unfiltered rolling Last24h shortcuts passed');
+  assert.deepEqual(errors,[]);console.log(engine+': expanded Saved/Live/Recent comparisons and chart-only views preserve selections, Frozen state, live updates, independent appearance and narrow-window stacking without API scans');
   await context.close();
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

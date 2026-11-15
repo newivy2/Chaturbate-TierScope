@@ -66,10 +66,71 @@ async function download(page,action){const [d]=await Promise.all([page.waitForEv
  const left=await panel.boundingBox(),geometry=await page.evaluate(()=>GM_getValue('tierscope:ui:geometry:v1',null));
  await page.click('#btn-control-library');await page.waitForTimeout(100);assert((await panel.boundingBox()).x>left.x);
  await page.click('#tools-close');assert.deepEqual(await panel.boundingBox(),left);assert.equal(await page.evaluate(()=>GM_getValue('tierscope:ui:geometry:v1',null)),geometry);
- // The left page follows scale, drag and the viewport, while explicit user moves persist.
+ // The left page scales independently and follows drag and the viewport, while explicit user moves persist.
  await page.click('#btn-control-library');await page.evaluate(()=>ViewerTracker.__book.scale(1.2));await page.waitForTimeout(150);
- assert.equal(Math.round((await library.boundingBox()).width),444);
- const header=await page.locator('#drag-handle').boundingBox();await page.mouse.move(header.x+40,header.y+12);await page.mouse.down();await page.mouse.move(header.x+100,header.y+42,{steps:5});await page.mouse.up();await page.waitForTimeout(100);
+ assert.equal(Math.round((await library.boundingBox()).width),370);
+ // Leave room for a physical leftward drag from Library's upper-left corner.
+ await panel.evaluate(e=>{e.style.left='600px';e.style.right='auto';});await page.waitForTimeout(100);
+ const scopeSize=await panel.boundingBox(),titleHeight=(await page.locator('#tools-title').boundingBox()).height;
+ const grip=await page.locator('#tools-resize-handle').boundingBox();
+ const libraryCorner=await library.boundingBox();
+ assert(Math.abs(grip.x-libraryCorner.x)<2&&Math.abs(grip.y-libraryCorner.y)<2,'resize grip sits in Library’s upper-left corner');
+ assert((await page.locator('#tools-title').boundingBox()).x>grip.x+grip.width,'Library title clears the resize grip');
+ await page.mouse.move(grip.x+3,grip.y+3);await page.mouse.down();await page.mouse.move(grip.x-71,grip.y+3,{steps:6});await page.mouse.up();
+ await page.waitForFunction(()=>Math.abs(Number(document.getElementById('tierscope-session-tools').dataset.scale)-1.2)<.01);
+ await page.waitForTimeout(100);
+ assert(Math.abs((await library.boundingBox()).width-444)<1,'Library grip scales the entire panel');
+ assert(Math.abs((await page.locator('#tools-title').boundingBox()).height/titleHeight-1.2)<.02,'text scales with the panel');
+ assert.equal((await panel.boundingBox()).width,scopeSize.width);assert.equal((await panel.boundingBox()).height,scopeSize.height);
+ await page.click('#tools-close');await page.click('#btn-control-library');await page.waitForTimeout(100);
+ assert(Math.abs((await library.boundingBox()).width-444)<1,'Library remembers its own scale');
+ const setOpacity=async(id,n)=>page.locator('#'+id).evaluate((e,n)=>{e.value=n;e.dispatchEvent(new Event('input'));},n);
+ await setOpacity('opacity-slider',30);await setOpacity('tools-opacity-slider',45);await page.waitForTimeout(100);
+ assert.equal(await panel.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(20, 20, 30, 0.3)');
+ assert.equal(await library.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(20, 20, 30, 0.45)');
+ await setOpacity('opacity-slider',100);await page.waitForTimeout(100);
+ assert.equal(await library.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(20, 20, 30, 0.45)','Scope opacity does not change Library');
+ await page.click('#tools-close');await page.click('#btn-control-library');await page.waitForTimeout(100);
+ assert.equal(await page.locator('#tools-opacity-slider').inputValue(),'45');
+ await page.uncheck('#dark-mode-toggle');await page.waitForFunction(()=>getComputedStyle(document.getElementById('tierscope-session-tools')).backgroundColor==='rgba(248, 249, 252, 0.45)');
+ await page.check('#dark-mode-toggle');
+ await page.evaluate(()=>{window.realAppearanceSet=GM_setValue;GM_setValue=(key,value)=>{if(key==='tierscope:library-appearance:v1')throw Error('quota');return realAppearanceSet(key,value);};});
+ await page.locator('#tools-resize-handle').focus();await page.keyboard.press('ArrowLeft');
+ assert.match(await page.locator('#tools-appearance-status').textContent(),/saving failed/);
+ await page.evaluate(()=>{GM_setValue=realAppearanceSet;});await page.keyboard.press('Home');
+ assert.equal(await page.locator('#tools-appearance-status').textContent(),'');
+ await page.waitForTimeout(100);assert.equal(Math.round((await library.boundingBox()).width),370);
+ await setOpacity('tools-opacity-slider',95);await setOpacity('opacity-slider',95);
+ await page.locator('#tools-resize-handle').focus();
+ for(let i=0;i<30;i++)await page.keyboard.press('ArrowLeft');
+ await page.waitForFunction(()=>Math.abs(Number(document.getElementById('tierscope-session-tools').dataset.scale)-2.5)<.001);
+ const preferred=await library.getAttribute('data-scale');assert(Number(preferred)>2.4);
+ await page.setViewportSize({width:380,height:740});await page.waitForTimeout(150);
+ const fitted=await library.boundingBox();assert(fitted.width<=364.5&&fitted.height<=724.5);
+ assert.equal(await library.getAttribute('data-scale'),preferred,'narrow windows preserve the preferred scale');
+ assert(await library.evaluate(e=>e.scrollWidth<=e.clientWidth+1),'scaled narrow Library fits without horizontal overflow');
+ await page.setViewportSize({width:1100,height:850});await page.waitForTimeout(150);
+ assert.equal(await library.getAttribute('data-scale'),preferred);
+ assert(Math.abs(Number(await library.getAttribute('data-render-scale'))-Number(preferred))<.001,'preferred scale returns in a wide window');
+ await page.screenshot({path:'/tmp/library-independent-size-'+engine+'.png'});
+ await page.setViewportSize({width:2200,height:1100});await page.waitForTimeout(120);
+ await page.click('[data-tools-tab=summary]');
+ const chart=page.locator('#tools-analysis-chart');
+ assert(await chart.evaluate(e=>e.width>=e.clientWidth*2.4),'scaled Library charts use a sharp backing bitmap');
+ await chart.focus();await page.keyboard.press('End');await page.click('#tools-chart-zoom-in');
+ const chartRange=await page.locator('#tools-chart-range').textContent(),chartPin=await page.locator('#tools-chart-inspection caption').textContent();
+ await page.evaluate(()=>ViewerTracker.__book.scale(1.1));await page.waitForTimeout(100);
+ assert.equal(await page.locator('#tools-chart-range').textContent(),chartRange);
+ assert.equal(await page.locator('#tools-chart-inspection caption').textContent(),chartPin);
+ await page.evaluate(()=>ViewerTracker.__book.scale(1.2));
+ await page.screenshot({path:'/tmp/library-independent-chart-'+engine+'.png'});
+ await page.click('[data-tools-tab=library]');
+
+ await page.locator('#tools-standard-size').evaluate(e=>e.click());await page.setViewportSize({width:1100,height:850});await page.waitForTimeout(150);
+
+ assert.deepEqual((await page.evaluate(()=>ViewerTracker.__book.state())).history,live.history);
+
+ const header=await page.locator('#drag-handle').boundingBox();await page.mouse.move(header.x+40,header.y+12);await page.mouse.down();await page.mouse.move(header.x-20,header.y+42,{steps:5});await page.mouse.up();await page.waitForTimeout(100);
  const moved=await panel.boundingBox(),movedDock=await library.boundingBox();assert(Math.abs(movedDock.x+movedDock.width-moved.x-1)<1);
  await page.click('#tools-close');assert.deepEqual(await panel.boundingBox(),moved,'closing keeps deliberate moves');
  await page.click('#btn-control-library');await page.setViewportSize({width:380,height:740});await page.waitForTimeout(200);

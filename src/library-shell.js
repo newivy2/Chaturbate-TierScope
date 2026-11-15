@@ -17,7 +17,29 @@ export function libraryShell() {
 #tierscope-session-tools .tools-follow{padding:5px 0;border-bottom:1px solid var(--panel-divider)}
 #tierscope-session-tools .tools-follow>label{color:var(--panel-accent);font-weight:bold}
 #tierscope-session-tools .tools-danger{color:var(--panel-negative)}
-#tierscope-session-tools .tools-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid #ff69b4;background:rgba(255,105,180,.06);flex-shrink:0}
+#tierscope-session-tools .tools-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px 9px 20px;border-bottom:1px solid #ff69b4;background:rgba(255,105,180,.06);flex-shrink:0}
+#tierscope-session-tools .tools-head-actions{display:flex;gap:5px;align-items:center}
+#tierscope-session-tools .tools-head-labels{min-width:0;flex:1}
+#tierscope-session-tools .tools-subtitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tierscope-session-tools #tools-compact-label,#tierscope-session-tools #tools-compact-status{display:none}
+#tierscope-session-tools #tools-chart-only{font-size:.9em}
+#tierscope-session-tools[data-chart-only=true] .tools-head-labels>h2,#tierscope-session-tools[data-chart-only=true] .tools-head-labels>.tools-subtitle,#tierscope-session-tools[data-chart-only=true]>nav,#tierscope-session-tools[data-chart-only=true]>#tools-review-notes,#tierscope-session-tools[data-chart-only=true]>#gif-export-controls{display:none!important}
+#tierscope-session-tools[data-chart-only=true] #tools-compact-label{display:block}
+#tierscope-session-tools[data-chart-only=true] #tools-compact-status{display:block;font-size:.85em;color:var(--panel-muted);padding:4px 9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex-shrink:0}
+#tierscope-session-tools[data-chart-only=true] #tools-compact-status[data-warning=true]{color:var(--panel-warning)}
+#tierscope-session-tools[data-chart-only=true] #tools-content{display:flex;flex-direction:column;padding:5px;overflow:auto;overflow-anchor:none}
+#tierscope-session-tools[data-chart-only=true] #tools-content>:not([data-compact-path]):not([data-compact-control]):not([data-compact-control-path]),#tierscope-session-tools[data-chart-only=true] #tools-content :is([data-compact-path],[data-compact-control-path])>:not([data-compact-path]):not([data-compact-control]):not([data-compact-control-path]){display:none!important}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-path]:not(canvas){display:flex;flex-direction:column;flex:1 0 auto;width:100%;min-width:0;min-height:0;margin:0;padding:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-control-path]:not([data-compact-path]){flex:0 0 auto;min-width:0;margin:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-control]{flex:0 0 auto;max-width:100%;min-width:0;margin:3px 0}
+#tierscope-session-tools[data-chart-only=true] #tools-content canvas[data-compact-path]{flex:0 0 var(--compact-chart-height,200px);width:100%;height:var(--compact-chart-height,200px);min-height:200px;margin:0;padding:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content #tools-chart-view>.tools-chart-inspection-scroll{display:block!important;position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
+#tierscope-session-tools #tools-resize-handle{position:absolute;left:0;top:0;width:16px;height:16px;padding:0;border:0;border-radius:6px 0 0;background:linear-gradient(135deg,#ff69b4 50%,transparent 50%);cursor:ew-resize;touch-action:none;z-index:2}
+#tierscope-session-tools .tools-appearance{flex-shrink:0;border-top:1px solid var(--panel-divider);padding:7px 12px}
+#tierscope-session-tools .tools-opacity-controls{display:grid;grid-template-columns:auto minmax(0,1fr) 4ch;gap:7px;align-items:center;width:100%;font-size:.9em}
+#tierscope-session-tools #tools-opacity-slider{width:100%;min-width:0;margin:0;padding:0;height:12px;accent-color:#ff69b4;cursor:pointer}
+#tierscope-session-tools #tools-opacity-value{text-align:right;font-variant-numeric:tabular-nums}
+#tierscope-session-tools #tools-appearance-status:not(:empty){font-size:.85em;color:var(--panel-warning);margin-top:4px}
 #tierscope-session-tools h2{font-size:1.15em;letter-spacing:.04em;margin:0;color:var(--panel-accent)}
 #tierscope-session-tools .tools-subtitle{font-size:.9em;color:var(--panel-muted)}
 #tierscope-session-tools nav{display:flex;gap:3px;padding:8px 10px 0;flex-shrink:0}
@@ -138,10 +160,13 @@ export function libraryShell() {
 #tools-review-notes[hidden]{display:none}
 #gif-export-controls{padding:8px 12px;gap:6px;align-items:center;flex-shrink:0;border-bottom:1px solid var(--panel-divider)}
 </style>
-<div class="tools-head"><div><h2 id="tools-title">Library</h2><div class="tools-subtitle">Session Storage and Analysis</div></div><button id="tools-close" type="button" aria-label="Close library" title="Close library (Escape)">×</button></div>
+<button id="tools-resize-handle" type="button" aria-label="Resize Library" title="Drag left to enlarge Library, right to shrink. Arrow keys adjust; Home restores 100%."></button>
+<div class="tools-head"><div class="tools-head-labels"><h2 id="tools-title">Library</h2><div class="tools-subtitle">Session Storage and Analysis</div><div id="tools-compact-label"><h2>Comparison</h2><div id="tools-compact-subtitle" class="tools-subtitle"></div></div></div><div class="tools-head-actions"><button id="tools-chart-only" type="button" aria-pressed="false" title="Open a comparison to use chart-only view" disabled>Chart only</button><button id="tools-standard-size" type="button" aria-label="Restore Library to 100%">100%</button><button id="tools-close" type="button" aria-label="Close library" title="Close library (Escape)">×</button></div></div>
+<div id="tools-compact-status" role="status"></div>
 <nav aria-label="Session tools"><button data-tools-tab="library">Sessions</button><button data-tools-tab="summary">Summary</button><button data-tools-tab="compare">Compare</button><button data-tools-tab="backup">Backup</button></nav>
 <button id="tools-review-notes" type="button" hidden></button>
 <div id="tools-message" role="status" aria-live="polite"></div>
 <div id="gif-export-controls" style="display:none"><span id="gif-export-status" role="status"></span><button id="btn-cancel-gif" hidden type="button">Cancel</button></div>
-<div id="tools-content"></div>`;
+<div id="tools-content"></div>
+<footer class="tools-appearance"><label class="tools-opacity-controls"><span>Transparency</span><input id="tools-opacity-slider" type="range" min="30" max="100" value="95" aria-label="Library background opacity"><span id="tools-opacity-value">95%</span></label><div id="tools-appearance-status" role="status"></div></footer>`;
 }

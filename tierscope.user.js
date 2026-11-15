@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.30.0
+// @version      3.31.0
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -6322,20 +6322,38 @@ underlying system, so should run in the browser, Node, or Plask.
   }
 
   // src/library-dock.js
-  function attachLibraryDock(panel, library, onTheme) {
+  function attachLibraryDock(panel, library, onTheme, appearance2 = {}) {
     const original = { left: panel.style.left, top: panel.style.top, right: panel.style.right };
     let lastPosition = __spreadValues({}, original), movedByUser = false, borrowed = false, frame = 0, closed = false;
-    let previousTheme = "";
-    let previousBackground = "";
+    let previousTheme = "", previousLayout = "", drag = null;
+    const profiles = {
+      full: { scale: appearance2.scale || 1, opacity: appearance2.opacity || 95 },
+      compact: { scale: appearance2.compactScale || 1, opacity: appearance2.compactOpacity || 95 }
+    };
+    let compact = false, scale = profiles.full.scale, opacity = profiles.full.opacity;
+    const baseHeight = Math.max(420, panel.offsetHeight);
+    const grip = library.querySelector("#tools-resize-handle"), reset = library.querySelector("#tools-standard-size");
+    const slider = library.querySelector("#tools-opacity-slider"), value = library.querySelector("#tools-opacity-value");
+    const notice = library.querySelector("#tools-appearance-status");
     const position = () => ({ left: panel.style.left, top: panel.style.top, right: panel.style.right });
+    function persist() {
+      profiles[compact ? "compact" : "full"] = { scale, opacity };
+      try {
+        if (appearance2.save) appearance2.save(__spreadProps(__spreadValues({}, profiles.full), { compactScale: profiles.compact.scale, compactOpacity: profiles.compact.opacity }));
+        notice.textContent = "";
+      } catch (_) {
+        notice.textContent = "Appearance applies while Library is open; saving failed. Adjust again to retry.";
+      }
+    }
     function arrange() {
       frame = 0;
       if (closed || !panel.isConnected || !library.isConnected) return;
       const now = position();
       if (Object.keys(now).some((key) => now[key] !== lastPosition[key])) movedByUser = true;
       let rect = panel.getBoundingClientRect();
-      const scale = Math.max(0.9, Math.min(1.6, Number(panel.dataset.scale) || 1));
-      const width = Math.round(370 * scale), margin = 8;
+      const margin = 8, availableWidth = Math.max(1, window.innerWidth - margin * 2), availableHeight = Math.max(1, window.innerHeight - margin * 2);
+      const effective = Math.min(scale, availableWidth / 260, availableHeight / 220);
+      const width = Math.min(370 * effective, availableWidth), height = Math.min((compact ? 400 : baseHeight) * effective, availableHeight);
       const docked = window.innerWidth >= rect.width + width + margin * 2;
       if (docked) {
         const left = Math.max(width + margin - 1, Math.min(rect.left, window.innerWidth - rect.width - margin));
@@ -6347,50 +6365,309 @@ underlying system, so should run in the browser, Node, or Plask.
         }
       }
       lastPosition = position();
-      const height = Math.min(window.innerHeight - margin * 2, Math.max(420, rect.height));
       const top = Math.max(margin, Math.min(rect.top, window.innerHeight - height - margin));
       const styles = {
         left: (docked ? rect.left - width + 1 : margin) + "px",
         top: top + "px",
-        width: (docked ? width : Math.min(window.innerWidth - margin * 2, 520)) + "px",
-        height: height + "px",
-        fontSize: 11 * scale + "px"
+        width: width / effective + "px",
+        height: height / effective + "px",
+        fontSize: "11px",
+        transform: "scale(" + effective + ")",
+        transformOrigin: "top left"
       };
-      for (const [key, value] of Object.entries(styles)) if (library.style[key] !== value) library.style[key] = value;
+      for (const [key, val] of Object.entries(styles)) if (library.style[key] !== val) library.style[key] = val;
+      library.dataset.scale = String(scale);
+      library.dataset.renderScale = String(effective);
       const mode = docked ? "docked" : "sheet";
       if (panel.dataset.libraryOpen !== mode) panel.dataset.libraryOpen = mode;
       if (library.dataset.layout !== mode) library.dataset.layout = mode;
-      const background = window.getComputedStyle(panel).backgroundColor;
-      if (background !== previousBackground) {
-        previousBackground = background;
-        library.style.backgroundColor = background;
-      }
+      library.style.backgroundColor = "rgba(" + themeColor("rgb") + "," + opacity / 100 + ")";
+      slider.value = String(opacity);
+      slider.setAttribute("aria-valuetext", opacity + "% background opacity");
+      value.textContent = opacity + "%";
+      reset.textContent = Math.round(effective * 100) + "%";
+      reset.title = "Restore " + (compact ? "comparison" : "Library") + " to 100% (preferred scale " + Math.round(scale * 100) + "%)";
       const theme = panel.getAttribute("data-theme") || "dark";
       if (theme !== previousTheme) {
         previousTheme = theme;
         library.dataset.theme = theme;
         setThemeVariables(library);
-        if (onTheme) onTheme();
+      }
+      const layout = [theme, compact, effective, styles.width, styles.height].join("|");
+      if (layout !== previousLayout) {
+        previousLayout = layout;
+        if (onTheme && !drag) onTheme();
       }
     }
     function schedule() {
       if (!closed && !frame) frame = window.requestAnimationFrame(arrange);
     }
+    function stopDrag(save) {
+      if (!drag) return;
+      const id = drag.id;
+      drag = null;
+      if (grip.hasPointerCapture(id)) grip.releasePointerCapture(id);
+      if (save) {
+        persist();
+        previousLayout = "";
+        schedule();
+      }
+    }
+    grip.onpointerdown = (event) => {
+      if (event.button !== 0 || drag) return;
+      drag = { id: event.pointerId, x: event.clientX, scale };
+      grip.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    grip.onpointermove = (event) => {
+      if (!drag || drag.id !== event.pointerId) return;
+      scale = Math.max(0.5, Math.min(3, drag.scale + (drag.x - event.clientX) / 370));
+      schedule();
+    };
+    grip.onpointerup = (event) => {
+      if ((drag == null ? void 0 : drag.id) === event.pointerId) stopDrag(true);
+    };
+    grip.onpointercancel = () => stopDrag(true);
+    grip.onlostpointercapture = () => stopDrag(true);
+    grip.onkeydown = (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home"].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      scale = event.key === "Home" ? 1 : Math.max(0.5, Math.min(3, scale + (["ArrowLeft", "ArrowUp"].includes(event.key) ? 0.05 : -0.05)));
+      schedule();
+      persist();
+    };
+    reset.onclick = () => {
+      scale = 1;
+      schedule();
+      persist();
+    };
+    slider.oninput = () => {
+      opacity = Math.max(30, Math.min(100, Number(slider.value)));
+      schedule();
+      persist();
+    };
     const resize = window.ResizeObserver ? new window.ResizeObserver(schedule) : null;
     if (resize) resize.observe(panel);
     const mutation = new window.MutationObserver(schedule);
     mutation.observe(panel, { attributes: true, attributeFilter: ["style", "data-scale", "data-theme"] });
     window.addEventListener("resize", schedule);
     arrange();
-    return () => {
+    const detach = () => {
       closed = true;
+      stopDrag(false);
       if (frame) window.cancelAnimationFrame(frame);
       if (resize) resize.disconnect();
       mutation.disconnect();
       window.removeEventListener("resize", schedule);
+      grip.onpointerdown = grip.onpointermove = grip.onpointerup = grip.onpointercancel = grip.onlostpointercapture = grip.onkeydown = null;
+      reset.onclick = slider.oninput = null;
       delete panel.dataset.libraryOpen;
-      if (borrowed && !movedByUser) for (const [key, value] of Object.entries(original)) panel.style[key] = value;
+      if (borrowed && !movedByUser) for (const [key, val] of Object.entries(original)) panel.style[key] = val;
     };
+    detach.setChartOnly = (enabled) => {
+      if (closed || compact === enabled) return;
+      stopDrag(true);
+      profiles[compact ? "compact" : "full"] = { scale, opacity };
+      compact = enabled;
+      ({ scale, opacity } = profiles[compact ? "compact" : "full"]);
+      previousLayout = "";
+      schedule();
+    };
+    detach.redraw = () => {
+      previousLayout = "";
+      schedule();
+    };
+    return detach;
+  }
+
+  // src/library-appearance.js
+  var LIBRARY_APPEARANCE_KEY = "tierscope:library-appearance:v1";
+  function appearance(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value) || value.schemaVersion !== 1) return null;
+    const compactScale = Object.prototype.hasOwnProperty.call(value, "compactScale") ? value.compactScale : 1;
+    const compactOpacity = Object.prototype.hasOwnProperty.call(value, "compactOpacity") ? value.compactOpacity : 95;
+    if (![value.scale, compactScale].every((scale) => Number.isFinite(scale) && scale >= 0.5 && scale <= 3) || ![value.opacity, compactOpacity].every((opacity) => Number.isFinite(opacity) && opacity >= 30 && opacity <= 100)) return null;
+    return { scale: value.scale, opacity: value.opacity, compactScale, compactOpacity };
+  }
+  function readLibraryAppearance() {
+    try {
+      const raw = GM_getValue(LIBRARY_APPEARANCE_KEY, null), value = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const settings = appearance(value);
+      if (settings) return settings;
+    } catch (_) {
+    }
+    return { scale: 1, opacity: 95, compactScale: 1, compactOpacity: 95 };
+  }
+  function saveLibraryAppearance(value) {
+    const settings = appearance(value && typeof value === "object" && !Array.isArray(value) ? __spreadProps(__spreadValues({}, value), { schemaVersion: 1 }) : null);
+    if (!settings) throw new Error("Invalid Library appearance.");
+    const record = __spreadValues({ schemaVersion: 1 }, settings);
+    const raw = JSON.stringify(record);
+    GM_setValue(LIBRARY_APPEARANCE_KEY, raw);
+    if (GM_getValue(LIBRARY_APPEARANCE_KEY, null) !== raw) throw new Error("Library appearance could not be saved.");
+  }
+
+  // src/library-chart-only-view.js
+  function attachChartOnlyView(library, { getChart, describe, modeChanged, redraw }) {
+    const content = library.querySelector("#tools-content"), toggle = library.querySelector("#tools-chart-only");
+    const subtitle = library.querySelector("#tools-compact-subtitle"), status = library.querySelector("#tools-compact-status");
+    let compact = false, markedChart = null, path = [], controls = [], controlPath = [], previousScroll = 0, closed = false;
+    let frame = 0, aimAtChart = false, restoringScroll = false, userScroll = 0, activeMode = "";
+    function scheduleLayout() {
+      if (!closed && compact && !frame) frame = window.requestAnimationFrame(layout);
+    }
+    function layout() {
+      frame = 0;
+      if (closed || !compact || !(markedChart == null ? void 0 : markedChart.isConnected)) return;
+      const style = window.getComputedStyle(content), top = parseFloat(style.paddingTop) || 0, bottom = parseFloat(style.paddingBottom) || 0;
+      const height = Math.max(200, Math.floor(content.clientHeight - top - bottom));
+      const value = height + "px";
+      if (library.style.getPropertyValue("--compact-chart-height") !== value) library.style.setProperty("--compact-chart-height", value);
+      if (aimAtChart) {
+        const scale = Number(library.dataset.renderScale) || 1;
+        content.scrollTop += (markedChart.getBoundingClientRect().top - content.getBoundingClientRect().top) / scale - top;
+        if (content.contains(document.activeElement)) markedChart.focus({ preventScroll: true });
+      } else content.scrollTop = userScroll;
+      userScroll = content.scrollTop;
+      aimAtChart = false;
+      restoringScroll = false;
+      redraw();
+    }
+    function rememberScroll() {
+      if (compact && !restoringScroll) userScroll = content.scrollTop;
+    }
+    function resized() {
+      if (compact) {
+        restoringScroll = true;
+        scheduleLayout();
+      }
+    }
+    function chooseMode(event) {
+      if (compact && event.target.closest(".tools-comparison-mode button")) {
+        aimAtChart = true;
+        restoringScroll = true;
+        scheduleLayout();
+      }
+    }
+    function clearPath() {
+      path.forEach((node) => {
+        delete node.dataset.compactPath;
+      });
+      path = [];
+      markedChart = null;
+      controls.forEach((node) => {
+        delete node.dataset.compactControl;
+      });
+      controls = [];
+      controlPath.forEach((node) => {
+        delete node.dataset.compactControlPath;
+      });
+      controlPath = [];
+    }
+    function chartControls(chart) {
+      const nodes = [...content.querySelectorAll(".tools-comparison-mode, .tools-metric-strip, #tools-comparison-range")];
+      for (const id of ["tools-live-window", "tools-recent-range", "tools-compare-axis"]) {
+        const select = content.querySelector("#" + id);
+        if (select) nodes.push(select.closest("label") || select);
+      }
+      const zoom = chart.parentElement.querySelector(":scope > .tools-actions");
+      if (zoom) nodes.push(zoom);
+      return nodes;
+    }
+    function setMode(enabled) {
+      if (closed || compact === enabled || enabled && !getChart()) return;
+      if (enabled) previousScroll = content.scrollTop;
+      compact = enabled;
+      library.dataset.chartOnly = String(compact);
+      toggle.textContent = compact ? "Expand" : "Chart only";
+      toggle.title = compact ? "Restore the full Library" : "Keep only the current comparison chart visible";
+      toggle.setAttribute("aria-pressed", String(compact));
+      toggle.setAttribute("aria-label", compact ? "Expand Library" : "Show comparison chart only");
+      if (!compact) {
+        clearPath();
+        activeMode = "";
+        aimAtChart = false;
+        restoringScroll = false;
+        if (frame) window.cancelAnimationFrame(frame);
+        frame = 0;
+        content.scrollTop = previousScroll;
+      } else {
+        aimAtChart = true;
+        restoringScroll = true;
+        userScroll = 0;
+      }
+      modeChanged(compact);
+      sync();
+      (toggle.disabled ? library.querySelector("#tools-close") : toggle).focus({ preventScroll: true });
+    }
+    function sync() {
+      var _a;
+      if (closed) return;
+      const chart = getChart();
+      if (compact && !chart) {
+        setMode(false);
+        return;
+      }
+      toggle.disabled = !compact && !chart;
+      if (!compact) {
+        toggle.title = chart ? "Keep only the current comparison chart visible" : "Open a comparison to use chart-only view";
+        return;
+      }
+      const mode = ((_a = content.querySelector(".tools-comparison-mode [aria-pressed=true]")) == null ? void 0 : _a.id) || "";
+      if (activeMode && mode !== activeMode) aimAtChart = true;
+      activeMode = mode;
+      const nextControls = chartControls(chart);
+      if (markedChart !== chart || nextControls.length !== controls.length || nextControls.some((node, index) => node !== controls[index])) {
+        clearPath();
+        markedChart = chart;
+        for (let node = chart; node && node !== content; node = node.parentElement) {
+          node.dataset.compactPath = "";
+          path.push(node);
+        }
+        controls = nextControls;
+        controls.forEach((control) => {
+          control.dataset.compactControl = "";
+          for (let node = control.parentElement; node && node !== content; node = node.parentElement) {
+            node.dataset.compactControlPath = "";
+            controlPath.push(node);
+          }
+        });
+        restoringScroll = true;
+        scheduleLayout();
+      }
+      const info = describe();
+      if (subtitle.textContent !== info.label) subtitle.textContent = info.label;
+      subtitle.title = info.label;
+      const text = (info.warning ? "Notice: " : "") + info.status;
+      if (status.textContent !== text) status.textContent = text;
+      status.title = text;
+      status.dataset.warning = String(!!info.warning);
+    }
+    toggle.onclick = () => setMode(!compact);
+    const observer = new window.MutationObserver(sync);
+    observer.observe(content, { childList: true, subtree: true });
+    observer.observe(library.querySelector("#tools-message"), { childList: true, subtree: true });
+    const resize = window.ResizeObserver ? new window.ResizeObserver(resized) : null;
+    if (resize) resize.observe(content);
+    window.addEventListener("resize", resized);
+    content.addEventListener("scroll", rememberScroll, { passive: true });
+    content.addEventListener("click", chooseMode, true);
+    library.dataset.chartOnly = "false";
+    sync();
+    return { sync, dispose() {
+      closed = true;
+      observer.disconnect();
+      toggle.onclick = null;
+      clearPath();
+      if (frame) window.cancelAnimationFrame(frame);
+      if (resize) resize.disconnect();
+      window.removeEventListener("resize", resized);
+      content.removeEventListener("scroll", rememberScroll);
+      content.removeEventListener("click", chooseMode, true);
+      library.style.removeProperty("--compact-chart-height");
+    } };
   }
 
   // src/library-capacity-view.js
@@ -6508,7 +6785,29 @@ underlying system, so should run in the browser, Node, or Plask.
 #tierscope-session-tools .tools-follow{padding:5px 0;border-bottom:1px solid var(--panel-divider)}
 #tierscope-session-tools .tools-follow>label{color:var(--panel-accent);font-weight:bold}
 #tierscope-session-tools .tools-danger{color:var(--panel-negative)}
-#tierscope-session-tools .tools-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid #ff69b4;background:rgba(255,105,180,.06);flex-shrink:0}
+#tierscope-session-tools .tools-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px 9px 20px;border-bottom:1px solid #ff69b4;background:rgba(255,105,180,.06);flex-shrink:0}
+#tierscope-session-tools .tools-head-actions{display:flex;gap:5px;align-items:center}
+#tierscope-session-tools .tools-head-labels{min-width:0;flex:1}
+#tierscope-session-tools .tools-subtitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tierscope-session-tools #tools-compact-label,#tierscope-session-tools #tools-compact-status{display:none}
+#tierscope-session-tools #tools-chart-only{font-size:.9em}
+#tierscope-session-tools[data-chart-only=true] .tools-head-labels>h2,#tierscope-session-tools[data-chart-only=true] .tools-head-labels>.tools-subtitle,#tierscope-session-tools[data-chart-only=true]>nav,#tierscope-session-tools[data-chart-only=true]>#tools-review-notes,#tierscope-session-tools[data-chart-only=true]>#gif-export-controls{display:none!important}
+#tierscope-session-tools[data-chart-only=true] #tools-compact-label{display:block}
+#tierscope-session-tools[data-chart-only=true] #tools-compact-status{display:block;font-size:.85em;color:var(--panel-muted);padding:4px 9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex-shrink:0}
+#tierscope-session-tools[data-chart-only=true] #tools-compact-status[data-warning=true]{color:var(--panel-warning)}
+#tierscope-session-tools[data-chart-only=true] #tools-content{display:flex;flex-direction:column;padding:5px;overflow:auto;overflow-anchor:none}
+#tierscope-session-tools[data-chart-only=true] #tools-content>:not([data-compact-path]):not([data-compact-control]):not([data-compact-control-path]),#tierscope-session-tools[data-chart-only=true] #tools-content :is([data-compact-path],[data-compact-control-path])>:not([data-compact-path]):not([data-compact-control]):not([data-compact-control-path]){display:none!important}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-path]:not(canvas){display:flex;flex-direction:column;flex:1 0 auto;width:100%;min-width:0;min-height:0;margin:0;padding:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-control-path]:not([data-compact-path]){flex:0 0 auto;min-width:0;margin:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-control]{flex:0 0 auto;max-width:100%;min-width:0;margin:3px 0}
+#tierscope-session-tools[data-chart-only=true] #tools-content canvas[data-compact-path]{flex:0 0 var(--compact-chart-height,200px);width:100%;height:var(--compact-chart-height,200px);min-height:200px;margin:0;padding:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content #tools-chart-view>.tools-chart-inspection-scroll{display:block!important;position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
+#tierscope-session-tools #tools-resize-handle{position:absolute;left:0;top:0;width:16px;height:16px;padding:0;border:0;border-radius:6px 0 0;background:linear-gradient(135deg,#ff69b4 50%,transparent 50%);cursor:ew-resize;touch-action:none;z-index:2}
+#tierscope-session-tools .tools-appearance{flex-shrink:0;border-top:1px solid var(--panel-divider);padding:7px 12px}
+#tierscope-session-tools .tools-opacity-controls{display:grid;grid-template-columns:auto minmax(0,1fr) 4ch;gap:7px;align-items:center;width:100%;font-size:.9em}
+#tierscope-session-tools #tools-opacity-slider{width:100%;min-width:0;margin:0;padding:0;height:12px;accent-color:#ff69b4;cursor:pointer}
+#tierscope-session-tools #tools-opacity-value{text-align:right;font-variant-numeric:tabular-nums}
+#tierscope-session-tools #tools-appearance-status:not(:empty){font-size:.85em;color:var(--panel-warning);margin-top:4px}
 #tierscope-session-tools h2{font-size:1.15em;letter-spacing:.04em;margin:0;color:var(--panel-accent)}
 #tierscope-session-tools .tools-subtitle{font-size:.9em;color:var(--panel-muted)}
 #tierscope-session-tools nav{display:flex;gap:3px;padding:8px 10px 0;flex-shrink:0}
@@ -6629,12 +6928,15 @@ underlying system, so should run in the browser, Node, or Plask.
 #tools-review-notes[hidden]{display:none}
 #gif-export-controls{padding:8px 12px;gap:6px;align-items:center;flex-shrink:0;border-bottom:1px solid var(--panel-divider)}
 </style>
-<div class="tools-head"><div><h2 id="tools-title">Library</h2><div class="tools-subtitle">Session Storage and Analysis</div></div><button id="tools-close" type="button" aria-label="Close library" title="Close library (Escape)">×</button></div>
+<button id="tools-resize-handle" type="button" aria-label="Resize Library" title="Drag left to enlarge Library, right to shrink. Arrow keys adjust; Home restores 100%."></button>
+<div class="tools-head"><div class="tools-head-labels"><h2 id="tools-title">Library</h2><div class="tools-subtitle">Session Storage and Analysis</div><div id="tools-compact-label"><h2>Comparison</h2><div id="tools-compact-subtitle" class="tools-subtitle"></div></div></div><div class="tools-head-actions"><button id="tools-chart-only" type="button" aria-pressed="false" title="Open a comparison to use chart-only view" disabled>Chart only</button><button id="tools-standard-size" type="button" aria-label="Restore Library to 100%">100%</button><button id="tools-close" type="button" aria-label="Close library" title="Close library (Escape)">×</button></div></div>
+<div id="tools-compact-status" role="status"></div>
 <nav aria-label="Session tools"><button data-tools-tab="library">Sessions</button><button data-tools-tab="summary">Summary</button><button data-tools-tab="compare">Compare</button><button data-tools-tab="backup">Backup</button></nav>
 <button id="tools-review-notes" type="button" hidden></button>
 <div id="tools-message" role="status" aria-live="polite"></div>
 <div id="gif-export-controls" style="display:none"><span id="gif-export-status" role="status"></span><button id="btn-cancel-gif" hidden type="button">Cancel</button></div>
-<div id="tools-content"></div>`;
+<div id="tools-content"></div>
+<footer class="tools-appearance"><label class="tools-opacity-controls"><span>Transparency</span><input id="tools-opacity-slider" type="range" min="30" max="100" value="95" aria-label="Library background opacity"><span id="tools-opacity-value">95%</span></label><div id="tools-appearance-status" role="status"></div></footer>`;
   }
 
   // src/analysis-chart-view.js
@@ -6722,7 +7024,7 @@ underlying system, so should run in the browser, Node, or Plask.
     parent.insertBefore(range, legend);
     const settings = toolNode(parent, "div");
     const hint = toolNode(parent, "p", "", "tools-muted");
-    const scroll = toolNode(parent, "div", void 0, "tools-scroll"), table = toolNode(scroll, "table");
+    const scroll = toolNode(parent, "div", void 0, "tools-scroll tools-chart-inspection-scroll"), table = toolNode(scroll, "table");
     table.id = "tools-chart-inspection";
     const caption = toolNode(table, "caption");
     const header = toolNode(toolNode(table, "thead"), "tr");
@@ -6879,16 +7181,18 @@ underlying system, so should run in the browser, Node, or Plask.
       }
     }
     function draw() {
-      var _a;
+      var _a, _b;
       if (disposed) return;
       width = Math.max(260, canvas.clientWidth);
       right = width - 14;
-      ratio = window.devicePixelRatio || 1;
+      ratio = (window.devicePixelRatio || 1) * (Number((_a = canvas.closest("#tierscope-session-tools")) == null ? void 0 : _a.dataset.renderScale) || 1);
+      height = Math.max(100, canvas.clientHeight || 200);
+      bottom = height - 36;
       canvas.width = bitmap.width = width * ratio;
       canvas.height = bitmap.height = height * ratio;
       const ctx = bitmap.getContext("2d");
       ctx.scale(ratio, ratio);
-      const style = window.getComputedStyle(parent), isDark = ((_a = parent.closest("[data-theme]")) == null ? void 0 : _a.dataset.theme) !== "bright";
+      const style = window.getComputedStyle(parent), isDark = ((_b = parent.closest("[data-theme]")) == null ? void 0 : _b.dataset.theme) !== "bright";
       legendDark = isDark;
       legendBackground = style.getPropertyValue("--panel-muted").trim();
       if (!plotCache || plotCache.series !== series || plotCache.start !== start || plotCache.end !== end || plotCache.width !== right - left) {
@@ -6963,9 +7267,9 @@ underlying system, so should run in the browser, Node, or Plask.
         ctx.globalAlpha = 1;
       }
       function paintForeground(j) {
-        var _a2, _b;
+        var _a2, _b2;
         if (hidden.has(j) || backgroundSeries[j]) return;
-        const colorIndex = axisMode === "live" ? (_b = (_a2 = config.colorIndices) == null ? void 0 : _a2[j]) != null ? _b : colorIndices[j] : colorIndices[j];
+        const colorIndex = axisMode === "live" ? (_b2 = (_a2 = config.colorIndices) == null ? void 0 : _a2[j]) != null ? _b2 : colorIndices[j] : colorIndices[j];
         const color = comparisonLineColor(colorIndex, isDark);
         ctx.globalAlpha = opacities[j];
         paintSeries(ctx, j, color);
@@ -8695,7 +8999,8 @@ underlying system, so should run in the browser, Node, or Plask.
     values.setAttribute("aria-live", "polite");
     let positions = [], shown = 50;
     function draw() {
-      const width = Math.max(240, canvas.clientWidth), height = 200, ratio = window.devicePixelRatio || 1;
+      var _a;
+      const width = Math.max(240, canvas.clientWidth), height = 200, ratio = (window.devicePixelRatio || 1) * (Number((_a = canvas.closest("#tierscope-session-tools")) == null ? void 0 : _a.dataset.renderScale) || 1);
       canvas.width = width * ratio;
       canvas.height = height * ratio;
       const ctx = canvas.getContext("2d");
@@ -9264,7 +9569,7 @@ underlying system, so should run in the browser, Node, or Plask.
     let libraryRoom = null, chartDraw = null, analysisPreferenceError = savedAnalysis.error;
     let observedSource = null, observedSignature = "";
     let refreshCapacity = null, capacityCheckpoint = "";
-    let detachDock = null, historyView = null, followControls = null, liveCapture = null, historyDiscovery = "";
+    let detachDock = null, compactView = null, historyView = null, followControls = null, liveCapture = null, historyDiscovery = "";
     let currentArchiveIsReplay = isPlaybackCurrent(runtime.playback);
     let compareMode = "saved", liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
@@ -10593,6 +10898,10 @@ underlying system, so should run in the browser, Node, or Plask.
       }
     }
     function close() {
+      if (compactView) {
+        compactView.dispose();
+        compactView = null;
+      }
       if (recentView) {
         recentView.dispose();
         recentView = null;
@@ -10674,8 +10983,37 @@ underlying system, so should run in the browser, Node, or Plask.
       button2.onclick = () => render(button2.dataset.toolsTab);
     });
     dialog.show();
-    detachDock = attachLibraryDock(document.getElementById("tracker-container"), dialog, () => {
-      if (chartDraw) chartDraw();
+    detachDock = attachLibraryDock(
+      document.getElementById("tracker-container"),
+      dialog,
+      () => {
+        if (chartDraw) chartDraw();
+      },
+      __spreadProps(__spreadValues({}, readLibraryAppearance()), { save: saveLibraryAppearance })
+    );
+    compactView = attachChartOnlyView(dialog, {
+      getChart: () => tab === "compare" && (compareMode !== "saved" || analysisReports && !analysisReports.controls.hidden) ? content.querySelector("#tools-analysis-chart") : null,
+      describe: () => {
+        const state = content.querySelector(compareMode === "live" ? "#tools-live-status" : compareMode === "recent" ? "#tools-recent-status" : "#tools-follow-status");
+        let status = (state == null ? void 0 : state.textContent) || "Saved comparison";
+        let sourceWarning = false;
+        if (compareMode === "live") {
+          const counts = /* @__PURE__ */ new Map();
+          for (const id of liveModelsState.selected) {
+            const source = liveModelsState.known.get(id);
+            if (source && source.status !== "tracking") counts.set(source.status, (counts.get(source.status) || 0) + 1);
+          }
+          if (counts.size) status = [...counts].map(([name, count]) => count + " " + name).join(" · ") + " · " + status;
+          sourceWarning = [...counts.keys()].some((name) => !["paused", "waiting"].includes(name));
+        }
+        return {
+          label: { saved: "Saved sessions", live: "Live models", recent: "Last 24h" }[compareMode] + " · " + ANALYSIS_METRICS[metric],
+          status,
+          warning: sourceWarning || (compareMode === "recent" ? !!(recentState.notice || recentState.liveNotice) : /unavailable|stale|pending|failed/i.test(status))
+        };
+      },
+      modeChanged: (enabled) => detachDock.setChartOnly(enabled),
+      redraw: () => detachDock.redraw()
     });
     render("library");
     dialog.querySelector("#tools-close").focus();
@@ -12006,7 +12344,7 @@ underlying system, so should run in the browser, Node, or Plask.
       var t = runtime.TIERS[key];
       html += '<div id="tier-row-' + key + '" data-tier="' + key + '" style="display:flex;align-items:center;padding:1px 3px;margin:1px 0;background:rgba(var(--panel-row-rgb),calc(0.05 * var(--tier-background-scale, 1)));border-radius:3px;border-left:3px solid ' + t.color + ';"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml(key) + '</div><canvas id="spark-' + key + '" width="105" height="28" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="count-' + key + '" style="font-weight:bold;color:' + t.color + ';font-size:14px;">0</span><div id="high-' + key + '" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div>';
     });
-    html += '<div id="summary-tier-rows" style="border-top:1px solid var(--panel-divider);margin-top:4px;padding-top:4px;"><div id="tier-row-withtokens" data-tier="withtokens" style="display:flex;align-items:center;padding:2px 3px;background:rgba(255,212,59,0.15);border-radius:3px;border:1px solid var(--panel-warning);margin-bottom:3px;"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml("withtokens") + '</div><canvas id="spark-withtokens" width="105" height="28" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="count-withtokens" style="font-weight:bold;color:var(--panel-warning);font-size:14px;">0</span><span id="pct-withtokens" style="font-size:8px;color:var(--panel-warning);margin-left:2px;">0%</span><div id="high-withtokens" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div><div id="tier-row-total" data-tier="total" style="display:flex;align-items:center;padding:2px 3px;background:rgba(var(--panel-row-rgb),0.1);border-radius:3px;"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml("total") + '</div><canvas id="spark-total" width="105" height="28" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="count-total" style="font-weight:bold;color:var(--panel-text);font-size:14px;">0</span><div id="high-total" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div></div><div id="tier-row-anon" data-tier="anonymous" style="margin-top:5px;padding:5px;background:rgba(136,136,136,0.15);border-radius:3px;border:1px solid #888;"><div style="display:flex;align-items:center;"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml("anon") + '</div><canvas id="spark-anon" width="105" height="50" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="anon-ratio-full" style="font-size:13px;font-weight:bold;color:#ff69b4;">--</span><div id="anon-registered-ratio" role="img" aria-label="Anons / registered viewers: unavailable" style="font-size:9px;line-height:12px;color:var(--panel-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div><div id="high-anon" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div></div><div id="tier-row-roomTotal" data-tier="roomTotal" style="display:flex;align-items:center;padding:2px 3px;margin-top:3px;border:1px solid var(--panel-accent);border-radius:3px;background:rgba(255,105,180,.08);"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml("roomTotal") + '</div><canvas id="spark-roomTotal" width="105" height="28" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="count-roomTotal" style="font-weight:bold;color:var(--panel-accent);font-size:14px;">0</span><div id="high-roomTotal" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div></div><div id="trend-section" style="position:relative;border-top:1px solid #4169E1;margin-top:5px;padding-top:5px;"><div id="live-trend"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;flex-wrap:wrap;gap:2px;"><span id="trend-header-label" style="font-size:9px;font-weight:bold;color:#4169E1;">📈 TREND</span><div style="display:flex;gap:2px;flex-wrap:wrap;"><button class="trend-preset-btn" data-mode="last" style="background:#4169E1;border:1px solid #4169E1;color:#fff;border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">Last</button><button class="trend-preset-btn" data-mode="5min" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">5m</button><button class="trend-preset-btn" data-mode="15min" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">15m</button><button class="trend-preset-btn" data-mode="30min" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">30m</button><button class="trend-preset-btn" data-mode="1hour" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">1h</button><button class="trend-preset-btn" data-mode="start" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">Start</button><button id="btn-trend-auto" style="background:#32CD32;border:1px solid #32CD32;color:#fff;border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;" title="Auto-escalation ON - Click to disable">AUTO</button></div></div><div id="trend-container" style="min-height:30px;"><div style="font-size:8px;color:var(--panel-faint);text-align:center;padding:8px;">Waiting for scan...</div></div></div><div id="playback-controls" style="display:none;position:absolute;top:5px;left:0;right:0;bottom:0;padding:0 2px;box-sizing:border-box;grid-template-rows:minmax(14px,1fr) 14px 12px;gap:2px;" aria-label="Playback controls"><div style="display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;"><div id="playback-file-controls" style="display:none;align-items:center;gap:4px;min-width:0;"><div id="playback-room" style="display:none;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:12px;font-weight:bold;color:var(--panel-text);"></div></div><div style="display:flex;align-items:center;justify-content:space-between;gap:3px;"><strong id="playback-label" style="font-size:9px;color:var(--panel-warning);">PLAYBACK</strong><button id="playback-play" style="font-size:8px;line-height:12px;margin:0;padding:0 4px;background:#4169E1;color:white;border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">Pause</button><select id="playback-speed" aria-label="Playback speed" style="font-size:8px;height:15px;margin:0;padding:0;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><button type="button" id="btn-playback-library" aria-label="Open session library" aria-expanded="false" aria-controls="tierscope-session-tools" style="font-size:8px;line-height:12px;margin:0;padding:0 4px;background:var(--panel-button);color:var(--panel-accent);border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">Library</button><button id="playback-return" style="font-size:8px;line-height:12px;margin:0;padding:0 4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">Return to Live</button></div></div><div style="display:flex;align-items:center;gap:4px;min-width:0;"><button type="button" id="playback-previous" title="Previous recorded sample (pauses Replay)" aria-label="Previous recorded sample" style="flex:0 0 20px;height:14px;padding:0;font-size:9px;line-height:10px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">|&#9664;</button><input id="playback-scrubber" type="range" min="0" max="0" value="0" step="any" aria-label="Playback timeline" style="flex:1;min-width:0;width:100%;height:12px;margin:0;accent-color:var(--panel-warning);cursor:pointer;"><button type="button" id="playback-next" title="Next recorded sample (pauses Replay)" aria-label="Next recorded sample" style="flex:0 0 20px;height:14px;padding:0;font-size:9px;line-height:10px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">&#9654;|</button></div><div id="playback-file-actions" style="display:flex;justify-content:center;min-width:0;"><div id="playback-position" style="font-size:9px;line-height:12px;text-align:center;white-space:nowrap;color:var(--panel-secondary);font-family:monospace;">00:00:00 / 00:00:00</div></div></div></div><div id="control-field" role="group" aria-label="Tracking controls" style="position:relative;margin-top:5px;padding:4px;background:rgba(65,105,225,0.15);border-radius:3px;border:1px solid #4169E1;"><div id="control-session-row" style="display:grid;grid-template-columns:minmax(78px,1fr) max-content minmax(0,1fr);align-items:center;gap:3px;margin-bottom:4px;white-space:nowrap;"><span aria-hidden="true" style="width:78px;"></span><span style="font-size:12px;color:var(--panel-warning);font-family:monospace;font-weight:bold;width:9ch;text-align:center;font-variant-numeric:tabular-nums;" id="control-tracking-timer">00:00:00</span><span style="min-width:0;text-align:right;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-size:11px;color:var(--panel-positive);font-weight:bold;" id="control-next-scan">Next: 60s</span></div><div id="control-action-row" style="display:grid;grid-template-columns:minmax(max-content,1fr) auto minmax(0,1fr);align-items:center;gap:3px;"><div style="width:78px;height:14px;"><div id="control-session-buttons" style="position:absolute;top:4px;bottom:4px;left:4px;width:78px;display:grid;grid-template-columns:38px 38px;gap:2px;"><button type="button" id="btn-control-library" aria-expanded="false" aria-controls="tierscope-session-tools" aria-label="Open session library" title="Open model folders, session summaries, comparisons and backups" style="font-size:9px;font-weight:bold;line-height:12px;min-width:0;box-sizing:border-box;margin:0;padding:2px;background:rgba(255,105,180,0.2);color:var(--panel-accent);border:1px solid var(--panel-accent);border-radius:3px;cursor:pointer;">Library</button><button id="btn-replay" style="font-size:8px;line-height:10px;min-width:0;box-sizing:border-box;margin:0;padding:2px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;" title="Replay recorded history">Replay</button></div></div><div id="control-action-buttons" style="display:flex;gap:2px;align-items:center;"><button id="btn-control-auto" style="height:14px;box-sizing:border-box;line-height:10px;margin:0;background:#32CD32;border:none;color:#fff;border-radius:3px;cursor:pointer;font-size:8px;padding:2px 4px;min-width:24px;" title="Auto-Refresh ON">⏸</button><button type="button" id="btn-control-stop" aria-label="Stop this session" title="Stop this session and freeze its history and elapsed time" style="height:14px;box-sizing:border-box;line-height:10px;margin:0;background:#ff4444;border:none;color:#fff;border-radius:3px;cursor:pointer;font-size:8px;padding:2px 3px;white-space:nowrap;">■ Stop</button><button id="btn-main-reset" style="height:14px;box-sizing:border-box;line-height:10px;margin:0;background:#ff4444;border:none;color:#fff;border-radius:3px;cursor:pointer;font-size:8px;padding:2px 3px;display:flex;align-items:center;gap:2px;" title="Reset all tracking data"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12"/><path d="M3 3v9h9"/></svg>Reset</button></div><style>#dark-mode-control #dark-mode-track{position:relative;display:block;flex:0 0 22px;width:22px;height:12px;box-sizing:border-box;border:1px solid #9b701d;border-radius:7px;background:#e8b444;transition:background-color .16s ease;}#dark-mode-control #dark-mode-thumb{position:absolute;left:1px;top:1px;width:8px;height:8px;border-radius:50%;background:#4c3300;transform:translateX(10px);transition:transform .16s ease,background-color .16s ease;}#dark-mode-control #dark-mode-moon{color:var(--panel-muted);opacity:.55;}#dark-mode-control #dark-mode-sun{color:#825d00;}#dark-mode-control #dark-mode-toggle:checked~#dark-mode-track{background:#4169e1;border-color:#8ca8ff;}#dark-mode-control #dark-mode-toggle:checked~#dark-mode-track #dark-mode-thumb{transform:translateX(0);background:#fff;}#dark-mode-control #dark-mode-toggle:checked~#dark-mode-moon{color:#b4c5ff;opacity:1;}#dark-mode-control #dark-mode-toggle:checked~#dark-mode-sun{color:var(--panel-muted);opacity:.55;}#dark-mode-control #dark-mode-toggle:focus-visible~#dark-mode-track{outline:2px solid var(--panel-accent);outline-offset:2px;}@media(prefers-reduced-motion:reduce){#dark-mode-control #dark-mode-track,#dark-mode-control #dark-mode-thumb{transition:none;}}</style><label id="dark-mode-control" style="position:relative;justify-self:end;display:inline-flex;align-items:center;gap:2px;height:14px;cursor:pointer;line-height:1;"><input type="checkbox" role="switch" id="dark-mode-toggle" checked aria-label="Dark mode" style="position:absolute;inset:0;z-index:1;width:100%;height:100%;box-sizing:border-box;margin:0;padding:0;border:0;opacity:0;cursor:pointer;"><svg id="dark-mode-moon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="flex:none;"><path d="M21 13a9 9 0 0 1-10-10 9 9 0 1 0 10 10Z"/></svg><span id="dark-mode-track" aria-hidden="true"><span id="dark-mode-thumb"></span></span><svg id="dark-mode-sun" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="flex:none;"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></label></div></div><div id="tracker-footer" style="display:grid;grid-template-columns:80px minmax(0,1fr) 60px;align-items:center;gap:4px;margin-top:5px;min-height:18px;"><div id="acquisition-status" style="width:100%;min-width:0;max-width:80px;font-variant-numeric:tabular-nums;font-size:7px;color:var(--panel-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="No accepted sample yet">No sample</div><div id="background-slider-controls" style="display:flex;align-items:center;gap:3px;min-width:0;"><svg width="11" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--panel-warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M9 18h6M10 22h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 4H9c0-2 0-3-1-4Z"/></svg><input type="range" id="opacity-slider" min="30" max="100" value="95" aria-label="Background opacity" style="flex:1;min-width:0;width:100%;height:12px;margin:0;cursor:pointer;accent-color:#ff69b4;" title="Panel, Library and standard tier background opacity"><span id="opacity-value" style="font-size:8px;color:var(--panel-secondary);width:23px;flex:0 0 23px;text-align:right;font-variant-numeric:tabular-nums;">95%</span></div><div id="tierscope-logo" style="justify-self:end;display:flex;flex-direction:column;align-items:center;gap:0;white-space:nowrap;" onmouseenter="this.firstElementChild.style.opacity=1" onmouseleave="this.firstElementChild.style.opacity=0.6"><div style="display:flex;align-items:center;gap:3px;height:8px;opacity:0.6;transition:opacity 0.2s;"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#ff69b4" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span title="TierScope ' + runtime.TIERSCOPE_VERSION + `" style="font-size:7px;line-height:8px;font-family:'Courier New',monospace;font-weight:bold;color:var(--panel-accent);letter-spacing:1px;">TIERSCOPE</span></div><span id="tierscope-version" style="font:bold 8px/10px Arial,sans-serif;letter-spacing:.15px;color:var(--panel-secondary);">` + runtime.TIERSCOPE_VERSION + "</span></div></div></div>";
+    html += '<div id="summary-tier-rows" style="border-top:1px solid var(--panel-divider);margin-top:4px;padding-top:4px;"><div id="tier-row-withtokens" data-tier="withtokens" style="display:flex;align-items:center;padding:2px 3px;background:rgba(255,212,59,0.15);border-radius:3px;border:1px solid var(--panel-warning);margin-bottom:3px;"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml("withtokens") + '</div><canvas id="spark-withtokens" width="105" height="28" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="count-withtokens" style="font-weight:bold;color:var(--panel-warning);font-size:14px;">0</span><span id="pct-withtokens" style="font-size:8px;color:var(--panel-warning);margin-left:2px;">0%</span><div id="high-withtokens" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div><div id="tier-row-total" data-tier="total" style="display:flex;align-items:center;padding:2px 3px;background:rgba(var(--panel-row-rgb),0.1);border-radius:3px;"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml("total") + '</div><canvas id="spark-total" width="105" height="28" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="count-total" style="font-weight:bold;color:var(--panel-text);font-size:14px;">0</span><div id="high-total" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div></div><div id="tier-row-anon" data-tier="anonymous" style="margin-top:5px;padding:5px;background:rgba(136,136,136,0.15);border-radius:3px;border:1px solid #888;"><div style="display:flex;align-items:center;"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml("anon") + '</div><canvas id="spark-anon" width="105" height="50" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="anon-ratio-full" style="font-size:13px;font-weight:bold;color:#ff69b4;">--</span><div id="anon-registered-ratio" role="img" aria-label="Anons / registered viewers: unavailable" style="font-size:9px;line-height:12px;color:var(--panel-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div><div id="high-anon" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div></div><div id="tier-row-roomTotal" data-tier="roomTotal" style="display:flex;align-items:center;padding:2px 3px;margin-top:3px;border:1px solid var(--panel-accent);border-radius:3px;background:rgba(255,105,180,.08);"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml("roomTotal") + '</div><canvas id="spark-roomTotal" width="105" height="28" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="count-roomTotal" style="font-weight:bold;color:var(--panel-accent);font-size:14px;">0</span><div id="high-roomTotal" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div></div><div id="trend-section" style="position:relative;border-top:1px solid #4169E1;margin-top:5px;padding-top:5px;"><div id="live-trend"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;flex-wrap:wrap;gap:2px;"><span id="trend-header-label" style="font-size:9px;font-weight:bold;color:#4169E1;">📈 TREND</span><div style="display:flex;gap:2px;flex-wrap:wrap;"><button class="trend-preset-btn" data-mode="last" style="background:#4169E1;border:1px solid #4169E1;color:#fff;border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">Last</button><button class="trend-preset-btn" data-mode="5min" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">5m</button><button class="trend-preset-btn" data-mode="15min" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">15m</button><button class="trend-preset-btn" data-mode="30min" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">30m</button><button class="trend-preset-btn" data-mode="1hour" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">1h</button><button class="trend-preset-btn" data-mode="start" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;">Start</button><button id="btn-trend-auto" style="background:#32CD32;border:1px solid #32CD32;color:#fff;border-radius:2px;cursor:pointer;font-size:7px;padding:1px 4px;" title="Auto-escalation ON - Click to disable">AUTO</button></div></div><div id="trend-container" style="min-height:30px;"><div style="font-size:8px;color:var(--panel-faint);text-align:center;padding:8px;">Waiting for scan...</div></div></div><div id="playback-controls" style="display:none;position:absolute;top:5px;left:0;right:0;bottom:0;padding:0 2px;box-sizing:border-box;grid-template-rows:minmax(14px,1fr) 14px 12px;gap:2px;" aria-label="Playback controls"><div style="display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;"><div id="playback-file-controls" style="display:none;align-items:center;gap:4px;min-width:0;"><div id="playback-room" style="display:none;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:12px;font-weight:bold;color:var(--panel-text);"></div></div><div style="display:flex;align-items:center;justify-content:space-between;gap:3px;"><strong id="playback-label" style="font-size:9px;color:var(--panel-warning);">PLAYBACK</strong><button id="playback-play" style="font-size:8px;line-height:12px;margin:0;padding:0 4px;background:#4169E1;color:white;border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">Pause</button><select id="playback-speed" aria-label="Playback speed" style="font-size:8px;height:15px;margin:0;padding:0;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><button type="button" id="btn-playback-library" aria-label="Open session library" aria-expanded="false" aria-controls="tierscope-session-tools" style="font-size:8px;line-height:12px;margin:0;padding:0 4px;background:var(--panel-button);color:var(--panel-accent);border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">Library</button><button id="playback-return" style="font-size:8px;line-height:12px;margin:0;padding:0 4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">Return to Live</button></div></div><div style="display:flex;align-items:center;gap:4px;min-width:0;"><button type="button" id="playback-previous" title="Previous recorded sample (pauses Replay)" aria-label="Previous recorded sample" style="flex:0 0 20px;height:14px;padding:0;font-size:9px;line-height:10px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">|&#9664;</button><input id="playback-scrubber" type="range" min="0" max="0" value="0" step="any" aria-label="Playback timeline" style="flex:1;min-width:0;width:100%;height:12px;margin:0;accent-color:var(--panel-warning);cursor:pointer;"><button type="button" id="playback-next" title="Next recorded sample (pauses Replay)" aria-label="Next recorded sample" style="flex:0 0 20px;height:14px;padding:0;font-size:9px;line-height:10px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:2px;cursor:pointer;">&#9654;|</button></div><div id="playback-file-actions" style="display:flex;justify-content:center;min-width:0;"><div id="playback-position" style="font-size:9px;line-height:12px;text-align:center;white-space:nowrap;color:var(--panel-secondary);font-family:monospace;">00:00:00 / 00:00:00</div></div></div></div><div id="control-field" role="group" aria-label="Tracking controls" style="position:relative;margin-top:5px;padding:4px;background:rgba(65,105,225,0.15);border-radius:3px;border:1px solid #4169E1;"><div id="control-session-row" style="display:grid;grid-template-columns:minmax(78px,1fr) max-content minmax(0,1fr);align-items:center;gap:3px;margin-bottom:4px;white-space:nowrap;"><span aria-hidden="true" style="width:78px;"></span><span style="font-size:12px;color:var(--panel-warning);font-family:monospace;font-weight:bold;width:9ch;text-align:center;font-variant-numeric:tabular-nums;" id="control-tracking-timer">00:00:00</span><span style="min-width:0;text-align:right;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-size:11px;color:var(--panel-positive);font-weight:bold;" id="control-next-scan">Next: 60s</span></div><div id="control-action-row" style="display:grid;grid-template-columns:minmax(max-content,1fr) auto minmax(0,1fr);align-items:center;gap:3px;"><div style="width:78px;height:14px;"><div id="control-session-buttons" style="position:absolute;top:4px;bottom:4px;left:4px;width:78px;display:grid;grid-template-columns:38px 38px;gap:2px;"><button type="button" id="btn-control-library" aria-expanded="false" aria-controls="tierscope-session-tools" aria-label="Open session library" title="Open model folders, session summaries, comparisons and backups" style="font-size:9px;font-weight:bold;line-height:12px;min-width:0;box-sizing:border-box;margin:0;padding:2px;background:rgba(255,105,180,0.2);color:var(--panel-accent);border:1px solid var(--panel-accent);border-radius:3px;cursor:pointer;">Library</button><button id="btn-replay" style="font-size:8px;line-height:10px;min-width:0;box-sizing:border-box;margin:0;padding:2px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;" title="Replay recorded history">Replay</button></div></div><div id="control-action-buttons" style="display:flex;gap:2px;align-items:center;"><button id="btn-control-auto" style="height:14px;box-sizing:border-box;line-height:10px;margin:0;background:#32CD32;border:none;color:#fff;border-radius:3px;cursor:pointer;font-size:8px;padding:2px 4px;min-width:24px;" title="Auto-Refresh ON">⏸</button><button type="button" id="btn-control-stop" aria-label="Stop this session" title="Stop this session and freeze its history and elapsed time" style="height:14px;box-sizing:border-box;line-height:10px;margin:0;background:#ff4444;border:none;color:#fff;border-radius:3px;cursor:pointer;font-size:8px;padding:2px 3px;white-space:nowrap;">■ Stop</button><button id="btn-main-reset" style="height:14px;box-sizing:border-box;line-height:10px;margin:0;background:#ff4444;border:none;color:#fff;border-radius:3px;cursor:pointer;font-size:8px;padding:2px 3px;display:flex;align-items:center;gap:2px;" title="Reset all tracking data"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12"/><path d="M3 3v9h9"/></svg>Reset</button></div><style>#dark-mode-control #dark-mode-track{position:relative;display:block;flex:0 0 22px;width:22px;height:12px;box-sizing:border-box;border:1px solid #9b701d;border-radius:7px;background:#e8b444;transition:background-color .16s ease;}#dark-mode-control #dark-mode-thumb{position:absolute;left:1px;top:1px;width:8px;height:8px;border-radius:50%;background:#4c3300;transform:translateX(10px);transition:transform .16s ease,background-color .16s ease;}#dark-mode-control #dark-mode-moon{color:var(--panel-muted);opacity:.55;}#dark-mode-control #dark-mode-sun{color:#825d00;}#dark-mode-control #dark-mode-toggle:checked~#dark-mode-track{background:#4169e1;border-color:#8ca8ff;}#dark-mode-control #dark-mode-toggle:checked~#dark-mode-track #dark-mode-thumb{transform:translateX(0);background:#fff;}#dark-mode-control #dark-mode-toggle:checked~#dark-mode-moon{color:#b4c5ff;opacity:1;}#dark-mode-control #dark-mode-toggle:checked~#dark-mode-sun{color:var(--panel-muted);opacity:.55;}#dark-mode-control #dark-mode-toggle:focus-visible~#dark-mode-track{outline:2px solid var(--panel-accent);outline-offset:2px;}@media(prefers-reduced-motion:reduce){#dark-mode-control #dark-mode-track,#dark-mode-control #dark-mode-thumb{transition:none;}}</style><label id="dark-mode-control" style="position:relative;justify-self:end;display:inline-flex;align-items:center;gap:2px;height:14px;cursor:pointer;line-height:1;"><input type="checkbox" role="switch" id="dark-mode-toggle" checked aria-label="Dark mode" style="position:absolute;inset:0;z-index:1;width:100%;height:100%;box-sizing:border-box;margin:0;padding:0;border:0;opacity:0;cursor:pointer;"><svg id="dark-mode-moon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="flex:none;"><path d="M21 13a9 9 0 0 1-10-10 9 9 0 1 0 10 10Z"/></svg><span id="dark-mode-track" aria-hidden="true"><span id="dark-mode-thumb"></span></span><svg id="dark-mode-sun" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="flex:none;"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></label></div></div><div id="tracker-footer" style="display:grid;grid-template-columns:80px minmax(0,1fr) 60px;align-items:center;gap:4px;margin-top:5px;min-height:18px;"><div id="acquisition-status" style="width:100%;min-width:0;max-width:80px;font-variant-numeric:tabular-nums;font-size:7px;color:var(--panel-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="No accepted sample yet">No sample</div><div id="background-slider-controls" style="display:flex;align-items:center;gap:3px;min-width:0;"><svg width="11" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--panel-warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M9 18h6M10 22h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 4H9c0-2 0-3-1-4Z"/></svg><input type="range" id="opacity-slider" min="30" max="100" value="95" aria-label="Background opacity" style="flex:1;min-width:0;width:100%;height:12px;margin:0;cursor:pointer;accent-color:#ff69b4;" title="Panel and standard tier background opacity"><span id="opacity-value" style="font-size:8px;color:var(--panel-secondary);width:23px;flex:0 0 23px;text-align:right;font-variant-numeric:tabular-nums;">95%</span></div><div id="tierscope-logo" style="justify-self:end;display:flex;flex-direction:column;align-items:center;gap:0;white-space:nowrap;" onmouseenter="this.firstElementChild.style.opacity=1" onmouseleave="this.firstElementChild.style.opacity=0.6"><div style="display:flex;align-items:center;gap:3px;height:8px;opacity:0.6;transition:opacity 0.2s;"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#ff69b4" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span title="TierScope ' + runtime.TIERSCOPE_VERSION + `" style="font-size:7px;line-height:8px;font-family:'Courier New',monospace;font-weight:bold;color:var(--panel-accent);letter-spacing:1px;">TIERSCOPE</span></div><span id="tierscope-version" style="font:bold 8px/10px Arial,sans-serif;letter-spacing:.15px;color:var(--panel-secondary);">` + runtime.TIERSCOPE_VERSION + "</span></div></div></div>";
     div.innerHTML = html;
     document.body.appendChild(div);
     applyPanelTheme(false);
@@ -12357,7 +12695,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.30.0";
+    runtime.TIERSCOPE_VERSION = "3.31.0";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

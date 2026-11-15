@@ -1,8 +1,10 @@
 # TierScope — Usage and development notes
 
-Detailed reference for **3.30.0**. [Connection recovery guide](docs/connection-recovery.md). [Comparison fading and history guide](docs/comparison-history-shadows.md). [24h comparison guide](docs/clock-comparison.md). [Library chart controls guide](docs/library-chart-controls.md). [Follow live guide](docs/follow-live.md). [Audience trends and ratio guide](docs/audience-trends.md). [Sessions Book guide](docs/sessions-book.md). [ATH cleanup guide](docs/ath-retention.md). The simplified Current Live Session card provides Keep in Library, Auto, Compare with previous, Live sessions, Last 24h sessions, and History. File controls are below the session list, and exports remain on stored-session menus and the separate replay card. Development uses modular sources and a single installable script; see [BUILDING.md](BUILDING.md). For installation instructions, see the [README](readme.md).
+Detailed reference for **3.31.0**. [Connection recovery guide](docs/connection-recovery.md). [Comparison fading and history guide](docs/comparison-history-shadows.md). [24h comparison guide](docs/clock-comparison.md). [Library chart controls guide](docs/library-chart-controls.md). [Follow live guide](docs/follow-live.md). [Audience trends and ratio guide](docs/audience-trends.md). [Sessions Book guide](docs/sessions-book.md). [ATH cleanup guide](docs/ath-retention.md). The simplified Current Live Session card provides Keep in Library, Auto, Compare with previous, Live sessions, Last 24h sessions, and History. File controls are below the session list, and exports remain on stored-session menus and the separate replay card. Development uses modular sources and a single installable script; see [BUILDING.md](BUILDING.md). For installation instructions, see the [README](readme.md).
 
 [Expanded comparisons and Last 24h](docs/expanded-comparisons.md) are available in **3.30.0**.
+
+[Independent Library appearance and chart-only comparisons](docs/library-appearance.md) are available in **3.31.0**.
 
 ## Contents
 
@@ -52,7 +54,7 @@ Keep only one enabled copy of TierScope. After an update, refresh existing room 
 | Compact-view timer controls | Adjust the interval from 30 to 300 seconds; presets are 30s, 60s, 2m, and 5m. |
 | Row circle or icon | Collapse that row into the strip below the header. |
 | Boxed icon in the collapsed-row strip | Restore its row to its original position. |
-| Lamp slider | Adjust the panel, Library and standard tier-row backgrounds. |
+| Lamp slider | Adjust Scope and standard tier-row backgrounds; Library has its own slider. |
 | Moon–sun switch at the bottom right of Controls | Moon / blue track for dark mode; sun / amber track for bright mode. Click or press Space when focused to switch. |
 | **Replay** | Open recorded history for the current room. |
 | **Library** | Open recordings, model folders, session files and exports, summaries, comparison and backups beside the chart. |
@@ -187,7 +189,7 @@ Reduced-motion preferences disable the animation while preserving the steady hig
 
 ### Background opacity
 
-The lamp slider ranges from **30% to 100%**, starting at **95%**. Moving left makes the main panel and Library backgrounds, normal tier-row fills, and normal collapsed-marker fills more transparent. Library follows the current slider setting when opened and while it is open, in both themes.
+The lamp slider ranges from **30% to 100%**, starting at **95%**. Moving left makes Scope’s background, normal tier-row fills, and normal collapsed-marker fills more transparent. Library has its own fixed footer slider; full Library and chart-only view remember separate opacity and scale settings across rooms and reloads. The dark/bright theme remains shared.
 
 It preserves green high-value highlights, borders, text, charts, and the fills of the summary rows, Controls, and other buttons. It does not apply opacity to the whole panel. The setting is retained during navigation in the current page session, but is not saved across a full reload.
 
@@ -274,7 +276,9 @@ Replay controls belong to the panel. The downloaded GIF does not contain pause, 
 
 ## Session tools
 
-Click **Library** beside Replay in Controls or beside Play in Replay. It opens a matching page to the left of the chart, with Sessions, Summary, Compare and Backup tabs. The chart remains usable. The page follows panel movement, scale and theme; small windows use a scrollable sheet. The main panel stays above Library wherever they overlap, including in sheet layout, and receives clicks in the overlapping area. The × button, Library button or Escape closes Library. Temporary space borrowed for docking is restored on close unless you moved the panel. Room navigation closes Library and discards pending file reads.
+Click **Library** beside Replay in Controls or beside Play in Replay. It opens a matching page to the left of the chart, with Sessions, Summary, Compare and Backup tabs. The chart remains usable. The page follows panel movement and theme, with its own scale and opacity controls; small windows use a scrollable sheet. The main panel stays above Library wherever they overlap, including in sheet layout, and receives clicks in the overlapping area. The × button, Library button or Escape closes Library. Temporary space borrowed for docking is restored on close unless you moved the panel. Room navigation closes Library and discards pending file reads.
+
+Use Library’s pink upper-left grip to scale its fonts, charts and controls together; its percentage button restores 100%. In Compare, **Chart only** keeps the chart in the main space, with source shortcuts, tiers, ranges and zoom controls available by scrolling. **Expand** restores the same comparison. Compact appearance is remembered independently; new Library openings start in full view. [Full appearance guide](docs/library-appearance.md).
 
 ### Library
 
@@ -282,7 +286,7 @@ Click **Library** beside Replay in Controls or beside Play in Replay. It opens a
 
 Repeated saves recognize the model and recorded session start. A fuller compatible copy updates the existing entry and preserves its custom name; an equal or older/shorter copy does not replace it. Shared samples must agree, so conflicting recordings remain separate even when their start timestamps match. New sessions for the same model remain separate. Updates store the replacement before removing obsolete copies, so a failed save retains the prior recording. After history rollover, the library follows the existing 10,000-sample retention limit; it does not extend live history indefinitely. Estimated legacy start times cannot link windows with no overlapping samples.
 
-Current Live Session provides **Keep in Library**, **Auto**, **Compare with previous**, and **History** with its session count. The separate replay card also offers **Save file**, **TXT**, **CSV**, **GIF**, and **Add to ATH**; stored sessions have these exports under **More…**. Keep always stores the whole replayed recording, including samples beyond the playhead, and shows whether it added, updated or already had the recording. A storage failure appears in Library and the action can be retried. Keeping a file uses that file’s room and does not add its peaks to ATH. Playback position, speed and background live data are preserved.
+Current Live Session provides **Keep in Library**, **Auto**, **Compare with previous**, **Live sessions**, **Last 24h sessions**, and **History** with its session count. The separate replay card also offers **Save file**, **TXT**, **CSV**, **GIF**, and **Add to ATH**; stored sessions have these exports under **More…**. Keep always stores the whole replayed recording, including samples beyond the playhead, and shows whether it added, updated or already had the recording. A storage failure appears in Library and the action can be retried. Keeping a file uses that file’s room and does not add its peaks to ATH. Playback position, speed and background live data are preserved.
 
 Expand **Sessions Book** below the storage counter and limits to browse **model folders** ordered by their first matching recording under the selected sort, each showing its recording count and most recent recording date. Open a folder to see that model's recordings, newest first by their first retained sample; **All models** returns to the folder list. Existing recordings are grouped automatically without moving stored data. Keep/import opens the matching model folder. Model, date and text filters work together. Select **All sessions** to search across models; searching within a model keeps that model selected. Each recording shows a selection checkbox, **Replay** and **Summary**; **More…** contains Save file, TXT, CSV, GIF, Add to all-time highs, Rename and confirmed Delete. These exports use that recording without opening it in replay. Large lists show 50 folders or recordings at a time with **Show more**. Library Replay keeps the library open and uses the existing file Replay controls; explicit Add to ATH is available in the recording card. The library persists across session Reset and the temporary session's three-hour expiry. It is kept only in this browser's userscript storage, with default limits of **1,000 sessions / 50 MB**. Either limit can fill the library; updates also need temporary space to save the replacement safely. Nothing is automatically deleted or evicted; a full library asks you to raise Storage limits or export and remove entries. Unreadable entries are retained. **Download unreadable records** keeps their raw stored values for manual recovery before any explicit removal. If a value cannot be read, its size is unknown and library additions wait until it can be read or you explicitly remove it.
 
@@ -557,6 +561,12 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.31.0** | Release independent Library scaling and transparency, plus chart-only Saved / Live / Last 24h comparisons with separate compact appearance. Prioritize a viewport-sized chart, keep controls reachable by scrolling, and preserve comparison state and user scroll through updates. |
+| **3.31.0-beta.5** | Add Saved sessions / Live models / Last 24h shortcuts to minimized comparisons. Give the chart its own viewport-sized area with a 200px minimum, show it by default, and retain scroll access to controls without resetting user scrolling during updates. |
+| **3.31.0-beta.4** | Keep tier selection, range/alignment, shared-length and zoom controls available in chart-only comparisons. Reuse the original controls and allow scrolling in short windows. |
+| **3.31.0-beta.3** | Add chart-only Library view for Saved, Live and Last 24h comparisons. Keep the existing chart and updates, provide Expand and status controls, and remember separate compact scale/opacity settings. Preserve chart inspection, hidden lines and zoom through toggles and chart replacement. |
+| **3.31.0-beta.2** | Move Library’s resize grip to the upper-left corner and reserve header space for it. |
+| **3.31.0-beta.1** | Preview independent whole-Library scaling, a pink resize grip and 100% reset, and a fixed footer opacity slider. Remember Library appearance separately from Scope, preserve responsive docking and Scope overlap priority, and keep scaled chart inspection sharp. |
 | **3.30.0** | Release expanded saved/live comparisons, all-model Last 24h with range presets and direct shortcuts, persistent visibility/zoom during rolling updates, and pink current-session / solid tracked / dashed historical styling. Include paged controls and reports, updated documentation and reliable theme-redraw verification. |
 | **3.30.0-beta.4** | Keep this room’s current tracked session pink in rolling and live comparisons. Draw ongoing tracked sessions as solid lines and history as dashed lines in Last 24h; update indicators from tab metadata while preserving chart choices. |
 | **3.30.0-beta.3** | Add Current Live Session shortcuts for Live sessions and Last 24h sessions, plus one-, four-, twelve- and twenty-four-hour rolling comparison presets. Preserve visibility and manual zoom through updates; changing a preset opens its full range. |

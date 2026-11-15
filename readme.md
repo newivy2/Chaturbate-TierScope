@@ -8,7 +8,7 @@ Install [Tampermonkey](https://www.tampermonkey.net/), follow Tampermonkey’s [
 
 If you used the beta, install from the official link above to follow main releases. Keep only one enabled copy of TierScope.
 
-**Current release: 3.30.0** · [Release notes](https://github.com/newivy2/TierScope/releases/tag/v3.30.0)
+**Current release: 3.31.0** · [Release notes](https://github.com/newivy2/TierScope/releases/tag/v3.31.0)
 
 ## Main features
 
@@ -24,7 +24,7 @@ Data is stored locally through your userscript manager. For controls and detaile
 
 ## A flexible interface
 
-Show all tiers, focus on totals or choose your own mix. Move and resize the panel, collapse rows, switch between dark and bright themes, and adjust background transparency. Open Library beside the panel to browse sessions and analyze charts.
+Show all tiers, focus on totals or choose your own mix. Move and resize the panel, collapse rows, switch between dark and bright themes, and adjust background transparency. Resize Library independently, or use its chart-only comparison view with scrollable controls. Each view has its own transparency setting.
 
 ![TierScope overview: all tiers, totals-focused and custom layouts, plus session comparisons](tierscope-hero.png)
 

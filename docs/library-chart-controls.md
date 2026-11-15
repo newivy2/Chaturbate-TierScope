@@ -1,8 +1,8 @@
-# Library chart controls — 3.22.0
+# Library chart controls — 3.31.0
 
-[Install TierScope](https://raw.githubusercontent.com/newivy2/TierScope/main/tierscope.user.js). Keep one enabled copy and refresh room tabs after updating. [Release notes](https://github.com/newivy2/TierScope/releases/tag/v3.22.0).
+[Install TierScope](https://raw.githubusercontent.com/newivy2/TierScope/main/tierscope.user.js). Keep one enabled copy and refresh room tabs after updating. [Release notes](https://github.com/newivy2/TierScope/releases/tag/v3.31.0).
 
-The background transparency slider now affects Library as well as the Scope. Text, charts and controls stay fully visible. Both themes follow the slider, including when you reopen Library.
+Library has its own background transparency slider and upper-left resize grip, independently of Scope. Full Library and chart-only comparisons remember separate appearance settings. Text, charts and controls stay fully visible. See the [Library appearance guide](library-appearance.md).
 
 Summary, Compare and Model History use an icon strip above the chart to select one metric at a time. The order matches the previous dropdown: Room audience, Registered viewers, Viewers with tokens, Moderators, Fan club, Dark purple, Light purple, Dark blue, Light blue, Grey, Female / trans and Anonymous viewers. Room audience is the default; explicit metric choices remain remembered.
 

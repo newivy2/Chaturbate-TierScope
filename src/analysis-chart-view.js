@@ -70,7 +70,7 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
     parent.insertBefore(range, legend);
     const settings = node(parent, 'div');
     const hint = node(parent, 'p', '', 'tools-muted');
-    const scroll = node(parent, 'div', undefined, 'tools-scroll'), table = node(scroll, 'table'); table.id = 'tools-chart-inspection';
+    const scroll = node(parent, 'div', undefined, 'tools-scroll tools-chart-inspection-scroll'), table = node(scroll, 'table'); table.id = 'tools-chart-inspection';
     const caption = node(table, 'caption');
     const header = node(node(table, 'thead'), 'tr'); [axisMode === 'live' ? 'Model' : 'Session','Count','Sample timestamp / status'].forEach(text => { node(header, 'th', text).scope = 'col'; });
     const body = node(table, 'tbody');
@@ -178,7 +178,8 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
     }
     function draw() {
         if (disposed) return;
-        width = Math.max(260, canvas.clientWidth); right = width - 14; ratio = window.devicePixelRatio || 1;
+        width = Math.max(260, canvas.clientWidth); right = width - 14; ratio = (window.devicePixelRatio || 1) * (Number(canvas.closest('#tierscope-session-tools')?.dataset.renderScale) || 1);
+        height = Math.max(100, canvas.clientHeight || 200); bottom = height - 36;
         canvas.width = bitmap.width = width * ratio; canvas.height = bitmap.height = height * ratio;
         const ctx = bitmap.getContext('2d'); ctx.scale(ratio, ratio);
         const style = window.getComputedStyle(parent), isDark = parent.closest('[data-theme]')?.dataset.theme !== 'bright';
