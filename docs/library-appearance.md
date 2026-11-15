@@ -13,7 +13,9 @@ Narrow windows temporarily fit Library to the available space without overwritin
 
 ## Chart-only comparison view
 
-Open a comparison in **Saved sessions**, **Live models** or **Last 24h**, then select **Chart only** in Library’s header. It shows the current chart with a small header and status line, hiding tabs, selectors, legends and reports. Select **Expand** to return to the same comparison and its controls.
+Open a comparison in **Saved sessions**, **Live models** or **Last 24h**, then select **Chart only** in Library’s header. It shows the current chart with a small header and status line, keeping the tier icon strip, range controls and chart zoom/pan controls available while hiding tabs, session selectors, legends and reports. Select **Expand** to return to the same comparison and its controls.
+
+Use the same tier icons to change the displayed metric. Live and Last 24h views retain their range presets; Saved comparisons retain their X axis and Match shared length controls. Changes carry back to the full Library because these are the original controls. Short windows scroll vertically to keep controls and the chart reachable.
 
 The pink upper-left grip, percentage reset and bottom transparency slider remain available. Chart-only view remembers its own scale and opacity separately from the full Library. Library opens in its full view next time; chart-only appearance choices remain saved.
 

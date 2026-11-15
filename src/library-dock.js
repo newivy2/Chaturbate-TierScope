@@ -29,7 +29,7 @@ export function attachLibraryDock(panel, library, onTheme, appearance = {}) {
         // Preserve the preferred scale; temporarily fit small viewports without
         // overwriting it. Fonts, charts and controls share one transform.
         const effective = Math.min(scale, availableWidth / 260, availableHeight / 220);
-        const width = Math.min(370 * effective, availableWidth), height = Math.min((compact ? 300 : baseHeight) * effective, availableHeight);
+        const width = Math.min(370 * effective, availableWidth), height = Math.min((compact ? 400 : baseHeight) * effective, availableHeight);
         const docked = window.innerWidth >= rect.width + width + margin * 2;
         if (docked) {
             const left = Math.max(width + margin - 1, Math.min(rect.left, window.innerWidth - rect.width - margin));

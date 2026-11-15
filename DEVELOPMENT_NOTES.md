@@ -4,7 +4,7 @@ Detailed reference for **3.30.0**. [Connection recovery guide](docs/connection-r
 
 [Expanded comparisons and Last 24h](docs/expanded-comparisons.md) are available in **3.30.0**.
 
-Preview: [Independent Library size and transparency](docs/library-appearance.md) is available in **3.31.0-beta.3**.
+Preview: [Independent Library size and transparency](docs/library-appearance.md) is available in **3.31.0-beta.4**.
 
 ## Contents
 
@@ -559,6 +559,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.31.0-beta.4** | Keep tier selection, range/alignment, shared-length and zoom controls available in chart-only comparisons. Reuse the original controls and allow scrolling in short windows. |
 | **3.31.0-beta.3** | Add chart-only Library view for Saved, Live and Last 24h comparisons. Keep the existing chart and updates, provide Expand and status controls, and remember separate compact scale/opacity settings. Preserve chart inspection, hidden lines and zoom through toggles and chart replacement. |
 | **3.31.0-beta.2** | Move Library’s resize grip to the upper-left corner and reserve header space for it. |
 | **3.31.0-beta.1** | Preview independent whole-Library scaling, a pink resize grip and 100% reset, and a fixed footer opacity slider. Remember Library appearance separately from Scope, preserve responsive docking and Scope overlap priority, and keep scaled chart inspection sharp. |

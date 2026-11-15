@@ -248,14 +248,18 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
    await page.locator('.tools-chart-legend input').uncheck();
    await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('End');await page.click('#tools-chart-zoom-in');
    assert.match(await page.locator('#tools-chart-inspection caption').textContent(),/pinned/);
-   await page.evaluate(()=>{window.compactCanvas=document.getElementById('tools-analysis-chart');});
+   await page.evaluate(()=>{
+    window.compactCanvas=document.getElementById('tools-analysis-chart');
+    window.compactControls=[...document.querySelectorAll('.tools-metric-strip,#tools-live-window,#tools-recent-range,#tools-compare-axis,#tools-shared-length')]
+     .map(element=>({element,parent:element.parentElement}));
+   });
    return captureChart();
   }
   async function toggleCompact(enabled){
    await page.click('#tools-chart-only');
    await page.waitForFunction(enabled=>document.getElementById('tierscope-session-tools').dataset.chartOnly===String(enabled),enabled);
    await page.waitForFunction(enabled=>{
-    const library=document.getElementById('tierscope-session-tools'),expected=(enabled?300:Math.max(420,document.getElementById('tracker-container').offsetHeight))*Number(library.dataset.renderScale);
+    const library=document.getElementById('tierscope-session-tools'),expected=(enabled?400:Math.max(420,document.getElementById('tracker-container').offsetHeight))*Number(library.dataset.renderScale);
     return Math.abs(library.getBoundingClientRect().height-Math.min(expected,innerHeight-16))<2;
    },enabled);
   }
@@ -265,19 +269,37 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
    assert(await page.locator('#tools-analysis-chart').isVisible());assert(await page.locator('#tools-compact-status').isVisible());
    for(const selector of ['#tierscope-session-tools nav','.tools-chart-legend'])
     assert(!(await page.locator(selector).isVisible()),reason+': analysis controls are hidden');
+   assert(await page.locator('.tools-metric-strip').isVisible(),reason+': tier selection stays visible');
+   assert(await page.locator('#tools-chart-zoom-in').isVisible(),reason+': chart range controls stay visible');
+   for(const selector of ['#tools-live-window','#tools-recent-range','#tools-compare-axis','#tools-shared-length'])
+    if(await page.locator(selector).count())assert(await page.locator(selector).isVisible(),reason+': comparison range stays visible');
+   assert(await page.evaluate(()=>compactControls.every(({element,parent})=>
+    document.getElementById(element.id)===element&&element.parentElement===parent)),reason+': compact controls retain their original DOM nodes and parents');
    assert(await page.locator('#tools-standard-size').isVisible());assert(await page.locator('#tools-opacity-slider').isVisible());
    assert(await library.evaluate(element=>{
     const panel=element.getBoundingClientRect(),chart=element.querySelector('#tools-analysis-chart').getBoundingClientRect();
     return element.scrollWidth<=element.clientWidth+1&&chart.width>150&&chart.height>70&&chart.left>=panel.left-1&&chart.right<=panel.right+1&&chart.top>=panel.top&&chart.bottom<=panel.bottom;
    }),reason+': the chart fits inside the compact Library');
   }
-  await page.click('#tools-compare-saved');await page.click('#tools-metric-total');
+  await page.click('#tools-compare-saved');await picker();await page.click('#tools-analysis-clear');
+  await page.fill('#tools-analysis-search','Bulk session');await page.click('#tools-compare-all-matching');
+  await page.locator('#tools-recording-picker').evaluate(element=>element.open=false);await page.click('#tools-metric-total');
   const savedCompact=await chooseChart('Bulk session 059');
   await page.locator('#tools-resize-handle').focus();await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowLeft');await resized(1.1);
   await opacity(75);await page.waitForFunction(()=>document.getElementById('tools-opacity-slider').value==='75');
   await toggleCompact(true);await resized(1);
   assert.equal(await page.locator('#tools-opacity-slider').inputValue(),'95','compact appearance starts independently of the full Library');
   await assertCompactChart(savedCompact,'Saved comparison minimizes');
+  await page.click('#tools-metric-withTokens');
+  assert.equal(await page.locator('#tools-metric-withTokens').getAttribute('aria-checked'),'true');
+  assert.match(await page.locator('#tools-compact-subtitle').textContent(),/Viewers with tokens/);
+  assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/Viewers with tokens/);
+  await page.click('#tools-metric-total');await assertCompactChart(savedCompact,'Saved compact metric round trip');
+  const sharedLength=await page.locator('#tools-shared-length').isChecked();
+  await page.locator('#tools-shared-length').setChecked(!sharedLength);
+  assert.equal(await page.locator('#tools-shared-length').isChecked(),!sharedLength);
+  await page.locator('#tools-shared-length').setChecked(sharedLength);
+  await assertCompactChart(savedCompact,'Saved compact shared length round trip');
   await opacity(40);await page.locator('#tools-resize-handle').focus();await page.keyboard.press('ArrowLeft');await resized(1.05);
   await page.click('#tools-standard-size');await resized(1);
   assert.equal(await page.locator('#tools-opacity-slider').inputValue(),'40','100% resets scale without changing compact opacity');
@@ -291,13 +313,31 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   const appearanceAfterSaved=await appearance();
   assert.equal(appearanceAfterSaved.scale,1.1);assert.equal(appearanceAfterSaved.opacity,75);
   assert.equal(appearanceAfterSaved.compactScale,1.1);assert.equal(appearanceAfterSaved.compactOpacity,40);
+  await toggleCompact(true);await page.selectOption('#tools-compare-axis','clock');
+  assert.equal(await library.getAttribute('data-chart-only'),'true');assert(await page.locator('#tools-shared-length').isDisabled());
+  assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/local time of day/);
+  await page.selectOption('#tools-compare-axis','elapsed');assert(await page.locator('#tools-shared-length').isEnabled());
+  assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/real elapsed time/);
+  await toggleCompact(false);assert.equal(await page.locator('#tools-compare-axis').inputValue(),'elapsed');
 
   await page.click('#tools-compare-recent');await page.click('#tools-recent-metric-total');
-  const recentCompact=await chooseChart('cross_day_model');await page.click('#tools-recent-freeze');
+  let recentCompact=await chooseChart('cross_day_model');await page.click('#tools-recent-freeze');
   await toggleCompact(true);await assertCompactChart(recentCompact,'Recent comparison minimizes');
   assert.match(await page.locator('#tools-compact-status').textContent(),/frozen/i,'the minimized strip makes frozen charts recognizable');
   assert.equal(await page.locator('#tools-compact-status').getAttribute('title'),await page.locator('#tools-compact-status').textContent(),'the status tooltip preserves its full explanation');
   assert.match(await page.locator('#tools-chart-only').getAttribute('aria-label'),/expand/i);
+  await page.click('#tools-recent-metric-withTokens');
+  assert.match(await page.locator('#tools-compact-subtitle').textContent(),/Viewers with tokens/);
+  await page.click('#tools-recent-metric-total');await assertCompactChart(recentCompact,'Recent compact metric round trip');
+  await page.selectOption('#tools-recent-range','14400000');
+  assert.equal(await library.getAttribute('data-chart-only'),'true');assert.equal(await page.locator('#tools-recent-range').inputValue(),'14400000');
+  assert.match(await page.locator('#tools-compact-status').textContent(),/frozen/i);
+  assert(!(await page.locator('.tools-chart-legend input').isChecked()),'narrowing a frozen Recent range retains the hidden session');
+  assert.doesNotMatch(await page.locator('#tools-chart-inspection caption').textContent(),/pinned/,'an intentional preset resets inspection and zoom');
+  await page.selectOption('#tools-recent-range','86400000');
+  assert(!(await page.locator('.tools-chart-legend input').isChecked()));
+  await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('End');
+  recentCompact=await captureChart();await page.evaluate(()=>{window.compactCanvas=document.getElementById('tools-analysis-chart');});
   await page.evaluate(()=>{window.testNow+=30000;ViewerTracker.__expanded.addCompactRecent();ViewerTracker.__expanded.refreshTools();});
   await assertCompactChart(recentCompact,'Frozen Recent chart ignores incoming saved data');
   await toggleCompact(false);assert.deepEqual(await captureChart(),recentCompact);
@@ -305,7 +345,7 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.click('#tools-recent-freeze');
   await page.fill('#tools-chart-line-search','compact_model');assert.equal(await page.locator('.tools-chart-legend label').count(),1,'expanding and resuming catches the saved session added while compact');
   await page.fill('#tools-chart-line-search','cross_day_model');
-  await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('End');
+  await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('End');await page.click('#tools-chart-zoom-in');
   const topologyBefore=await captureChart();await page.evaluate(()=>{window.compactCanvas=document.getElementById('tools-analysis-chart');});
   await toggleCompact(true);
   await page.evaluate(()=>{window.testNow+=30000;ViewerTracker.__expanded.addCompactRecent('_next');ViewerTracker.__expanded.refreshTools();});
@@ -348,6 +388,15 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.waitForFunction(()=>document.querySelector('#tools-live-samples [data-live-report="live_model_39"] td')?.textContent==='390');
   assert.equal(await library.getAttribute('data-chart-only'),'true','ongoing scans update the compact chart without expanding it');
   assert(!(await page.locator('.tools-chart-legend input').isChecked()),'ongoing compact updates preserve the hidden Live model');
+  const liveSelected=await page.locator('[data-live-source]:checked').count();
+  await page.click('#tools-live-metric-withTokens');
+  assert.match(await page.locator('#tools-compact-subtitle').textContent(),/Viewers with tokens/);
+  assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/Viewers with tokens/);
+  await page.selectOption('#tools-live-window','14400000');
+  assert.equal(await library.getAttribute('data-chart-only'),'true');assert.equal(await page.locator('#tools-live-window').inputValue(),'14400000');
+  assert.equal(await page.locator('[data-live-source]:checked').count(),liveSelected,'compact Live window changes retain the chosen models');
+  await page.selectOption('#tools-live-window','3600000');await page.click('#tools-live-metric-total');
+  assert.equal(await page.locator('#tools-live-window').inputValue(),'3600000');
   await page.screenshot({path:'/tmp/tierscope-chart-only-live-'+engine+'.png'});
   await page.setViewportSize({width:380,height:850});
   await page.waitForFunction(()=>document.getElementById('tierscope-session-tools').dataset.layout==='sheet');
@@ -360,6 +409,26 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
    const p=panel.getBoundingClientRect(),l=document.getElementById('tierscope-session-tools').getBoundingClientRect(),left=Math.max(p.left,l.left,0),right=Math.min(p.right,l.right,innerWidth),top=Math.max(p.top,l.top,0),bottom=Math.min(p.bottom,l.bottom,innerHeight);
    return right>left&&bottom>top&&panel.contains(document.elementFromPoint((left+right)/2,(top+bottom)/2));
   }),'Scope receives input above its overlapping compact Library');
+  await page.setViewportSize({width:320,height:240});
+  await page.locator('#tracker-container').evaluate(element=>{element.style.left='330px';});
+  const shortLayout=await library.evaluate(async element=>{
+   const heights=[];for(let i=0;i<8;i++){await new Promise(requestAnimationFrame);heights.push(element.getBoundingClientRect().height);}
+   const content=element.querySelector('#tools-content'),footer=element.querySelector('.tools-appearance').getBoundingClientRect(),rect=element.getBoundingClientRect();
+   return {heights,scrollHeight:content.scrollHeight,clientHeight:content.clientHeight,overflow:getComputedStyle(content).overflowY,
+    footerTop:footer.top,footerBottom:footer.bottom,left:rect.left,right:rect.right,bottom:rect.bottom,horizontal:element.scrollWidth-element.clientWidth};
+  });
+  assert(Math.max(...shortLayout.heights)-Math.min(...shortLayout.heights)<1,'short-window chart height settles without a resize loop');
+  assert(shortLayout.left>=0&&shortLayout.right<=320&&shortLayout.bottom<=240&&shortLayout.horizontal<=1);
+  assert(shortLayout.footerTop>=0&&shortLayout.footerBottom<=240,'the transparency footer stays within a short viewport');
+  assert(shortLayout.scrollHeight>shortLayout.clientHeight&&['auto','scroll'].includes(shortLayout.overflow),'short compact views scroll the chart controls vertically');
+  for(const selector of ['.tools-metric-strip','#tools-live-window','#tools-chart-zoom-in','#tools-analysis-chart']){
+   const control=page.locator(selector);await control.evaluate(element=>element.scrollIntoView({block:'center',inline:'nearest'}));
+   assert(await control.evaluate(element=>{
+    const rect=element.getBoundingClientRect(),view=document.getElementById('tools-content').getBoundingClientRect();
+    return rect.bottom>view.top&&rect.top<view.bottom&&rect.left>=view.left-1&&rect.right<=view.right+1;
+   }),selector+' remains reachable by scrolling in a short compact view');
+  }
+  await page.screenshot({path:'/tmp/tierscope-chart-only-short-'+engine+'.png'});
   await page.setViewportSize({width:1250,height:1050});await toggleCompact(false);
   await toggleCompact(true);
   await page.locator('#tools-live-clear').evaluate(element=>element.click());

@@ -3,9 +3,21 @@
 export function attachChartOnlyView(library, {getChart, describe, modeChanged, redraw}) {
     const content = library.querySelector('#tools-content'), toggle = library.querySelector('#tools-chart-only');
     const subtitle = library.querySelector('#tools-compact-subtitle'), status = library.querySelector('#tools-compact-status');
-    let compact = false, markedChart = null, path = [], previousScroll = 0, closed = false;
+    let compact = false, markedChart = null, path = [], controls = [], controlPath = [], previousScroll = 0, closed = false;
     function clearPath() {
         path.forEach(node => {delete node.dataset.compactPath;}); path = []; markedChart = null;
+        controls.forEach(node => {delete node.dataset.compactControl;}); controls = [];
+        controlPath.forEach(node => {delete node.dataset.compactControlPath;}); controlPath = [];
+    }
+    function chartControls(chart) {
+        const nodes = [...content.querySelectorAll('.tools-metric-strip, #tools-comparison-range')];
+        for (const id of ['tools-live-window', 'tools-recent-range', 'tools-compare-axis']) {
+            const select = content.querySelector('#' + id);
+            if (select) nodes.push(select.closest('label') || select);
+        }
+        const zoom = chart.parentElement.querySelector(':scope > .tools-actions');
+        if (zoom) nodes.push(zoom);
+        return nodes;
     }
     function setMode(enabled) {
         if (closed || compact === enabled || enabled && !getChart()) return;
@@ -26,11 +38,19 @@ export function attachChartOnlyView(library, {getChart, describe, modeChanged, r
         if (compact && !chart) {setMode(false); return;}
         toggle.disabled = !compact && !chart;
         if (!compact) {toggle.title = chart ? 'Keep only the current comparison chart visible' : 'Open a comparison to use chart-only view'; return;}
-        if (markedChart !== chart) {
+        const nextControls = chartControls(chart);
+        if (markedChart !== chart || nextControls.length !== controls.length || nextControls.some((node, index) => node !== controls[index])) {
             clearPath(); markedChart = chart;
             for (let node = chart; node && node !== content; node = node.parentElement) {
                 node.dataset.compactPath = ''; path.push(node);
             }
+            controls = nextControls;
+            controls.forEach(control => {
+                control.dataset.compactControl = '';
+                for (let node = control.parentElement; node && node !== content; node = node.parentElement) {
+                    node.dataset.compactControlPath = ''; controlPath.push(node);
+                }
+            });
             redraw();
         }
         const info = describe();

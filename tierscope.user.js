@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.31.0-beta.3
+// @version      3.31.0-beta.4
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -6353,7 +6353,7 @@ underlying system, so should run in the browser, Node, or Plask.
       let rect = panel.getBoundingClientRect();
       const margin = 8, availableWidth = Math.max(1, window.innerWidth - margin * 2), availableHeight = Math.max(1, window.innerHeight - margin * 2);
       const effective = Math.min(scale, availableWidth / 260, availableHeight / 220);
-      const width = Math.min(370 * effective, availableWidth), height = Math.min((compact ? 300 : baseHeight) * effective, availableHeight);
+      const width = Math.min(370 * effective, availableWidth), height = Math.min((compact ? 400 : baseHeight) * effective, availableHeight);
       const docked = window.innerWidth >= rect.width + width + margin * 2;
       if (docked) {
         const left = Math.max(width + margin - 1, Math.min(rect.left, window.innerWidth - rect.width - margin));
@@ -6513,13 +6513,31 @@ underlying system, so should run in the browser, Node, or Plask.
   function attachChartOnlyView(library, { getChart, describe, modeChanged, redraw }) {
     const content = library.querySelector("#tools-content"), toggle = library.querySelector("#tools-chart-only");
     const subtitle = library.querySelector("#tools-compact-subtitle"), status = library.querySelector("#tools-compact-status");
-    let compact = false, markedChart = null, path = [], previousScroll = 0, closed = false;
+    let compact = false, markedChart = null, path = [], controls = [], controlPath = [], previousScroll = 0, closed = false;
     function clearPath() {
       path.forEach((node) => {
         delete node.dataset.compactPath;
       });
       path = [];
       markedChart = null;
+      controls.forEach((node) => {
+        delete node.dataset.compactControl;
+      });
+      controls = [];
+      controlPath.forEach((node) => {
+        delete node.dataset.compactControlPath;
+      });
+      controlPath = [];
+    }
+    function chartControls(chart) {
+      const nodes = [...content.querySelectorAll(".tools-metric-strip, #tools-comparison-range")];
+      for (const id of ["tools-live-window", "tools-recent-range", "tools-compare-axis"]) {
+        const select = content.querySelector("#" + id);
+        if (select) nodes.push(select.closest("label") || select);
+      }
+      const zoom = chart.parentElement.querySelector(":scope > .tools-actions");
+      if (zoom) nodes.push(zoom);
+      return nodes;
     }
     function setMode(enabled) {
       if (closed || compact === enabled || enabled && !getChart()) return;
@@ -6550,13 +6568,22 @@ underlying system, so should run in the browser, Node, or Plask.
         toggle.title = chart ? "Keep only the current comparison chart visible" : "Open a comparison to use chart-only view";
         return;
       }
-      if (markedChart !== chart) {
+      const nextControls = chartControls(chart);
+      if (markedChart !== chart || nextControls.length !== controls.length || nextControls.some((node, index) => node !== controls[index])) {
         clearPath();
         markedChart = chart;
         for (let node = chart; node && node !== content; node = node.parentElement) {
           node.dataset.compactPath = "";
           path.push(node);
         }
+        controls = nextControls;
+        controls.forEach((control) => {
+          control.dataset.compactControl = "";
+          for (let node = control.parentElement; node && node !== content; node = node.parentElement) {
+            node.dataset.compactControlPath = "";
+            controlPath.push(node);
+          }
+        });
         redraw();
       }
       const info = describe();
@@ -6706,9 +6733,12 @@ underlying system, so should run in the browser, Node, or Plask.
 #tierscope-session-tools[data-chart-only=true] #tools-compact-label{display:block}
 #tierscope-session-tools[data-chart-only=true] #tools-compact-status{display:block;font-size:.85em;color:var(--panel-muted);padding:4px 9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex-shrink:0}
 #tierscope-session-tools[data-chart-only=true] #tools-compact-status[data-warning=true]{color:var(--panel-warning)}
-#tierscope-session-tools[data-chart-only=true] #tools-content{padding:5px;overflow:hidden}
-#tierscope-session-tools[data-chart-only=true] #tools-content>:not([data-compact-path]),#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-path]>:not([data-compact-path]){display:none!important}
-#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-path]{width:100%;height:100%;min-width:0;min-height:0;margin:0;padding:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content{display:flex;flex-direction:column;padding:5px;overflow:auto}
+#tierscope-session-tools[data-chart-only=true] #tools-content>:not([data-compact-path]):not([data-compact-control]):not([data-compact-control-path]),#tierscope-session-tools[data-chart-only=true] #tools-content :is([data-compact-path],[data-compact-control-path])>:not([data-compact-path]):not([data-compact-control]):not([data-compact-control-path]){display:none!important}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-path]:not(canvas){display:flex;flex-direction:column;flex:1 0 auto;width:100%;min-width:0;min-height:0;margin:0;padding:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-control-path]:not([data-compact-path]){flex:0 0 auto;min-width:0;margin:0}
+#tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-control]{flex:0 0 auto;max-width:100%;min-width:0;margin:3px 0}
+#tierscope-session-tools[data-chart-only=true] #tools-content canvas[data-compact-path]{flex:1 0 140px;width:100%;height:140px;min-height:140px;margin:0;padding:0}
 #tierscope-session-tools[data-chart-only=true] #tools-content #tools-chart-view>.tools-chart-inspection-scroll{display:block!important;position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
 #tierscope-session-tools #tools-resize-handle{position:absolute;left:0;top:0;width:16px;height:16px;padding:0;border:0;border-radius:6px 0 0;background:linear-gradient(135deg,#ff69b4 50%,transparent 50%);cursor:ew-resize;touch-action:none;z-index:2}
 #tierscope-session-tools .tools-appearance{flex-shrink:0;border-top:1px solid var(--panel-divider);padding:7px 12px}
@@ -12603,7 +12633,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.31.0-beta.3";
+    runtime.TIERSCOPE_VERSION = "3.31.0-beta.4";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

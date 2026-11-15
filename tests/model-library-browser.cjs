@@ -36,7 +36,7 @@ const source=prepareSource(fs.readFileSync(path.join(__dirname,'../tierscope.use
  assert(await page.evaluate(()=>document.getElementById('tier-row-anon').nextElementSibling.id==='tier-row-roomTotal'));
  const series=await page.locator('#spark-roomTotal').evaluate(c=>c._tierScopeChart.values);assert.deepEqual(series,[15,30,45]);
  await page.click('#btn-control-library');
- assert.equal(await page.locator('#tools-title').textContent(),'Library');assert.equal(await page.locator('.tools-subtitle').textContent(),'Session Storage and Analysis');
+ assert.equal(await page.locator('#tools-title').textContent(),'Library');assert.equal(await page.locator('.tools-head-labels > .tools-subtitle').textContent(),'Session Storage and Analysis');
  assert.deepEqual(await page.locator('[data-tools-tab]').allTextContents(),['Sessions','Summary','Compare','Backup']);
  assert.equal(await page.locator('#tools-content > :first-child #tools-current-kind').textContent(),'Current Live Session');
  // The book starts closed independently of storage settings and current controls.
