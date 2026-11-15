@@ -4,7 +4,7 @@ This preview adds an all-model **Last 24h** comparison and removes the separate 
 
 ## Try the preview
 
-Install [3.30.0-beta.3](https://github.com/newivy2/TierScope/blob/beta/expanded-comparisons/tierscope.user.js) over the existing TierScope script, then refresh your room tabs. Stable `main` remains on 3.29.0 until this preview is approved.
+Install [3.30.0-beta.4](https://github.com/newivy2/TierScope/blob/beta/expanded-comparisons/tierscope.user.js) over the existing TierScope script, then refresh your room tabs. Stable `main` remains on 3.29.0 until this preview is approved.
 
 Open **Library → Compare** and choose **Saved sessions**, **Live models**, or **Last 24h**. The **Current Live Session** card provides **Live sessions** and **Last 24h sessions** shortcuts beside the existing comparison actions. The Sessions tab and model-history actions also provide **Last 24h · all models** shortcuts.
 
@@ -18,7 +18,11 @@ This view always reads the complete saved Library. Model, search, favorite and d
 - All qualifying sessions appear, including separate sessions from the same model. Their audiences and histories are never added together.
 - The chart uses actual dated timestamps, including midnight crossings. It shows the selected rolling range, with recording gaps preserved and no line extended past its final sample.
 
-The metric strip changes the displayed tier or total. **Freeze comparison** holds the session snapshots and end time; **Resume comparison** catches up. Presets remain available while frozen, using the captured day without another storage read. The refresh button reads saved sessions again. Saved updates are checked every ten seconds while this view is open, and the rolling window advances periodically.
+Solid lines identify current sessions in open TierScope tracking tabs; this room’s matching current session stays opaque pink, even if it began before newer recordings. Other ongoing sessions stay solid and opaque. Older sessions of the same model remain dashed, as do stopped, closed and stale sessions. Historical traces keep their progressive fading; older history forms the faint gray background.
+
+Tracking indicators come from existing tab announcements, without reading more session histories or sending API requests. Paused tabs and temporary connection/retry waits still count as ongoing sessions. This indicates TierScope tracking, not confirmed broadcasting status on Chaturbate. A duplicate model uses the ongoing session with the most samples. Records with an unknown start are not guessed to be current. If tracking metadata is unavailable, an explanation appears and unmatched sessions use historical styling.
+
+The metric strip changes the displayed tier or total. **Freeze comparison** holds the session snapshots and end time; **Resume comparison** catches up. Tracking indicators still update while frozen. Presets remain available while frozen, using the captured day without another storage read. The refresh button reads saved sessions again. Saved updates are checked every ten seconds while this view is open, and the rolling window advances periodically.
 
 Unchecked sessions and a selected time range stay as chosen when the rolling view updates. Compatible automatic Library replacements inherit the same visibility choice; conflicting recordings remain separate. A manually zoomed range is clamped only if it moves outside the selected rolling window. Choosing a different preset opens its full range while retaining unchecked lines. The preset stays selected across metric changes and tab navigation while Library is open; the **Last 24h sessions** shortcut opens the full day.
 
@@ -36,7 +40,7 @@ With more than thirty selected sessions, the selected-session list and statistic
 
 Live models has no separate twelve-model selection or two-hundred-publisher discovery cutoff. Use **Select all**, **Clear**, model search and **Show more models** to manage the chooser. Latest-sample reports use pages of fifty.
 
-One line is shown per selected model. If it is tracked in multiple tabs, the session with the most samples supplies that line; ties keep the current source. Colors remain stable for models that stay selected, and additional models receive additional colors. Existing pause, stale-source, Reset and Freeze/Resume behavior is preserved.
+One line is shown per selected model. If it is tracked in multiple tabs, the session with the most samples supplies that line; ties keep the current source. This room’s selected model uses pink. Other colors remain stable for models that stay selected, and additional models receive additional colors; a model joining as the current room takes the pink slot. Existing pause, stale-source, Reset and Freeze/Resume behavior is preserved.
 
 ## Inspect large charts
 

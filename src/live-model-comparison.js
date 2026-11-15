@@ -17,7 +17,7 @@ export function createLiveComparisonState() {
 // A Library controller: it reads published aggregate snapshots and gives only
 // analysis values to the chart. It never scans, saves a recording or changes a
 // live session, and subscriptions exist only while this view is open.
-export function renderLiveModelsComparison(parent, {state, getMetric, metricControl}) {
+export function renderLiveModelsComparison(parent, {state, getMetric, metricControl, currentRoom = ''}) {
     const root = node(parent, 'section'); root.id = 'tools-live-models';
     node(root, 'h3', 'Live models comparison');
     node(root, 'p', 'Uses scans from your other TierScope tabs. No additional API requests.', 'tools-muted');
@@ -173,7 +173,7 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
         const data = buildLiveModelSeries(archives, getMetric(), {now: state.frozen ? state.frozenAt : at, windowMs: state.windowMs});
         const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
         if (!same) {clearChart(); state.chartState = null; state.reportPage = 0;}
-        state.colors = allocateLiveModelColors(selected.map(source => source.room), state.colors);
+        state.colors = allocateLiveModelColors(selected.map(source => source.room), state.colors, currentRoom);
         const config = {originAt: data.originAt, sourceIds: ids, colorIndices: selected.map(source => state.colors.get(source.room))};
         if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[getMetric()], 'live', config);
         else {

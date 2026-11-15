@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.30.0-beta.3
+// @version      3.30.0-beta.4
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -6685,15 +6685,26 @@ underlying system, so should run in the browser, Node, or Plask.
       inspect();
     }, "tools-chart-pin");
     const legend = toolNode(parent, "div", void 0, "tools-chart-legend");
-    let newestFirst, ranks, colorIndices, opacities, newest;
+    let newestFirst, ranks, colorIndices, opacities, newest, styledTimeline, primarySeries, trackedSeries, backgroundSeries, solidSeries;
     function refreshSeriesStyling() {
       ({ newestFirst, ranks } = axisMode === "live" ? { newestFirst: series.map((_, index) => index), ranks: series.map((_, index) => index) } : comparisonSeriesOrder(series, config.rankTimes));
-      colorIndices = ranks.map((rank, i) => {
-        var _a, _b;
-        return axisMode === "live" ? (_b = (_a = config.colorIndices) == null ? void 0 : _a[i]) != null ? _b : i : rank < 6 ? rank : 1 + (rank - 6) % 5;
+      styledTimeline = axisMode === "timeline" && Array.isArray(config.seriesStyles);
+      primarySeries = series.map((_, index) => {
+        var _a;
+        return styledTimeline && ((_a = config.seriesStyles[index]) == null ? void 0 : _a.primary) === true;
       });
-      opacities = ranks.map((rank) => axisMode === "live" ? 1 : comparisonOpacity(rank));
+      trackedSeries = series.map((_, index) => {
+        var _a;
+        return primarySeries[index] || styledTimeline && ((_a = config.seriesStyles[index]) == null ? void 0 : _a.live) === true;
+      });
+      backgroundSeries = ranks.map((rank, index) => axisMode !== "live" && !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
       newest = newestFirst[0];
+      solidSeries = series.map((_, index) => axisMode === "live" || (styledTimeline ? trackedSeries[index] : index === newest));
+      colorIndices = ranks.map((rank, i) => {
+        var _a, _b, _c, _d;
+        return axisMode === "live" ? (_b = (_a = config.colorIndices) == null ? void 0 : _a[i]) != null ? _b : i : styledTimeline ? primarySeries[i] ? 0 : Math.max(1, (_d = (_c = config.colorIndices) == null ? void 0 : _c[i]) != null ? _d : 1 + rank) : rank < 6 ? rank : 1 + (rank - 6) % 5;
+      });
+      opacities = ranks.map((rank, index) => axisMode === "live" || trackedSeries[index] ? 1 : comparisonOpacity(rank));
     }
     refreshSeriesStyling();
     const legendLabels = /* @__PURE__ */ new Map(), rows = /* @__PURE__ */ new Map();
@@ -6758,14 +6769,15 @@ underlying system, so should run in the browser, Node, or Plask.
     }
     function paintLegend() {
       for (const [i, item] of legendLabels) {
-        const label = labels[i], background = axisMode !== "live" && ranks[i] >= COMPARISON_FOREGROUND_COUNT;
+        const label = labels[i], background = backgroundSeries[i];
         item.control.style.color = background ? legendBackground : comparisonLineColor(colorIndices[i], legendDark);
         item.check.checked = !hidden.has(i);
         item.check.disabled = hidden.size === series.length - 1 && !hidden.has(i);
-        item.swatch.style.borderTopStyle = axisMode === "live" || i === newest ? "solid" : "dashed";
+        item.swatch.style.borderTopStyle = solidSeries[i] ? "solid" : "dashed";
         item.swatch.style.opacity = String(opacities[i]);
-        item.text.textContent = axisMode === "live" ? label : comparisonLabel(i) + (series.length > 1 && i === newest ? " · Latest" : "") + " · " + label;
-        item.control.title = axisMode === "live" ? label + " · live model · solid line" : (series.length > 1 ? i === newest ? "Latest session — solid pink: " : (background ? "Background session — dashed" : "Earlier session — dashed") + ", " + Math.round(opacities[i] * 100) + "% opacity: " : "") + label;
+        const marker = styledTimeline ? primarySeries[i] ? " · Current" : trackedSeries[i] ? " · Tracked" : "" : series.length > 1 && i === newest ? " · Latest" : "";
+        item.text.textContent = axisMode === "live" ? label : comparisonLabel(i) + marker + " · " + label;
+        item.control.title = styledTimeline ? (primarySeries[i] ? "Current tracked session — solid pink: " : trackedSeries[i] ? "Currently tracked session — solid, 100% opacity: " : "Historical session — dashed, " + Math.round(opacities[i] * 100) + "% opacity: ") + label : axisMode === "live" ? label + " · live model · solid line" : (series.length > 1 ? i === newest ? "Latest session — solid pink: " : (background ? "Background session — dashed" : "Earlier session — dashed") + ", " + Math.round(opacities[i] * 100) + "% opacity: " : "") + label;
       }
     }
     function renderLinePage() {
@@ -6867,7 +6879,7 @@ underlying system, so should run in the browser, Node, or Plask.
       }
     }
     function draw() {
-      var _a, _b, _c;
+      var _a;
       if (disposed) return;
       width = Math.max(260, canvas.clientWidth);
       right = width - 14;
@@ -6915,9 +6927,9 @@ underlying system, so should run in the browser, Node, or Plask.
       const backgroundColor = style.getPropertyValue("--panel-muted").trim();
       function paintSeries(target, j, color) {
         target.strokeStyle = target.fillStyle = color;
-        target.lineWidth = axisMode !== "live" && ranks[j] >= COMPARISON_FOREGROUND_COUNT ? 1.2 : 1.8;
+        target.lineWidth = backgroundSeries[j] ? 1.2 : 1.8;
         target.lineCap = "butt";
-        target.setLineDash(axisMode === "live" || j === newest ? [] : [6, 4]);
+        target.setLineDash(solidSeries[j] ? [] : [6, 4]);
         target.beginPath();
         let previousY = 0;
         const dots = [], points = plots[j].points;
@@ -6939,7 +6951,7 @@ underlying system, so should run in the browser, Node, or Plask.
           target.fill();
         });
       }
-      const backgroundIndices = axisMode === "live" ? [] : newestFirst.filter((j) => ranks[j] >= COMPARISON_FOREGROUND_COUNT && !hidden.has(j));
+      const backgroundIndices = newestFirst.filter((j) => backgroundSeries[j] && !hidden.has(j));
       backgroundBitmap.width = backgroundIndices.length ? width * ratio : 0;
       backgroundBitmap.height = backgroundIndices.length ? height * ratio : 0;
       if (backgroundIndices.length) {
@@ -6950,18 +6962,25 @@ underlying system, so should run in the browser, Node, or Plask.
         ctx.drawImage(backgroundBitmap, 0, 0, width, height);
         ctx.globalAlpha = 1;
       }
-      for (let position = newestFirst.length - 1; position >= 0; position--) {
-        const j = newestFirst[position];
-        const background = axisMode !== "live" && ranks[j] >= COMPARISON_FOREGROUND_COUNT;
-        const colorIndex = axisMode === "live" ? (_c = (_b = config.colorIndices) == null ? void 0 : _b[j]) != null ? _c : colorIndices[j] : colorIndices[j];
-        const color = background ? backgroundColor : comparisonLineColor(colorIndex, isDark);
-        if (hidden.has(j) || background) continue;
+      function paintForeground(j) {
+        var _a2, _b;
+        if (hidden.has(j) || backgroundSeries[j]) return;
+        const colorIndex = axisMode === "live" ? (_b = (_a2 = config.colorIndices) == null ? void 0 : _a2[j]) != null ? _b : colorIndices[j] : colorIndices[j];
+        const color = comparisonLineColor(colorIndex, isDark);
         ctx.globalAlpha = opacities[j];
         paintSeries(ctx, j, color);
       }
+      if (styledTimeline) {
+        for (let layer = 0; layer < 3; layer++) for (let position = newestFirst.length - 1; position >= 0; position--) {
+          const j = newestFirst[position], seriesLayer = primarySeries[j] ? 2 : trackedSeries[j] ? 1 : 0;
+          if (seriesLayer === layer) paintForeground(j);
+        }
+      } else {
+        for (let position = newestFirst.length - 1; position >= 0; position--) paintForeground(newestFirst[position]);
+      }
       ctx.globalAlpha = 1;
       range.textContent = "Chart window " + (datedAxis() ? liveDate(start).toLocaleString() + " – " + liveDate(end).toLocaleString() : axisLabel(start) + " – " + axisLabel(end) + (axisMode === "clock" ? " · 24h local clock" : " · full comparison/session range " + elapsed(axisMs)));
-      hint.textContent = (axisMode === "live" ? "Models are aligned by actual dated sample timestamps. Each line ends at its last accepted scan; it is not extended to the current time." : axisMode === "timeline" ? "Sessions are aligned by actual dated sample timestamps. Lines end at the last accepted sample, with no assumed coverage to the current time." : axisMode === "clock" ? "Aligned by local time of day. Midnight crossings continue at the start of the chart. Clock changes are separate segments; repeated clock times can show multiple dated values. Statistics use full sessions." : "Aligned from each session’s first retained sample, using real elapsed time. Hidden lines and zoom do not change summary totals or the shared comparison length.") + " Move to inspect; click to pin, drag to zoom, or use the buttons and arrow keys. Gaps have no assumed samples." + (axisMode === "live" ? " Each model has a solid, opaque line and can be hidden independently." : series.length > COMPARISON_FOREGROUND_COUNT ? " The newest twelve lines fade progressively; older sessions form a faint background. Each session remains inspectable and can be hidden." : " The newest line is opaque; earlier sessions fade progressively.");
+      hint.textContent = (axisMode === "live" ? "Models are aligned by actual dated sample timestamps. Each line ends at its last accepted scan; it is not extended to the current time." : axisMode === "timeline" ? "Sessions are aligned by actual dated sample timestamps. Lines end at the last accepted sample, with no assumed coverage to the current time." : axisMode === "clock" ? "Aligned by local time of day. Midnight crossings continue at the start of the chart. Clock changes are separate segments; repeated clock times can show multiple dated values. Statistics use full sessions." : "Aligned from each session’s first retained sample, using real elapsed time. Hidden lines and zoom do not change summary totals or the shared comparison length.") + " Move to inspect; click to pin, drag to zoom, or use the buttons and arrow keys. Gaps have no assumed samples." + (styledTimeline ? " Solid pink marks the current room’s tracked session. Other tracked sessions are solid; historical sessions are dashed, with older history in faint gray." : axisMode === "live" ? " Each model has a solid, opaque line and can be hidden independently." : series.length > COMPARISON_FOREGROUND_COUNT ? " The newest twelve lines fade progressively; older sessions form a faint background. Each session remains inspectable and can be hidden." : " The newest line is opaque; earlier sessions fade progressively.");
       zoomIn.disabled = end - start <= Math.min(1e3, axisMs);
       zoomOut.disabled = end - start >= axisMs;
       panLeft.disabled = start <= 0;
@@ -7095,13 +7114,19 @@ underlying system, so should run in the browser, Node, or Plask.
   }
 
   // src/live-model-chart-data.js
-  function allocateLiveModelColors(rooms, previous = /* @__PURE__ */ new Map()) {
+  function allocateLiveModelColors(rooms, previous = /* @__PURE__ */ new Map(), primaryRoom = "") {
     const selected = [...new Set(rooms)];
     if (selected.some((room2) => typeof room2 !== "string" || !room2.length)) {
       throw new Error("Choose named models for live comparison colors.");
     }
-    const colors = /* @__PURE__ */ new Map(), used = /* @__PURE__ */ new Set();
+    const colors = /* @__PURE__ */ new Map(), used = /* @__PURE__ */ new Set(), primaryName = typeof primaryRoom === "string" ? primaryRoom.toLowerCase() : "";
+    const primary = primaryName ? selected.find((room2) => room2.toLowerCase() === primaryName) : void 0;
+    if (primary !== void 0) {
+      colors.set(primary, 0);
+      used.add(0);
+    }
     for (const room2 of selected) {
+      if (colors.has(room2)) continue;
       const index2 = previous.get(room2);
       if (Number.isSafeInteger(index2) && index2 >= 0 && !used.has(index2)) {
         colors.set(room2, index2);
@@ -7440,7 +7465,7 @@ underlying system, so should run in the browser, Node, or Plask.
       chartIds: []
     };
   }
-  function renderLiveModelsComparison(parent, { state, getMetric, metricControl }) {
+  function renderLiveModelsComparison(parent, { state, getMetric, metricControl, currentRoom = "" }) {
     const root = toolNode(parent, "section");
     root.id = "tools-live-models";
     toolNode(root, "h3", "Live models comparison");
@@ -7687,7 +7712,7 @@ underlying system, so should run in the browser, Node, or Plask.
         state.chartState = null;
         state.reportPage = 0;
       }
-      state.colors = allocateLiveModelColors(selected.map((source) => source.room), state.colors);
+      state.colors = allocateLiveModelColors(selected.map((source) => source.room), state.colors, currentRoom);
       const config = { originAt: data.originAt, sourceIds: ids, colorIndices: selected.map((source) => state.colors.get(source.room)) };
       if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[getMetric()], "live", config);
       else {
@@ -7829,6 +7854,23 @@ underlying system, so should run in the browser, Node, or Plask.
   function timestamp2(value) {
     return Number.isSafeInteger(value) && value >= 0 && value <= 864e13;
   }
+  var ongoingSourceStatuses = /* @__PURE__ */ new Set(["tracking", "paused", "retry", "offline"]);
+  function buildRecentComparisonStyles(entries, sources, currentRoom = "") {
+    if (!Array.isArray(entries)) throw new Error("Invalid recent comparison style input.");
+    const winners = /* @__PURE__ */ new Map(), primaryRoom = typeof currentRoom === "string" ? currentRoom.toLowerCase() : "";
+    for (const source of Array.isArray(sources) ? sources : []) {
+      if (!source || typeof source.room !== "string" || !source.room.length || typeof source.id !== "string" || !source.id.length || typeof source.roomEpoch !== "string" || !source.roomEpoch.length || !ongoingSourceStatuses.has(source.status) || !timestamp2(source.sessionStartedAt) || !timestamp2(source.sampleAt) || !Number.isSafeInteger(source.sampleCount) || source.sampleCount <= 0) continue;
+      const room2 = source.room.toLowerCase(), previous = winners.get(room2);
+      if (!previous || source.sampleCount > previous.sampleCount || source.sampleCount === previous.sampleCount && (source.sampleAt > previous.sampleAt || source.sampleAt === previous.sampleAt && source.id.localeCompare(previous.id) < 0)) winners.set(room2, source);
+    }
+    return entries.map((entry) => {
+      const archive = entry == null ? void 0 : entry.archive, session = archive == null ? void 0 : archive.session;
+      const room2 = typeof (archive == null ? void 0 : archive.room) === "string" ? archive.room.toLowerCase() : "";
+      const source = winners.get(room2);
+      const live = !!source && timestamp2(session == null ? void 0 : session.sessionStartedAt) && session.sessionStartedAt === source.sessionStartedAt && (!Object.prototype.hasOwnProperty.call(session, "roomEpoch") || session.roomEpoch === source.roomEpoch);
+      return { live, primary: live && room2 === primaryRoom };
+    });
+  }
   function selectRecentComparisonEntries(entries, now, windowMs = RECENT_COMPARISON_MS) {
     var _a;
     if (!Array.isArray(entries) || !timestamp2(now)) throw new Error("Invalid recent comparison input.");
@@ -7894,7 +7936,12 @@ underlying system, so should run in the browser, Node, or Plask.
       hiddenSources: /* @__PURE__ */ new Set(),
       hiddenSourceEntries: /* @__PURE__ */ new Map(),
       windowMs: RECENT_COMPARISON_MS,
-      chartWindowMs: RECENT_COMPARISON_MS
+      chartWindowMs: RECENT_COMPARISON_MS,
+      liveSources: [],
+      liveRevision: 0,
+      liveSignature: "",
+      liveNotice: "",
+      liveAttemptedAt: null
     };
   }
   function captureEntry(entry) {
@@ -7914,7 +7961,7 @@ underlying system, so should run in the browser, Node, or Plask.
   function sameSource(left, right) {
     return left === right || Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((record, index) => record.key === right[index].key && record.value === right[index].value);
   }
-  function renderRecentComparison(parent, { readEntries, getMetric, metricControl, state = createRecentComparisonState() }) {
+  function renderRecentComparison(parent, { readEntries, getMetric, metricControl, currentRoom = "", readSources = readLiveModelSources, state = createRecentComparisonState() }) {
     const root = toolNode(parent, "section");
     root.id = "tools-recent-comparison";
     toolNode(root, "h3", "Last 24 hours · all models");
@@ -7968,8 +8015,9 @@ underlying system, so should run in the browser, Node, or Plask.
       state.page++;
       paintReports();
     }, "tools-recent-next");
-    toolNode(root, "p", "Actual dates and clock times share one timeline. Recording gaps stay blank and each line ends at its last accepted sample. The newest 12 sessions use progressively lighter colors; older sessions remain visible in faint gray. Sessions from the same model remain separate.", "tools-muted");
+    toolNode(root, "p", "Solid lines mark ongoing TierScope tracking, including paused tabs. Pink marks this room’s current session; history uses dashed lines. Gaps stay blank, lines end at their last accepted sample, and older history stays faint gray.", "tools-muted");
     let disposed = false, refreshing = false, view = null, observer = null, plotSignature = "", paintSignature = "", selectionSignature = "", selection = null;
+    let projection = null, projectionSignature = "";
     function rememberChart() {
       if (!view) return;
       state.chartState = view.capture();
@@ -8049,7 +8097,7 @@ underlying system, so should run in the browser, Node, or Plask.
     function paint(force = false) {
       if (disposed) return;
       const at = (state.frozen ? state.frozenAt : state.displayAt) || Date.now(), metric = getMetric();
-      const nextPaintSignature = [state.revision, at, metric, state.windowMs, state.frozen, state.loaded, state.notice].join("|");
+      const nextPaintSignature = [state.revision, state.liveRevision, at, metric, state.windowMs, state.frozen, state.loaded, state.notice, state.liveNotice].join("|");
       if (!force && nextPaintSignature === paintSignature) return;
       rememberChart();
       if (state.chartWindowMs !== state.windowMs) {
@@ -8071,11 +8119,23 @@ underlying system, so should run in the browser, Node, or Plask.
         selectionSignature = nextSelectionSignature;
       }
       const ids = selection.metadata.map((item) => item.sourceId);
-      const signature = [metric, state.revision, at, state.windowMs, ...ids].join("|");
+      const signature = [metric, state.revision, state.liveRevision, at, state.windowMs, ...ids].join("|");
       const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
       if ((signature !== plotSignature || force) && ids.length) {
-        const data = buildLiveModelSeries(selection.entries.map((entry) => entry.archive), metric, { now: selection.now, windowMs: state.windowMs });
-        const config = { originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map((item) => item.startAt), allowAllHidden: true };
+        const nextProjectionSignature = [metric, state.revision, at, state.windowMs].join("|");
+        if (projectionSignature !== nextProjectionSignature) {
+          projection = buildLiveModelSeries(selection.entries.map((entry) => entry.archive), metric, { now: selection.now, windowMs: state.windowMs });
+          projectionSignature = nextProjectionSignature;
+        }
+        const data = projection;
+        const config = {
+          originAt: data.originAt,
+          sourceIds: ids,
+          rankTimes: selection.metadata.map((item) => item.startAt),
+          allowAllHidden: true,
+          seriesStyles: buildRecentComparisonStyles(selection.entries, state.liveSources, currentRoom)
+        };
+        state.liveSignature = JSON.stringify(config.seriesStyles);
         if (!same) {
           clearChart();
           state.chartState = retainedChartState(ids);
@@ -8090,7 +8150,11 @@ underlying system, so should run in the browser, Node, or Plask.
           }
         }
         state.chartSources = selection.entries.map((entry, index) => ({ id: ids[index], entry }));
-      } else if (!ids.length) clearChart();
+      } else if (!ids.length) {
+        clearChart();
+        projection = null;
+        projectionSignature = "";
+      }
       state.chartIds = ids;
       plotSignature = signature;
       freeze.textContent = state.frozen ? "Resume comparison" : "Freeze comparison";
@@ -8098,7 +8162,7 @@ underlying system, so should run in the browser, Node, or Plask.
       freeze.disabled = !state.loaded;
       refreshButton.disabled = state.frozen;
       refreshButton.title = state.frozen ? "Resume comparison to read the latest saved Library sessions." : "Read all saved Library sessions again.";
-      status.textContent = (state.frozen ? "Frozen" : "Following saved Library updates") + " · " + ids.length.toLocaleString() + " sessions · " + selection.roomCount.toLocaleString() + " models · " + selection.sampleCount.toLocaleString() + " accepted samples in window." + (state.notice ? " " + state.notice : "");
+      status.textContent = (state.frozen ? "Frozen" : "Following saved Library updates") + " · " + ids.length.toLocaleString() + " sessions · " + selection.roomCount.toLocaleString() + " models · " + selection.sampleCount.toLocaleString() + " accepted samples in window." + (state.notice ? " " + state.notice : "") + (state.liveNotice ? " " + state.liveNotice : "");
       windowLabel.textContent = "Window: " + new Date(selection.cutoffAt).toLocaleString() + " — " + new Date(selection.now).toLocaleString();
       windowLabel.title = "Both endpoints are included. A recording qualifies by actual samples, including sessions that started earlier. Future samples, empty recordings and gaps without a sample in this window are excluded. No additional API requests or automatic saves.";
       empty.hidden = !!ids.length;
@@ -8106,14 +8170,35 @@ underlying system, so should run in the browser, Node, or Plask.
       paintReports();
       paintSignature = nextPaintSignature;
     }
+    function refreshTrackingSources(force) {
+      const at = Date.now();
+      if (!force && state.liveAttemptedAt !== null && at >= state.liveAttemptedAt && at - state.liveAttemptedAt < READ_INTERVAL_MS) return;
+      state.liveAttemptedAt = at;
+      let sources = [];
+      try {
+        const result = readSources(force);
+        if (!Array.isArray(result == null ? void 0 : result.sources) || result.error) throw new Error("Live tab metadata is unavailable.");
+        sources = result.sources;
+        state.liveNotice = "";
+      } catch (_) {
+        state.liveNotice = "Live tracking indicators are unavailable.";
+      }
+      state.liveSources = sources;
+      const signature = JSON.stringify(buildRecentComparisonStyles((selection == null ? void 0 : selection.entries) || [], sources, currentRoom));
+      if (signature !== state.liveSignature) {
+        state.liveSignature = signature;
+        state.liveRevision++;
+      }
+    }
     function refresh(force = false) {
       if (disposed || refreshing) return;
-      if (state.frozen) {
-        paint(force);
-        return;
-      }
       refreshing = true;
       try {
+        refreshTrackingSources(force);
+        if (state.frozen) {
+          paint(force);
+          return;
+        }
         const at = Date.now(), due = state.attemptedAt === null || at - state.attemptedAt >= READ_INTERVAL_MS || force;
         let windowChanged = !state.displayAt || at - state.displayAt >= WINDOW_INTERVAL_MS || force;
         if (due) {
@@ -8165,6 +8250,7 @@ underlying system, so should run in the browser, Node, or Plask.
         view.dispose();
       }
       if (observer) observer.disconnect();
+      projection = null;
       freeze.onclick = null;
       refreshButton.onclick = null;
       range.onchange = null;
@@ -10306,6 +10392,7 @@ underlying system, so should run in the browser, Node, or Plask.
         if (compareMode === "recent") {
           recentView = renderRecentComparison(content, {
             state: recentState,
+            currentRoom: getModelName(),
             readEntries: () => {
               const saved = readLibrary();
               return { entries: saved.entries, error: saved.unavailable.length || saved.damaged.length ? "Some saved sessions could not be read; the displayed set may be incomplete." : "" };
@@ -10319,6 +10406,7 @@ underlying system, so should run in the browser, Node, or Plask.
         if (compareMode === "live") {
           liveModelsView = renderLiveModelsComparison(content, {
             state: liveModelsState,
+            currentRoom: getModelName(),
             getMetric: () => metric,
             metricControl: (parent, changed) => metricStrip(parent, changed, "tools-live-metric")
           });
@@ -12269,7 +12357,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.30.0-beta.3";
+    runtime.TIERSCOPE_VERSION = "3.30.0-beta.4";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

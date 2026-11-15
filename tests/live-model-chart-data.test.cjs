@@ -44,6 +44,36 @@ test('large live selections retain distinct stable slots and colors beyond the o
     assert.equal(comparisonLineColor(0), '#ff69b4'); assert.equal(comparisonLineColor(1, false), '#175db0');
 });
 
+test('the selected current room owns pink regardless of alphabetical or selection order', async () => {
+    const {allocateLiveModelColors} = await import('../src/live-model-chart-data.js');
+    const rooms = ['alice', 'brenda', 'zoe'], previous = allocateLiveModelColors(rooms), before = [...previous];
+    assert.equal(previous.get('alice'), 0);
+    const primary = allocateLiveModelColors(rooms, previous, 'ZOE');
+    assert.equal(primary.get('zoe'), 0, 'primary matching is case-insensitive');
+    assert.equal(primary.get('brenda'), previous.get('brenda'), 'unrelated existing colors remain stable');
+    assert.notEqual(primary.get('alice'), 0, 'the earlier pink occupant releases the reserved slot');
+    assert.equal(new Set(primary.values()).size, rooms.length);
+    assert.deepEqual([...previous], before, 'reserving pink never mutates earlier allocations');
+    const reordered = allocateLiveModelColors(['zoe', 'alice', 'brenda'], primary, 'zoe');
+    for (const room of rooms) assert.equal(reordered.get(room), primary.get(room));
+});
+
+test('a current room joining or returning reclaims pink without recoloring unrelated models', async () => {
+    const {allocateLiveModelColors} = await import('../src/live-model-chart-data.js');
+    const initial = allocateLiveModelColors(['alice', 'brenda', 'charlie']);
+    const joined = allocateLiveModelColors(['alice', 'brenda', 'charlie', 'zoe'], initial, 'zoe');
+    assert.equal(joined.get('zoe'), 0);
+    for (const room of ['brenda', 'charlie']) assert.equal(joined.get(room), initial.get(room));
+    const without = allocateLiveModelColors(['alice', 'brenda', 'charlie', 'new_model'], joined, 'zoe');
+    assert.equal(without.get('new_model'), 0, 'an unselected primary does not reserve an unused color');
+    const returned = allocateLiveModelColors(['new_model', 'zoe', 'charlie', 'brenda', 'alice'], without, 'Zoe');
+    assert.equal(returned.get('zoe'), 0); assert.notEqual(returned.get('new_model'), 0);
+    for (const room of ['alice', 'brenda', 'charlie']) assert.equal(returned.get(room), without.get(room));
+    assert.equal(new Set(returned.values()).size, returned.size);
+    assert.deepEqual([...allocateLiveModelColors(['alice', 'brenda'], initial, 'unselected')],
+        [...allocateLiveModelColors(['alice', 'brenda'], initial)], 'an absent primary preserves existing behavior');
+});
+
 test('saved comparison ranks scale to many models and honor original dates after rolling-window clipping', async () => {
     const {comparisonSeriesOrder, comparisonOpacity} = await import('../src/analysis-chart-data.js');
     const series = Array.from({length: 10000}, () => ({timestamps: [100000], times: [0], values: [1], breaks: [false]}));

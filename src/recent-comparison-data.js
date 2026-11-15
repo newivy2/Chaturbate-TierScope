@@ -3,6 +3,34 @@ export const RECENT_COMPARISON_MS = 24 * 60 * 60 * 1000;
 /** @param {number} value */
 function timestamp(value) { return Number.isSafeInteger(value) && value >= 0 && value <= 8640000000000000; }
 
+const ongoingSourceStatuses = new Set(['tracking', 'paused', 'retry', 'offline']);
+
+// Only the selected ongoing session of a model is live. An older recording of
+// that same model must not inherit the current tab's style. Discovery supplies
+// validated metadata and already converts expired leases/epochs to stale/reset;
+// this projection does no history reads, scans or clock-dependent work.
+export function buildRecentComparisonStyles(entries, sources, currentRoom = '') {
+    if (!Array.isArray(entries)) throw new Error('Invalid recent comparison style input.');
+    const winners = new Map(), primaryRoom = typeof currentRoom === 'string' ? currentRoom.toLowerCase() : '';
+    for (const source of Array.isArray(sources) ? sources : []) {
+        if (!source || typeof source.room !== 'string' || !source.room.length ||
+            typeof source.id !== 'string' || !source.id.length || typeof source.roomEpoch !== 'string' || !source.roomEpoch.length ||
+            !ongoingSourceStatuses.has(source.status) || !timestamp(source.sessionStartedAt) || !timestamp(source.sampleAt) ||
+            !Number.isSafeInteger(source.sampleCount) || source.sampleCount <= 0) continue;
+        const room = source.room.toLowerCase(), previous = winners.get(room);
+        if (!previous || source.sampleCount > previous.sampleCount || source.sampleCount === previous.sampleCount &&
+            (source.sampleAt > previous.sampleAt || source.sampleAt === previous.sampleAt && source.id.localeCompare(previous.id) < 0)) winners.set(room, source);
+    }
+    return entries.map(entry => {
+        const archive = entry?.archive, session = archive?.session;
+        const room = typeof archive?.room === 'string' ? archive.room.toLowerCase() : '';
+        const source = winners.get(room);
+        const live = !!source && timestamp(session?.sessionStartedAt) && session.sessionStartedAt === source.sessionStartedAt &&
+            (!Object.prototype.hasOwnProperty.call(session, 'roomEpoch') || session.roomEpoch === source.roomEpoch);
+        return {live, primary: live && room === primaryRoom};
+    });
+}
+
 // Eligibility depends on accepted samples, not the recording's start, export
 // date, or an interval that merely crosses the window without a real sample.
 // The caller supplies the complete validated Library, independent of filters.

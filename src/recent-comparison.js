@@ -1,7 +1,8 @@
 import { renderAnalysisChart } from './analysis-chart-view.js';
 import { freezeRecordingData } from './immutable-data.js';
 import { buildLiveModelSeries } from './live-model-chart-data.js';
-import { RECENT_COMPARISON_MS, selectRecentComparisonEntries } from './recent-comparison-data.js';
+import { readLiveModelSources } from './live-model-sources.js';
+import { RECENT_COMPARISON_MS, buildRecentComparisonStyles, selectRecentComparisonEntries } from './recent-comparison-data.js';
 import { ANALYSIS_METRICS } from './session-analysis.js';
 import { compareLibrarySessions } from './session-library.js';
 import { toolNode as node, toolButton as button } from './tools-view-helpers.js';
@@ -11,7 +12,8 @@ const READ_INTERVAL_MS = 10000, WINDOW_INTERVAL_MS = 30000, REPORT_PAGE_SIZE = 2
 export function createRecentComparisonState() {
     return {frozen: false, frozenAt: 0, displayAt: 0, entries: [], snapshots: new Map(), inputSources: new Map(),
         loaded: false, attemptedAt: null, revision: 0, notice: '', page: 0, chartState: null, chartIds: [],
-        chartSources: [], hiddenSources: new Set(), hiddenSourceEntries: new Map(), windowMs: RECENT_COMPARISON_MS, chartWindowMs: RECENT_COMPARISON_MS};
+        chartSources: [], hiddenSources: new Set(), hiddenSourceEntries: new Map(), windowMs: RECENT_COMPARISON_MS, chartWindowMs: RECENT_COMPARISON_MS,
+        liveSources: [], liveRevision: 0, liveSignature: '', liveNotice: '', liveAttemptedAt: null};
 }
 
 function captureEntry(entry) {
@@ -35,7 +37,7 @@ function sameSource(left, right) {
 
 // Reads saved aggregate recordings only. Every eligible Library session is
 // included; neither Library filters nor a model/session count cap apply here.
-export function renderRecentComparison(parent, {readEntries, getMetric, metricControl, state = createRecentComparisonState()}) {
+export function renderRecentComparison(parent, {readEntries, getMetric, metricControl, currentRoom = '', readSources = readLiveModelSources, state = createRecentComparisonState()}) {
     const root = node(parent, 'section'); root.id = 'tools-recent-comparison';
     node(root, 'h3', 'Last 24 hours · all models');
     node(root, 'p', 'All saved models with samples in the selected range. Library filters do not apply.', 'tools-muted');
@@ -65,8 +67,9 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
     const previous = button(pagination, 'Previous', () => {state.page--; paintReports();}, 'tools-recent-previous');
     const pageLabel = node(pagination, 'span', '', 'tools-muted'); pageLabel.setAttribute('aria-live', 'polite');
     const next = button(pagination, 'Next', () => {state.page++; paintReports();}, 'tools-recent-next');
-    node(root, 'p', 'Actual dates and clock times share one timeline. Recording gaps stay blank and each line ends at its last accepted sample. The newest 12 sessions use progressively lighter colors; older sessions remain visible in faint gray. Sessions from the same model remain separate.', 'tools-muted');
+    node(root, 'p', 'Solid lines mark ongoing TierScope tracking, including paused tabs. Pink marks this room’s current session; history uses dashed lines. Gaps stay blank, lines end at their last accepted sample, and older history stays faint gray.', 'tools-muted');
     let disposed = false, refreshing = false, view = null, observer = null, plotSignature = '', paintSignature = '', selectionSignature = '', selection = null;
+    let projection = null, projectionSignature = '';
 
     function rememberChart() {
         if (!view) return;
@@ -136,7 +139,7 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
     function paint(force = false) {
         if (disposed) return;
         const at = (state.frozen ? state.frozenAt : state.displayAt) || Date.now(), metric = getMetric();
-        const nextPaintSignature = [state.revision, at, metric, state.windowMs, state.frozen, state.loaded, state.notice].join('|');
+        const nextPaintSignature = [state.revision, state.liveRevision, at, metric, state.windowMs, state.frozen, state.loaded, state.notice, state.liveNotice].join('|');
         if (!force && nextPaintSignature === paintSignature) return;
         rememberChart();
         if (state.chartWindowMs !== state.windowMs) {
@@ -153,11 +156,20 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
             selection = selectRecentComparisonEntries(state.entries, at, state.windowMs); selectionSignature = nextSelectionSignature;
         }
         const ids = selection.metadata.map(item => item.sourceId);
-        const signature = [metric, state.revision, at, state.windowMs, ...ids].join('|');
+        const signature = [metric, state.revision, state.liveRevision, at, state.windowMs, ...ids].join('|');
         const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
         if ((signature !== plotSignature || force) && ids.length) {
-            const data = buildLiveModelSeries(selection.entries.map(entry => entry.archive), metric, {now: selection.now, windowMs: state.windowMs});
-            const config = {originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map(item => item.startAt), allowAllHidden: true};
+            const nextProjectionSignature = [metric, state.revision, at, state.windowMs].join('|');
+            // Tracking indicators can change while the samples stay frozen.
+            // Reuse projected samples for these style-only updates.
+            if (projectionSignature !== nextProjectionSignature) {
+                projection = buildLiveModelSeries(selection.entries.map(entry => entry.archive), metric, {now: selection.now, windowMs: state.windowMs});
+                projectionSignature = nextProjectionSignature;
+            }
+            const data = projection;
+            const config = {originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map(item => item.startAt), allowAllHidden: true,
+                seriesStyles: buildRecentComparisonStyles(selection.entries, state.liveSources, currentRoom)};
+            state.liveSignature = JSON.stringify(config.seriesStyles);
             if (!same) {
                 clearChart(); state.chartState = retainedChartState(ids);
             }
@@ -168,7 +180,7 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
                 if (window.ResizeObserver) {observer = new window.ResizeObserver(view.draw); observer.observe(view.canvas);}
             }
             state.chartSources = selection.entries.map((entry, index) => ({id: ids[index], entry}));
-        } else if (!ids.length) clearChart();
+        } else if (!ids.length) {clearChart(); projection = null; projectionSignature = '';}
         state.chartIds = ids; plotSignature = signature;
         freeze.textContent = state.frozen ? 'Resume comparison' : 'Freeze comparison';
         freeze.setAttribute('aria-pressed', String(state.frozen)); freeze.disabled = !state.loaded;
@@ -176,7 +188,7 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         refreshButton.title = state.frozen ? 'Resume comparison to read the latest saved Library sessions.' : 'Read all saved Library sessions again.';
         status.textContent = (state.frozen ? 'Frozen' : 'Following saved Library updates') + ' · ' + ids.length.toLocaleString() + ' sessions · ' +
             selection.roomCount.toLocaleString() + ' models · ' + selection.sampleCount.toLocaleString() + ' accepted samples in window.' +
-            (state.notice ? ' ' + state.notice : '');
+            (state.notice ? ' ' + state.notice : '') + (state.liveNotice ? ' ' + state.liveNotice : '');
         windowLabel.textContent = 'Window: ' + new Date(selection.cutoffAt).toLocaleString() + ' — ' + new Date(selection.now).toLocaleString();
         windowLabel.title = 'Both endpoints are included. A recording qualifies by actual samples, including sessions that started earlier. Future samples, empty recordings and gaps without a sample in this window are excluded. No additional API requests or automatic saves.';
         empty.hidden = !!ids.length;
@@ -184,11 +196,31 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         paintReports();
         paintSignature = nextPaintSignature;
     }
+    function refreshTrackingSources(force) {
+        const at = Date.now();
+        if (!force && state.liveAttemptedAt !== null && at >= state.liveAttemptedAt && at - state.liveAttemptedAt < READ_INTERVAL_MS) return;
+        state.liveAttemptedAt = at;
+        let sources = [];
+        try {
+            const result = readSources(force);
+            if (!Array.isArray(result?.sources) || result.error) throw new Error('Live tab metadata is unavailable.');
+            sources = result.sources;
+            state.liveNotice = '';
+        } catch (_) {state.liveNotice = 'Live tracking indicators are unavailable.';}
+        // Metadata refreshes do not repaint histories unless a displayed style
+        // changes. The adapter marks expired leases and reset generations.
+        state.liveSources = sources;
+        const signature = JSON.stringify(buildRecentComparisonStyles(selection?.entries || [], sources, currentRoom));
+        if (signature !== state.liveSignature) {
+            state.liveSignature = signature; state.liveRevision++;
+        }
+    }
     function refresh(force = false) {
         if (disposed || refreshing) return;
-        if (state.frozen) {paint(force); return;}
         refreshing = true;
         try {
+            refreshTrackingSources(force);
+            if (state.frozen) {paint(force); return;}
             const at = Date.now(), due = state.attemptedAt === null || at - state.attemptedAt >= READ_INTERVAL_MS || force;
             let windowChanged = !state.displayAt || at - state.displayAt >= WINDOW_INTERVAL_MS || force;
             if (due) {
@@ -230,6 +262,7 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         if (disposed) return; disposed = true; clearInterval(timer);
         if (view) {rememberChart(); view.dispose();}
         if (observer) observer.disconnect();
+        projection = null;
         freeze.onclick = null; refreshButton.onclick = null; range.onchange = null; previous.onclick = null; next.onclick = null;
     }};
 }

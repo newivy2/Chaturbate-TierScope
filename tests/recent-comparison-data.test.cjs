@@ -4,6 +4,9 @@ function entry(id, room, timestamps, extra = {}) {
     return {id, archive: {room, session: {history: {timestamps, breaks: timestamps.map(() => false),
         total: timestamps.map((_, i) => i + 10), anonymous: timestamps.map(() => 5)}, ...extra}}};
 }
+function liveSource(id, room, sessionStartedAt, extra = {}) {
+    return {id, room, sessionStartedAt, roomEpoch: 'current-epoch', sampleCount: 10, sampleAt: now, status: 'tracking', ...extra};
+}
 
 test('Last 24h includes both endpoints and excludes old, future and empty recordings', async () => {
     const {selectRecentComparisonEntries, RECENT_COMPARISON_MS} = await import('../src/recent-comparison-data.js');
@@ -119,4 +122,61 @@ test('rolling cutoff is clamped at the timestamp origin', async () => {
     const result = selectRecentComparisonEntries([entry('origin', 'alice', [0]), entry('current', 'brenda', [100])], 100, 3600000);
     assert.equal(result.cutoffAt, 0); assert.equal(result.sampleCount, 2);
     assert.deepEqual(result.entries.map(item => item.id), ['current', 'origin']);
+});
+
+test('recent styles match current sessions rather than every recording of an active model', async () => {
+    const {buildRecentComparisonStyles} = await import('../src/recent-comparison-data.js');
+    const start = now - 3600000, latest = now - 60000;
+    const entries = [entry('newest', 'brenda', [latest], {sessionStartedAt: latest}),
+        entry('current', 'ALICE', [start, now], {sessionStartedAt: start}),
+        entry('old-alice', 'alice', [now - day], {sessionStartedAt: now - day})];
+    const sources = [liveSource('alice-live', 'alice', start), liveSource('brenda-live', 'BRENDA', latest)];
+    const before = JSON.stringify({entries, sources});
+    assert.deepEqual(buildRecentComparisonStyles(entries, sources, 'Alice'), [
+        {live: true, primary: false}, {live: true, primary: true}, {live: false, primary: false}]);
+    assert.equal(JSON.stringify({entries, sources}), before, 'metadata styling never changes archives or source descriptors');
+    assert.deepEqual(buildRecentComparisonStyles(entries, [], 'alice'), entries.map(() => ({live: false, primary: false})));
+    assert.deepEqual(buildRecentComparisonStyles([], sources, 'alice'), []);
+});
+
+test('ongoing paused, retry and offline sources stay live while ended or unavailable sources do not', async () => {
+    const {buildRecentComparisonStyles} = await import('../src/recent-comparison-data.js');
+    const start = now - 3600000, entries = [entry('session', 'alice', [now], {sessionStartedAt: start})];
+    for (const status of ['tracking', 'paused', 'retry', 'offline']) {
+        assert.deepEqual(buildRecentComparisonStyles(entries, [liveSource('publisher', 'alice', start, {status})], 'alice'),
+            [{live: true, primary: true}], status);
+    }
+    for (const status of ['stopped', 'stale', 'reset', 'unavailable', 'waiting', 'unknown']) {
+        assert.deepEqual(buildRecentComparisonStyles(entries, [liveSource('publisher', 'alice', start, {status})], 'alice'),
+            [{live: false, primary: false}], status);
+    }
+});
+
+test('duplicate publishers choose most samples, then latest sample and a deterministic identifier', async () => {
+    const {buildRecentComparisonStyles} = await import('../src/recent-comparison-data.js');
+    const first = now - 4 * 3600000, second = now - 2 * 3600000;
+    const entries = [entry('first', 'alice', [now], {sessionStartedAt: first}), entry('second', 'alice', [now], {sessionStartedAt: second})];
+    const older = liveSource('tab-a', 'alice', first, {sampleCount: 20, sampleAt: now - 1000});
+    const newer = liveSource('tab-b', 'alice', second, {sampleCount: 19, sampleAt: now});
+    assert.deepEqual(buildRecentComparisonStyles(entries, [newer, older]).map(style => style.live), [true, false]);
+    const tied = {...newer, sampleCount: 20};
+    assert.deepEqual(buildRecentComparisonStyles(entries, [older, tied]).map(style => style.live), [false, true]);
+    const exactTie = {...tied, sampleAt: older.sampleAt};
+    assert.deepEqual(buildRecentComparisonStyles(entries, [exactTie, older]).map(style => style.live), [true, false]);
+    assert.deepEqual(buildRecentComparisonStyles(entries, [older, exactTie]).map(style => style.live), [true, false]);
+});
+
+test('unknown starts never borrow the first sample and an explicit archive epoch must match', async () => {
+    const {buildRecentComparisonStyles} = await import('../src/recent-comparison-data.js');
+    const start = now - 3600000, source = liveSource('publisher', 'alice', start);
+    const entries = [entry('unknown', 'alice', [start]), entry('null-start', 'alice', [start], {sessionStartedAt: null}),
+        entry('current-epoch', 'alice', [start], {sessionStartedAt: start, roomEpoch: 'current-epoch'}),
+        entry('old-epoch', 'alice', [start], {sessionStartedAt: start, roomEpoch: 'old-epoch'}),
+        entry('normal-library', 'alice', [start], {sessionStartedAt: start})];
+    assert.deepEqual(buildRecentComparisonStyles(entries, [source], 'alice').map(style => style.live), [false, false, true, false, true]);
+    for (const change of [{sessionStartedAt: null}, {sessionStartedAt: NaN}, {sampleCount: 0}, {sampleCount: -1},
+        {sampleCount: 1.5}, {sampleAt: null}, {roomEpoch: ''}, {id: ''}]) {
+        assert(buildRecentComparisonStyles(entries, [{...source, ...change}], 'alice').every(style => !style.live && !style.primary));
+    }
+    assert.throws(() => buildRecentComparisonStyles(null, [source]), /Invalid recent comparison style/);
 });

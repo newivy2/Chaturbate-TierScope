@@ -17,6 +17,7 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         await page.evaluate(() => {
             window.testNow = Date.UTC(2026, 10, 15, 12); Date.now = () => testNow;
             window.readCount = 0; window.failRead = false; window.structuredRead = false; window.partialRead = false; window.fetchCount = 0;
+            window.liveSources = []; window.failLiveSources = false; window.liveSourcesError = ''; window.liveSourceReads = 0; window.currentRoom = '';
             window.fetch = () => {fetchCount++; throw Error('Comparison must not fetch.');};
             window.activeTimers = new Map(); let timerId = 0;
             window.setInterval = (callback, ms) => {const id = ++timerId; activeTimers.set(id, {callback, ms}); return id;};
@@ -42,7 +43,8 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
                 state, readEntries() {readCount++; if (failRead) throw Error('test read failure');
                     return structuredRead ? {entries: partialRead ? savedEntries.slice(0, 3) : savedEntries,
                         error: partialRead ? 'test partial read' : ''} : savedEntries;},
-                getMetric: () => metric,
+                getMetric: () => metric, currentRoom,
+                readSources() {liveSourceReads++; if (failLiveSources) throw Error('test live metadata failure'); return {sources: liveSources, error: liveSourcesError};},
                 metricControl(parent, changed) {recentFixture.renderMetricStrip(parent,
                     [{key: 'room', label: 'Room audience', color: '#ff69b4'}, {key: 'total', label: 'Registered viewers', color: '#79baff'}],
                     metric, value => {metric = value; changed();}, 'tools-recent-metric');}
@@ -343,6 +345,73 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         assert.equal(await page.locator('#tools-chart-range').textContent(), fullBeforeEmpty, 'returning from an empty preset opens its full range');
         assert.doesNotMatch(await page.locator('#tools-chart-inspection caption').textContent(), /pinned/, 'the intentional range change discards the old pin');
         assert(!(await (await line('empty_old_one')).isChecked()), 'returning from an empty preset retains hidden recording choices');
+        await recentViewDispose();
+
+        // Ongoing-source metadata changes presentation, without changing any
+        // saved recording or thawing frozen samples and the selected window.
+        await page.evaluate(() => {
+            document.getElementById('view').replaceChildren(); metric = 'room'; currentRoom = 'current_model';
+            savedEntries = Array.from({length: 16}, (_, index) => tokenRecentEntry(makeRecentEntry('style_history_' + index, 'style_history_model_' + index,
+                [testNow - 7200000 + index * 1000, testNow - 3600000], [10 + index, 20 + index])));
+            savedEntries.push(
+                tokenRecentEntry(makeRecentEntry('style_current', 'current_model', [testNow - 10 * 3600000, testNow - 3600000], [50, 70])),
+                tokenRecentEntry(makeRecentEntry('style_previous', 'current_model', [testNow - 20 * 3600000, testNow - 12 * 3600000], [40, 60])),
+                tokenRecentEntry(makeRecentEntry('style_other', 'other_model', [testNow - 3 * 3600000, testNow - 3600000], [30, 40])),
+                tokenRecentEntry(makeRecentEntry('style_newest', 'newest_history_model', [testNow - 1200000, testNow - 300000], [100, 120])),
+                tokenRecentEntry(makeRecentEntry('style_unknown', 'unknown_start_model', [testNow - 1800000, testNow - 600000], [80, 90], null))
+            );
+            const source = (id, room, startedAt, sampleCount) => ({id, room, roomEpoch: 'legacy', sessionStartedAt: startedAt,
+                sampleAt: testNow - 60000, sampleCount, status: 'tracking', lastSeenAt: testNow});
+            liveSources = [
+                source('current-main', 'current_model', testNow - 10 * 3600000, 120),
+                source('current-smaller', 'current_model', testNow - 20 * 3600000, 20),
+                source('other-main', 'other_model', testNow - 3 * 3600000, 40),
+                source('unknown-main', 'unknown_start_model', testNow - 1800000, 30)
+            ];
+            recentState = recentFixture.createRecentComparisonState(); recentView = renderRecentFixture(recentState);
+        });
+        async function lineStyle(id) {
+            const check = await line(id);
+            return check.locator('..').evaluate(label => ({checked: label.querySelector('input').checked,
+                dash: label.querySelector('.tools-series-swatch').style.borderTopStyle,
+                opacity: Number(label.querySelector('.tools-series-swatch').style.opacity), color: label.style.color}));
+        }
+        assert(await page.evaluate(() => recentState.chartIds.indexOf('style_current') >= 12), 'the current session is older than the foreground twelve');
+        let currentStyle = await lineStyle('style_current');
+        assert.equal(currentStyle.dash, 'solid'); assert.equal(currentStyle.opacity, 1); assert.equal(currentStyle.color, 'rgb(255, 105, 180)');
+        assert.equal((await lineStyle('style_other')).dash, 'solid'); assert.equal((await lineStyle('style_other')).opacity, 1);
+        assert.equal((await lineStyle('style_previous')).dash, 'dashed', 'a smaller tab cannot restyle an older recording of this model');
+        assert.equal((await lineStyle('style_newest')).dash, 'dashed', 'the newest saved recording is historical without a matching ongoing source');
+        assert.equal((await lineStyle('style_unknown')).dash, 'dashed', 'a missing known start cannot match by the first retained sample');
+        await (await line('style_other')).uncheck(); await page.locator('#tools-analysis-chart').focus(); await page.keyboard.press('End');
+        await page.click('#tools-chart-zoom-in'); await page.click('#tools-recent-freeze');
+        const styleRange = await page.locator('#tools-chart-range').textContent(), styleCursor = await page.locator('#tools-chart-inspection caption').textContent();
+        const styleReads = await page.evaluate(() => readCount), metadataReads = await page.evaluate(() => liveSourceReads);
+        const frozenEntries = await page.evaluate(() => JSON.stringify(recentState.entries));
+        const styleWindow = await page.locator('#tools-recent-window').textContent();
+        for (const status of ['paused', 'retry', 'offline']) {
+            await page.evaluate(status => {liveSources[0].status = status; liveSources[1].status = 'stopped'; tickRecent(10000);}, status);
+            currentStyle = await lineStyle('style_current'); assert.equal(currentStyle.dash, 'solid', status + ' remains an ongoing session');
+            assert.equal(currentStyle.opacity, 1); assert.equal(currentStyle.color, 'rgb(255, 105, 180)');
+        }
+        for (const status of ['stopped', 'waiting', 'reset', 'unavailable', 'stale']) {
+            await page.evaluate(status => {liveSources[0].status = status; tickRecent(10000);}, status);
+            assert.equal((await lineStyle('style_current')).dash, 'dashed', status + ' is never presented as live');
+        }
+        await page.evaluate(() => {liveSources[0].status = 'tracking'; failLiveSources = true; tickRecent(10000);});
+        assert.equal((await lineStyle('style_current')).dash, 'dashed'); assert.equal((await lineStyle('style_other')).dash, 'dashed');
+        assert.match(await page.locator('#tools-recent-status').textContent(), /live tracking indicators are unavailable/i);
+        await page.evaluate(() => {failLiveSources = false; liveSourcesError = 'partial metadata failure'; tickRecent(10000);});
+        assert.equal((await lineStyle('style_current')).dash, 'dashed', 'partial metadata cannot prove which same-model source is current');
+        await page.evaluate(() => {liveSourcesError = ''; tickRecent(10000);});
+        assert.equal((await lineStyle('style_current')).dash, 'solid');
+        assert(!(await (await line('style_other')).isChecked()), 'metadata restyling preserves a hidden recording');
+        assert.equal(await page.locator('#tools-chart-range').textContent(), styleRange); assert.equal(await page.locator('#tools-chart-inspection caption').textContent(), styleCursor);
+        assert.equal(await page.locator('#tools-recent-window').textContent(), styleWindow); assert.equal(await page.evaluate(() => JSON.stringify(recentState.entries)), frozenEntries);
+        assert.equal(await page.evaluate(() => readCount), styleReads, 'live styling while frozen never reads Library histories');
+        assert(await page.evaluate(() => liveSourceReads) > metadataReads, 'metadata continues updating on the existing timer while frozen');
+        await page.evaluate(() => {document.getElementById('view').dataset.theme = 'bright'; recentView.draw();});
+        assert.equal((await lineStyle('style_current')).color, 'rgb(180, 35, 112)');
         await recentViewDispose();
         async function recentViewDispose() {await page.evaluate(() => recentView.dispose()); assert.equal(await page.evaluate(() => activeTimers.size), 0);}
         assert.equal(await page.evaluate(() => fetchCount), 0, 'selection reconciliation never adds API requests');

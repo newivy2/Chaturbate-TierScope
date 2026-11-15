@@ -851,7 +851,7 @@ export function openSessionTools(focusTarget) {
                 control.setAttribute('aria-pressed', String(compareMode === value));
             }
             if (compareMode === 'recent') {
-                recentView = renderRecentComparison(content, {state: recentState, readEntries: () => {
+                recentView = renderRecentComparison(content, {state: recentState, currentRoom: getModelName(), readEntries: () => {
                     const saved = readLibrary();
                     return {entries: saved.entries, error: saved.unavailable.length || saved.damaged.length ? 'Some saved sessions could not be read; the displayed set may be incomplete.' : ''};
                 },
@@ -859,7 +859,7 @@ export function openSessionTools(focusTarget) {
                 chartDraw = recentView.draw; return;
             }
             if (compareMode === 'live') {
-                liveModelsView = renderLiveModelsComparison(content, {state: liveModelsState, getMetric: () => metric,
+                liveModelsView = renderLiveModelsComparison(content, {state: liveModelsState, currentRoom: getModelName(), getMetric: () => metric,
                     metricControl: (parent, changed) => metricStrip(parent, changed, 'tools-live-metric')});
                 chartDraw = liveModelsView.draw;
                 return;

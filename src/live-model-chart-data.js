@@ -6,14 +6,19 @@ import { analysisSeries } from './session-analysis.js';
 
 // Reserve the slots of models that remain selected before assigning newcomers.
 // Unselected models release their slots; selections have no fixed palette cap.
-/** @param {string[]} rooms @param {Map<string,number>} previous */
-export function allocateLiveModelColors(rooms, previous = new Map()) {
+/** @param {string[]} rooms @param {Map<string,number>} previous @param {string} primaryRoom */
+export function allocateLiveModelColors(rooms, previous = new Map(), primaryRoom = '') {
     const selected = [...new Set(rooms)];
     if (selected.some(room => typeof room !== 'string' || !room.length)) {
         throw new Error('Choose named models for live comparison colors.');
     }
-    const colors = new Map(), used = new Set();
+    const colors = new Map(), used = new Set(), primaryName = typeof primaryRoom === 'string' ? primaryRoom.toLowerCase() : '';
+    const primary = primaryName ? selected.find(room => room.toLowerCase() === primaryName) : undefined;
+    // An explicitly selected current room owns pink; only its former occupant
+    // needs a new slot. No reservation is made when that room is not selected.
+    if (primary !== undefined) {colors.set(primary, 0); used.add(0);}
     for (const room of selected) {
+        if (colors.has(room)) continue;
         const index = previous.get(room);
         if (Number.isSafeInteger(index) && index >= 0 && !used.has(index)) {
             colors.set(room, index); used.add(index);

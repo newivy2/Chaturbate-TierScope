@@ -48,6 +48,20 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
  GM_setValue('tierscope:live:v1:changed',{version:1,at,token:'updated-live'});},
  addRecent(){const archive=this.archive('new_recent_model',150,[Date.now()-120000,Date.now()-60000]);
  GM_setValue('tierscope:library:v1:new_recent',JSON.stringify({schemaVersion:1,addedAt:Date.now(),title:'New recent session',archive}));},
+ seedCurrentStyles(){const now=Date.now(),room=getModelName(),current=JSON.parse(JSON.stringify(window.expandedBase));
+ GM_setValue('tierscope:library:v1:current_ongoing',JSON.stringify({schemaVersion:1,addedAt:now,title:'Current ongoing session',archive:current}));
+ const older=this.archive(room,5,[now-3*3600000,now-3*3600000+60000]);
+ GM_setValue('tierscope:library:v1:current_historical',JSON.stringify({schemaVersion:1,addedAt:now,title:'Earlier current-model session',archive:older}));
+ for(const [publisherId,archive]of [['current-older-publisher',older],['aaa-publisher',this.archive('aaa_model',10,[now-120000,now-60000,now])]]){
+  const model=archive.room,recordKey='tierscope:tab:v2:'+model+':'+publisherId,session={...archive.session,roomEpoch:'legacy',isPaused:false},sessionId='legacy@'+session.sessionStartedAt;
+  GM_setValue(recordKey,JSON.stringify(session));GM_setValue('tierscope:live:v1:source:'+publisherId,{version:1,id:publisherId+':'+model+':'+sessionId,
+   publisherId,room:model,roomEpoch:'legacy',sessionId,sessionStartedAt:session.sessionStartedAt,status:'tracking',lastSeenAt:now,
+   sampleAt:session.history.timestamps.at(-1),sampleCount:session.history.timestamps.length,revision:publisherId+':'+now,recordKey,recordSavedAt:now});
+ }
+ initializeLiveModelSources();saveSession(getModelName(),true);GM_setValue('tierscope:live:v1:changed',{version:1,at:now,token:'current-style'});
+ },
+ stopSources:stopLiveModelSources,
+ sources:readLiveModelSources,
  saved:()=>Object.fromEntries(GM_listValues().filter(k=>k.startsWith('tierscope:library:v1:')).sort().map(k=>[k,GM_getValue(k)])),
  state:()=>({history:JSON.stringify(history),paused:isPaused,mode:presentationMode})
  },downloadTrackingReport: downloadTrackingReport,`));
@@ -173,6 +187,41 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   for(const [key,value]of Object.entries(savedBefore))assert.equal(savedAfter[key],value,'comparison never rewrites '+key);
   assert.equal(Object.keys(savedAfter).length,Object.keys(savedBefore).length+1,'only the explicit fixture addition changes saved recordings');
   assert.deepEqual(await page.evaluate(()=>ViewerTracker.__expanded.state()),liveBefore);assert.equal(requests,0,'comparisons and shortcuts add no API scans');
+  await page.evaluate(()=>ViewerTracker.__expanded.seedCurrentStyles());
+  const styleSavedBefore=await page.evaluate(()=>ViewerTracker.__expanded.saved());
+  await page.click('[data-tools-tab=library]');await page.click('#tools-compare-last24h');
+  const historicalStyle=async title=>{
+   const recordId=await page.evaluate(title=>{
+    const entries=Object.entries(ViewerTracker.__expanded.saved()).map(([key,value])=>({key,record:JSON.parse(value)}));
+    const record=entries.find(entry=>entry.record.title===title);return record&&record.key.slice('tierscope:library:v1:'.length);
+   },title);
+   await page.fill('#tools-chart-line-search','comparison_room');
+   // Session starts are part of the chart label; determine the exact selected
+   // record index through the saved reports rather than matching a room alone.
+   const start=await page.evaluate(id=>JSON.parse(ViewerTracker.__expanded.saved()['tierscope:library:v1:'+id]).archive.session.sessionStartedAt,recordId);
+   const text=await page.evaluate(start=>new Date(start).toLocaleString(),start);
+   const row=page.locator('.tools-chart-legend label').filter({hasText:text});assert.equal(await row.count(),1);
+   return row.evaluate(element=>({dash:element.querySelector('.tools-series-swatch').style.borderTopStyle,
+    opacity:Number(element.querySelector('.tools-series-swatch').style.opacity),color:element.style.color}));
+  };
+  let style=await historicalStyle('Current ongoing session');
+  assert.equal(style.dash,'solid');assert.equal(style.opacity,1);assert.equal(style.color,'rgb(180, 35, 112)','paused current-room metadata keeps its actual ongoing session pink in the bright theme');
+  assert.equal((await historicalStyle('Earlier current-model session')).dash,'dashed','a smaller same-room publisher cannot style its older recording as current');
+  await page.locator('#tools-content').evaluate(element=>element.scrollTop=0);await page.screenshot({path:'/tmp/tierscope-current-history-style-'+engine+'.png'});
+  await page.click('#tools-compare-live');await page.locator('#tools-live-chooser').evaluate(element=>element.open=true);await page.click('#tools-live-select-all');
+  await page.fill('#tools-chart-line-search','comparison_room');
+  assert.equal(await page.locator('.tools-chart-legend label').count(),1,
+   'Current-room chart source missing: '+JSON.stringify(await page.evaluate(()=>ViewerTracker.__expanded.sources().sources.filter(source=>source.room==='comparison_room')))+'\n'+await page.locator('#tools-live-models').innerText());
+  const currentLiveStyle=()=>page.locator('.tools-chart-legend label').evaluate(element=>({dash:element.querySelector('.tools-series-swatch').style.borderTopStyle,
+   opacity:Number(element.querySelector('.tools-series-swatch').style.opacity),color:element.style.color}));
+  style=await currentLiveStyle();assert.equal(style.dash,'solid');assert.equal(style.opacity,1);assert.equal(style.color,'rgb(180, 35, 112)');
+  await page.fill('#tools-chart-line-search','aaa_model');
+  assert.notEqual(await page.locator('.tools-chart-legend label').evaluate(element=>element.style.color),style.color,'an alphabetically earlier model never takes the current room’s pink');
+  await page.fill('#tools-chart-line-search','comparison_room');await page.locator('#dark-mode-toggle').setChecked(true);
+  style=await currentLiveStyle();assert.equal(style.color,'rgb(255, 105, 180)');
+  assert.deepEqual(await page.evaluate(()=>ViewerTracker.__expanded.saved()),styleSavedBefore,'metadata styling never rewrites saved sessions');
+  assert.deepEqual(await page.evaluate(()=>ViewerTracker.__expanded.state()),liveBefore);assert.equal(requests,0);
+  await page.evaluate(()=>ViewerTracker.__expanded.stopSources());
   assert.deepEqual(errors,[]);console.log(engine+': 60 mixed saved sessions, 40 live models, bounded controls with all lines selectable, frozen tail updates, and globally unfiltered rolling Last24h shortcuts passed');
   await context.close();
  }finally{await browser.close();}
