@@ -728,7 +728,7 @@ export function openSessionTools(focusTarget) {
                 const next = button(pages, 'Next selected ›', () => {selectionPage++; render(tab);}, 'tools-selection-next'); next.disabled = (selectionPage + 1) * 25 >= selectedExtra.length;
             }
             const used = new Set([selectedA, selectedB, ...selectedExtra]);
-            const count = [selectedA, selectedB, ...selectedExtra].filter(Boolean).length;
+            const count = [selectedA, selectedB, ...selectedExtra].filter(id => !!id).length;
             const next = filteredSources.find(item => !used.has(item.id));
             const add = button(sourceControls, 'Add session', () => { if (next) { selectedExtra.push(next.id); render(tab); } }, 'tools-compare-add');
             add.disabled = !next;

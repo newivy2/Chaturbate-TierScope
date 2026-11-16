@@ -10515,7 +10515,7 @@ underlying system, so should run in the browser, Node, or Plask.
           next2.disabled = (selectionPage + 1) * 25 >= selectedExtra.length;
         }
         const used = /* @__PURE__ */ new Set([selectedA, selectedB, ...selectedExtra]);
-        const count = [selectedA, selectedB, ...selectedExtra].filter(Boolean).length;
+        const count = [selectedA, selectedB, ...selectedExtra].filter((id) => !!id).length;
         const next = filteredSources.find((item) => !used.has(item.id));
         const add = button(sourceControls, "Add session", () => {
           if (next) {
