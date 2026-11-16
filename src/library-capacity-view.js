@@ -1,4 +1,4 @@
-import { DEFAULT_LIBRARY_LIMITS, LIBRARY_LIMIT_RANGES, LIBRARY_MEGABYTE, libraryCapacityNotice } from './library-capacity-data.js';
+import { DEFAULT_AUTOMATIC_KEEPING_MINUTES, DEFAULT_LIBRARY_LIMITS, LIBRARY_LIMIT_RANGES, LIBRARY_MEGABYTE, libraryCapacityNotice } from './library-capacity-data.js';
 import { toolButton, toolNode } from './tools-view-helpers.js';
 
 export function renderLibraryCapacity(parent, usage, limits, error, save) {
@@ -52,8 +52,8 @@ export function renderAutomaticKeepingSettings(parent, minutes, error, save) {
     toolNode(form, 'p', 'For favorite models in this browser. Short sessions stay live without being added automatically. Manual Keep in Library works at any length.', 'tools-muted');
     const label = toolNode(form, 'label', 'Minimum recorded duration (minutes) '), input = toolNode(label, 'input');
     label.style.display = 'grid'; input.style.width = '100%';
-    input.id = 'tools-automatic-minutes'; input.type = 'number'; input.min = '0'; input.max = '1440'; input.step = '1'; input.required = true; input.value = String(minutes ?? 5);
-    toolNode(form, 'p', 'Default: 5 minutes of retained sample coverage. Pauses and recording gaps do not count. Use 0 to keep from the first sample. Existing saved sessions are never removed.', 'tools-muted');
+    input.id = 'tools-automatic-minutes'; input.type = 'number'; input.min = '0'; input.max = '1440'; input.step = '1'; input.required = true; input.value = String(minutes ?? DEFAULT_AUTOMATIC_KEEPING_MINUTES);
+    toolNode(form, 'p', 'Default: ' + DEFAULT_AUTOMATIC_KEEPING_MINUTES + ' minutes of retained sample coverage. Pauses and recording gaps do not count. Use 0 to keep from the first sample. Existing saved sessions are never removed.', 'tools-muted');
     const submit = toolButton(form, 'Save automatic keeping', null, 'tools-automatic-save'); submit.type = 'submit';
     const feedback = toolNode(form, 'p', error || '', 'tools-capacity-warning'); feedback.setAttribute('role', 'alert'); feedback.hidden = !error;
     form.onsubmit = event => {

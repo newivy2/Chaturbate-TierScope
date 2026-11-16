@@ -69,9 +69,9 @@ const source = prepareSource(fs.readFileSync(path.join(__dirname, '../tierscope.
   await save(3,25);assert.match(await page.locator('#tools-library-capacity-warning').textContent(),/limit reached/);
   await page.click('#tools-keep');assert.match(await page.locator('#tools-message').textContent(),/Library full/);
   assert.equal(await page.evaluate(()=>ViewerTracker.__capacity.readSessionLibrary().count),4);
-  // Five-minute default keeps a one-minute favorite out, even when capacity is full.
+  // Three-minute default keeps a one-minute favorite out, even when capacity is full.
   page.once('dialog',d=>d.accept());await page.click('#tools-auto-keep');
-  assert.match(await page.locator('[data-card-auto]').first().textContent(),/requires 5 minutes/);
+  assert.match(await page.locator('[data-card-auto]').first().textContent(),/requires 3 minutes/);
   assert.equal(await page.evaluate(()=>ViewerTracker.__capacity.readSessionLibrary().count),4);
   if (!await page.locator('#tools-storage-settings').evaluate(e=>e.open)) await page.locator('#tools-storage-settings > summary').click();
   await page.locator('#tools-automatic-minutes').fill('0');await page.click('#tools-automatic-save');

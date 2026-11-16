@@ -1,4 +1,5 @@
 export const LIBRARY_MEGABYTE = 1024 * 1024;
+export const DEFAULT_AUTOMATIC_KEEPING_MINUTES = 3;
 export const DEFAULT_LIBRARY_LIMITS = Object.freeze({maxSessions: 1000, maxMegabytes: 50});
 export const LIBRARY_LIMIT_RANGES = Object.freeze({maxSessions: 10000, maxMegabytes: 250});
 // File validation is independent of the local save allowance. A backup must

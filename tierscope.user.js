@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.31.0
+// @version      3.31.1-beta.1
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -2662,6 +2662,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/library-capacity-data.js
   var LIBRARY_MEGABYTE = 1024 * 1024;
+  var DEFAULT_AUTOMATIC_KEEPING_MINUTES = 3;
   var DEFAULT_LIBRARY_LIMITS = Object.freeze({ maxSessions: 1e3, maxMegabytes: 50 });
   var LIBRARY_LIMIT_RANGES = Object.freeze({ maxSessions: 1e4, maxMegabytes: 250 });
   var LIBRARY_TRANSFER_MAX_COUNT = LIBRARY_LIMIT_RANGES.maxSessions;
@@ -2717,7 +2718,7 @@ underlying system, so should run in the browser, Node, or Plask.
   function readAutomaticKeepingMinutes() {
     try {
       const raw = GM_getValue(AUTOMATIC_KEEPING_KEY, void 0);
-      if (raw === void 0) return 5;
+      if (raw === void 0) return DEFAULT_AUTOMATIC_KEEPING_MINUTES;
       const record = JSON.parse(raw);
       if (record.schemaVersion !== 1) throw new Error("Unsupported automatic keeping settings.");
       return validateAutomaticKeepingMinutes(record.minimumMinutes);
@@ -6748,8 +6749,8 @@ underlying system, so should run in the browser, Node, or Plask.
     input.max = "1440";
     input.step = "1";
     input.required = true;
-    input.value = String(minutes != null ? minutes : 5);
-    toolNode(form, "p", "Default: 5 minutes of retained sample coverage. Pauses and recording gaps do not count. Use 0 to keep from the first sample. Existing saved sessions are never removed.", "tools-muted");
+    input.value = String(minutes != null ? minutes : DEFAULT_AUTOMATIC_KEEPING_MINUTES);
+    toolNode(form, "p", "Default: " + DEFAULT_AUTOMATIC_KEEPING_MINUTES + " minutes of retained sample coverage. Pauses and recording gaps do not count. Use 0 to keep from the first sample. Existing saved sessions are never removed.", "tools-muted");
     const submit = toolButton(form, "Save automatic keeping", null, "tools-automatic-save");
     submit.type = "submit";
     const feedback = toolNode(form, "p", error || "", "tools-capacity-warning");
@@ -9765,13 +9766,17 @@ underlying system, so should run in the browser, Node, or Plask.
       select.id = id;
       const matches = filteredSources || sourceOptions(), choices = matches.slice();
       const retained = sourceOptions().find((item) => item.id === selected);
+      if (!selected) {
+        const option = node(select, "option", "Choose a session…");
+        option.value = "";
+      }
       if (retained && !choices.some((item) => item.id === selected)) choices.unshift(__spreadProps(__spreadValues({}, retained), { title: retained.title + " (selected; outside filters)" }));
       if (selected && selected !== "current" && selected !== "live" && !retained) choices.unshift({ id: selected, title: "Session changed or removed — choose another" });
       for (const item of choices) {
         const option = node(select, "option", item.title);
         option.value = item.id;
       }
-      if (choices.some((item) => item.id === selected)) select.value = selected;
+      if (!selected || choices.some((item) => item.id === selected)) select.value = selected || "";
       select.onchange = () => changed(select.value);
       return select.value;
     }
@@ -10086,6 +10091,42 @@ underlying system, so should run in the browser, Node, or Plask.
       compareMode = "saved";
       render("compare");
       (_a = dialog.querySelector("#tools-analysis-chart") || dialog.querySelector("#tools-session-picker > summary")) == null ? void 0 : _a.focus();
+    }
+    function openSavedComparison() {
+      const state = readLibrary(), pageRoom = getModelName();
+      let snapshot = null, id = "";
+      try {
+        snapshot = captureLiveSessionFile();
+        id = "live";
+      } catch (_) {
+      }
+      if (!snapshot && pageRoom === "unknown" && isPlaybackCurrent(runtime.playback)) {
+        snapshot = runtime.playback.archive;
+        currentArchive = snapshot;
+        id = "current";
+      }
+      if (!snapshot) {
+        const room2 = pageRoom !== "unknown" ? pageRoom : libraryRoom && libraryRoom !== "*" ? libraryRoom : analysisFilters.room;
+        const latest = room2 ? latestModelSessionIds(state.entries, room2)[0] : null;
+        const entry = state.entries.find((item) => item.id === latest);
+        if (entry) {
+          snapshot = entry.archive;
+          id = entry.id;
+        }
+      }
+      const ids = snapshot ? previousModelSessionIds(state.entries, snapshot) : [];
+      liveComparisonArchive = id === "live" ? snapshot : null;
+      followers.compare.reset();
+      selectionPage = reportPage = 0;
+      selectedA = id;
+      selectedB = ids[0] || "";
+      selectedExtra = ids.slice(1);
+      Object.assign(analysisFilters, { room: (snapshot == null ? void 0 : snapshot.room.toLowerCase()) || (pageRoom === "unknown" ? "" : pageRoom.toLowerCase()), query: "", from: "", to: "" });
+      pickerOpen.compare = !ids.length;
+      compareMode = "saved";
+      render("compare");
+      if (!snapshot) tell("Choose a model or session first. Saved sessions compares that model with its earlier saved sessions.");
+      else if (!ids.length) tell("No earlier saved sessions for " + snapshot.room + ". Keep an earlier session for this model to compare with.");
     }
     function openLiveComparison() {
       var _a;
@@ -10423,7 +10464,10 @@ underlying system, so should run in the browser, Node, or Plask.
           render("compare");
         }, "tools-compare-all-matching");
         all.disabled = matchingSaved.length < 2;
-        if (!selectedB) selectedB = (sourceOptions().find((item) => item.id !== selectedA) || sourceOptions()[0]).id;
+        if (!selectedB) {
+          const anchor = sourceOptions().find((item) => item.id === selectedA);
+          selectedB = anchor ? previousModelSessionIds(library.entries, anchor.archive)[0] || "" : "";
+        }
         selectedB = selectSource(sourceControls, "B ", "tools-source-b", selectedB, (value) => {
           selectedB = value;
           selectNewFollowSource();
@@ -10471,7 +10515,7 @@ underlying system, so should run in the browser, Node, or Plask.
           next2.disabled = (selectionPage + 1) * 25 >= selectedExtra.length;
         }
         const used = /* @__PURE__ */ new Set([selectedA, selectedB, ...selectedExtra]);
-        const count = 2 + selectedExtra.length;
+        const count = [selectedA, selectedB, ...selectedExtra].filter(Boolean).length;
         const next = filteredSources.find((item) => !used.has(item.id));
         const add = button(sourceControls, "Add session", () => {
           if (next) {
@@ -10688,8 +10732,11 @@ underlying system, so should run in the browser, Node, or Plask.
         mode.setAttribute("aria-label", "Comparison source");
         for (const [value, title] of [["saved", "Saved sessions"], ["live", "Live models"], ["recent", "Last 24h"]]) {
           const control = button(mode, title, () => {
-            compareMode = value;
-            render("compare");
+            if (value === "saved") openSavedComparison();
+            else {
+              compareMode = value;
+              render("compare");
+            }
           }, "tools-compare-" + value);
           control.className = compareMode === value ? "tools-primary" : "";
           control.setAttribute("aria-pressed", String(compareMode === value));
@@ -12695,7 +12742,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.31.0";
+    runtime.TIERSCOPE_VERSION = "3.31.1-beta.1";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;
