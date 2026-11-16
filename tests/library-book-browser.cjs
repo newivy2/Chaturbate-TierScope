@@ -73,10 +73,14 @@ async function download(page,action){const [d]=await Promise.all([page.waitForEv
  await panel.evaluate(e=>{e.style.left='600px';e.style.right='auto';});await page.waitForTimeout(100);
  const scopeSize=await panel.boundingBox(),titleHeight=(await page.locator('#tools-title').boundingBox()).height;
  const grip=await page.locator('#tools-resize-handle').boundingBox();
+ assert.equal(await page.locator('#tools-resize-handle').evaluate(e=>getComputedStyle(e).cursor),
+  await page.locator('#resize-handle').evaluate(e=>getComputedStyle(e).cursor),'both pink grips use the same resize cursor');
  const libraryCorner=await library.boundingBox();
  assert(Math.abs(grip.x-libraryCorner.x)<2&&Math.abs(grip.y-libraryCorner.y)<2,'resize grip sits in Library’s upper-left corner');
  assert((await page.locator('#tools-title').boundingBox()).x>grip.x+grip.width,'Library title clears the resize grip');
- await page.mouse.move(grip.x+3,grip.y+3);await page.mouse.down();await page.mouse.move(grip.x-71,grip.y+3,{steps:6});await page.mouse.up();
+ await page.mouse.move(grip.x+3,grip.y+3);await page.mouse.down();await page.mouse.move(grip.x-71,grip.y+3,{steps:6});
+ await page.waitForFunction(()=>document.getElementById('tools-standard-size').textContent==='120%');
+ await page.mouse.up();
  await page.waitForFunction(()=>Math.abs(Number(document.getElementById('tierscope-session-tools').dataset.scale)-1.2)<.01);
  await page.waitForTimeout(100);
  assert(Math.abs((await library.boundingBox()).width-444)<1,'Library grip scales the entire panel');

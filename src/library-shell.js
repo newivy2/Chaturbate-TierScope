@@ -34,7 +34,7 @@ export function libraryShell() {
 #tierscope-session-tools[data-chart-only=true] #tools-content [data-compact-control]{flex:0 0 auto;max-width:100%;min-width:0;margin:3px 0}
 #tierscope-session-tools[data-chart-only=true] #tools-content canvas[data-compact-path]{flex:0 0 var(--compact-chart-height,200px);width:100%;height:var(--compact-chart-height,200px);min-height:200px;margin:0;padding:0}
 #tierscope-session-tools[data-chart-only=true] #tools-content #tools-chart-view>.tools-chart-inspection-scroll{display:block!important;position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
-#tierscope-session-tools #tools-resize-handle{position:absolute;left:0;top:0;width:16px;height:16px;padding:0;border:0;border-radius:6px 0 0;background:linear-gradient(135deg,#ff69b4 50%,transparent 50%);cursor:ew-resize;touch-action:none;z-index:2}
+#tierscope-session-tools #tools-resize-handle{position:absolute;left:0;top:0;width:16px;height:16px;padding:0;border:0;border-radius:6px 0 0;background:linear-gradient(135deg,#ff69b4 50%,transparent 50%);cursor:nw-resize;touch-action:none;z-index:2}
 #tierscope-session-tools .tools-appearance{flex-shrink:0;border-top:1px solid var(--panel-divider);padding:7px 12px}
 #tierscope-session-tools .tools-opacity-controls{display:grid;grid-template-columns:auto minmax(0,1fr) 4ch;gap:7px;align-items:center;width:100%;font-size:.9em}
 #tierscope-session-tools #tools-opacity-slider{width:100%;min-width:0;margin:0;padding:0;height:12px;accent-color:#ff69b4;cursor:pointer}

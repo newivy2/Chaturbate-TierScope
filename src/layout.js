@@ -138,6 +138,13 @@ export function applyScale(scale) {
     container.style.transform = 'scale(' + scale + ')';
     container.style.transformOrigin = 'top left';
     container.dataset.scale = scale;
+    var reset = document.getElementById('btn-standard-size');
+    if (reset) {
+        var percentage = Math.round(scale * 100) + '%';
+        reset.textContent = percentage;
+        reset.title = 'Current panel size: ' + percentage + '. Click to restore 100%.';
+        reset.setAttribute('aria-label', 'Restore standard panel size to 100% (currently ' + percentage + ')');
+    }
 }
 
 export function setupResizable() {

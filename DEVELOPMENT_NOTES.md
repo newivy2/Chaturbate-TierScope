@@ -6,7 +6,7 @@ Detailed reference for **3.31.0**. [Connection recovery guide](docs/connection-r
 
 [Independent Library appearance and chart-only comparisons](docs/library-appearance.md) are available in **3.31.0**.
 
-**3.31.1-beta.1 preview:** [Saved sessions shortcut behavior](docs/saved-session-shortcuts.md) and a [three-minute automatic keeping default](docs/automatic-keeping.md). Previously saved minimum-duration choices are preserved.
+**3.31.1-beta.2 preview:** [Saved sessions shortcut behavior](docs/saved-session-shortcuts.md), a [three-minute automatic keeping default](docs/automatic-keeping.md), and matching panel resize cursors with a live percentage/reset button on Scope. Previously saved minimum-duration choices are preserved.
 
 ## Contents
 
@@ -563,6 +563,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.31.1-beta.2** | Match Library’s resize cursor to Scope’s. Show Scope’s current scale on its reset button during resizing and after reload; clicking restores 100%. Keep Scope, full Library and chart-only Library sizes independent. |
 | **3.31.1-beta.1** | Make Saved sessions shortcuts rebuild the current model’s comparison with earlier saved sessions, clear stale selections/filters, and handle missing samples/history without choosing other models. Default automatic keeping to three minutes while preserving saved custom settings. |
 | **3.31.0** | Release independent Library scaling and transparency, plus chart-only Saved / Live / Last 24h comparisons with separate compact appearance. Prioritize a viewport-sized chart, keep controls reachable by scrolling, and preserve comparison state and user scroll through updates. |
 | **3.31.0-beta.5** | Add Saved sessions / Live models / Last 24h shortcuts to minimized comparisons. Give the chart its own viewport-sized area with a 200px minimum, show it by default, and retain scroll access to controls without resetting user scrolling during updates. |
