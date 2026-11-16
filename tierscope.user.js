@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.32.0-beta.2
+// @version      3.32.0-beta.3
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -5559,6 +5559,23 @@ underlying system, so should run in the browser, Node, or Plask.
     const left = Math.max(0, Math.min(span - width, center - width * ratio));
     return [left, left + width];
   }
+  function visibleAnalysisWindow(series, hidden, axisMs) {
+    if (!Number.isFinite(axisMs) || axisMs < 0) throw new Error("Invalid chart range.");
+    let first = Infinity, last = -Infinity;
+    series.forEach((source, index) => {
+      if (hidden.has(index)) return;
+      source.times.forEach((time, sample) => {
+        const value = source.values[sample];
+        if (!Number.isFinite(time) || time < 0 || time > axisMs || !Number.isSafeInteger(value) || value < 0) return;
+        first = Math.min(first, time);
+        last = Math.max(last, time);
+      });
+    });
+    if (first === Infinity) return [0, axisMs];
+    const width = Math.min(axisMs, Math.max(1e3, last - first));
+    const start = Math.max(0, Math.min(axisMs - width, first - (width - (last - first)) / 2));
+    return [start, start + width];
+  }
   var COMPARISON_FOREGROUND_COUNT = 12;
   var COMPARISON_BACKGROUND_OPACITY = 0.12;
   var ANALYSIS_LINE_PAGE_SIZE = 30;
@@ -8590,10 +8607,12 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/analysis-chart-view.js
   function renderAnalysisChart(parent, series, labels, axisMs, metricLabel, savedState = null, axisMode = "elapsed", config = {}) {
+    var _a;
     const element = toolNode(parent, "div");
     element.id = "tools-chart-view";
     parent = element;
     let start = 0, end = axisMs, cursor = 0, pinned = false, drag = null, disposed = false;
+    let followingFull = (_a = savedState == null ? void 0 : savedState.followingFull) != null ? _a : true;
     function datedAxis(mode = axisMode) {
       return mode === "live" || mode === "timeline";
     }
@@ -8626,11 +8645,7 @@ underlying system, so should run in the browser, Node, or Plask.
     panLeft.setAttribute("aria-label", "Pan earlier");
     const panRight = toolButton(controls, "›", () => pan(1), "tools-chart-pan-right");
     panRight.setAttribute("aria-label", "Pan later");
-    toolButton(controls, "Full range", () => {
-      start = 0;
-      end = axisMs;
-      draw();
-    }, "tools-chart-reset");
+    toolButton(controls, "Full range", resetRange, "tools-chart-reset");
     const pin = toolButton(controls, "Pin cursor", () => {
       pinned = !pinned;
       inspect();
@@ -8641,19 +8656,19 @@ underlying system, so should run in the browser, Node, or Plask.
       ({ newestFirst, ranks } = axisMode === "live" ? { newestFirst: series.map((_, index) => index), ranks: series.map((_, index) => index) } : comparisonSeriesOrder(series, config.rankTimes));
       styledTimeline = axisMode === "timeline" && Array.isArray(config.seriesStyles);
       primarySeries = series.map((_, index) => {
-        var _a;
-        return styledTimeline && ((_a = config.seriesStyles[index]) == null ? void 0 : _a.primary) === true;
+        var _a2;
+        return styledTimeline && ((_a2 = config.seriesStyles[index]) == null ? void 0 : _a2.primary) === true;
       });
       trackedSeries = series.map((_, index) => {
-        var _a;
-        return primarySeries[index] || styledTimeline && ((_a = config.seriesStyles[index]) == null ? void 0 : _a.live) === true;
+        var _a2;
+        return primarySeries[index] || styledTimeline && ((_a2 = config.seriesStyles[index]) == null ? void 0 : _a2.live) === true;
       });
       backgroundSeries = ranks.map((rank, index) => axisMode !== "live" && !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
       newest = newestFirst[0];
       solidSeries = series.map((_, index) => axisMode === "live" || (styledTimeline ? trackedSeries[index] : index === newest));
       colorIndices = ranks.map((rank, i) => {
-        var _a, _b, _c, _d;
-        return axisMode === "live" ? (_b = (_a = config.colorIndices) == null ? void 0 : _a[i]) != null ? _b : i : styledTimeline ? primarySeries[i] ? 0 : Math.max(1, (_d = (_c = config.colorIndices) == null ? void 0 : _c[i]) != null ? _d : 1 + rank) : rank < 6 ? rank : 1 + (rank - 6) % 5;
+        var _a2, _b, _c, _d;
+        return axisMode === "live" ? (_b = (_a2 = config.colorIndices) == null ? void 0 : _a2[i]) != null ? _b : i : styledTimeline ? primarySeries[i] ? 0 : Math.max(1, (_d = (_c = config.colorIndices) == null ? void 0 : _c[i]) != null ? _d : 1 + rank) : rank < 6 ? rank : 1 + (rank - 6) % 5;
       });
       opacities = ranks.map((rank, index) => axisMode === "live" || trackedSeries[index] ? 1 : comparisonOpacity(rank));
     }
@@ -8723,7 +8738,7 @@ underlying system, so should run in the browser, Node, or Plask.
         const label = labels[i], background = backgroundSeries[i];
         item.control.style.color = background ? legendBackground : comparisonLineColor(colorIndices[i], legendDark);
         item.check.checked = !hidden.has(i);
-        item.check.disabled = hidden.size === series.length - 1 && !hidden.has(i);
+        item.check.disabled = !config.allowAllHidden && hidden.size === series.length - 1 && !hidden.has(i);
         item.swatch.style.borderTopStyle = solidSeries[i] ? "solid" : "dashed";
         item.swatch.style.opacity = String(opacities[i]);
         const marker = styledTimeline ? primarySeries[i] ? " · Current" : trackedSeries[i] ? " · Tracked" : "" : series.length > 1 && i === newest ? " · Latest" : "";
@@ -8749,13 +8764,14 @@ underlying system, so should run in the browser, Node, or Plask.
         const text = toolNode(control, "span");
         legendLabels.set(i, { control, check, swatch, text });
         check.onchange = () => {
-          if (!check.checked && hidden.size === series.length - 1) {
+          if (!check.checked && !config.allowAllHidden && hidden.size === series.length - 1) {
             check.checked = true;
             return;
           }
           if (check.checked) hidden.delete(i);
           else hidden.add(i);
-          draw();
+          if (config.fitVisibleRange) resetRange();
+          else draw();
         };
         const row = toolNode(body, "tr");
         row.dataset.analysisInspection = String(i);
@@ -8777,11 +8793,13 @@ underlying system, so should run in the browser, Node, or Plask.
       return start + Math.max(0, Math.min(1, (x - left) / (right - left))) * (end - start);
     };
     function zoom(factor) {
+      followingFull = false;
       [start, end] = zoomAnalysisWindow(axisMs, start, end, factor, cursor);
       cursor = Math.max(start, Math.min(end, cursor));
       draw();
     }
     function pan(direction) {
+      followingFull = false;
       const span = end - start, next = Math.max(0, Math.min(axisMs - span, start + direction * span / 2));
       start = next;
       end = next + span;
@@ -8830,11 +8848,11 @@ underlying system, so should run in the browser, Node, or Plask.
       }
     }
     function draw() {
-      var _a, _b;
+      var _a2, _b;
       if (disposed) return;
       width = Math.max(260, canvas.clientWidth);
       right = width - 14;
-      ratio = (window.devicePixelRatio || 1) * (Number((_a = canvas.closest("#tierscope-session-tools")) == null ? void 0 : _a.dataset.renderScale) || 1);
+      ratio = (window.devicePixelRatio || 1) * (Number((_a2 = canvas.closest("#tierscope-session-tools")) == null ? void 0 : _a2.dataset.renderScale) || 1);
       height = Math.max(100, canvas.clientHeight || 200);
       bottom = height - 36;
       canvas.width = bitmap.width = width * ratio;
@@ -8848,8 +8866,8 @@ underlying system, so should run in the browser, Node, or Plask.
         plotCache = { series, start, end, width: right - left, plots: new Array(series.length) };
       }
       const plots = series.map((s, j) => {
-        var _a2;
-        return hidden.has(j) ? null : (_a2 = plotCache.plots)[j] || (_a2[j] = axisMode === "clock" ? buildClockPlot(s.clock, start, end, right - left) : buildAnalysisPlot(s, start, end, right - left));
+        var _a3;
+        return hidden.has(j) ? null : (_a3 = plotCache.plots)[j] || (_a3[j] = axisMode === "clock" ? buildClockPlot(s.clock, start, end, right - left) : buildAnalysisPlot(s, start, end, right - left));
       });
       let maximum = 1;
       for (const plot of plots) if (plot) maximum = Math.max(maximum, plot.maximum);
@@ -8916,9 +8934,9 @@ underlying system, so should run in the browser, Node, or Plask.
         ctx.globalAlpha = 1;
       }
       function paintForeground(j) {
-        var _a2, _b2;
+        var _a3, _b2;
         if (hidden.has(j) || backgroundSeries[j]) return;
-        const colorIndex = axisMode === "live" ? (_b2 = (_a2 = config.colorIndices) == null ? void 0 : _a2[j]) != null ? _b2 : colorIndices[j] : colorIndices[j];
+        const colorIndex = axisMode === "live" ? (_b2 = (_a3 = config.colorIndices) == null ? void 0 : _a3[j]) != null ? _b2 : colorIndices[j] : colorIndices[j];
         const color = comparisonLineColor(colorIndex, isDark);
         ctx.globalAlpha = opacities[j];
         paintSeries(ctx, j, color);
@@ -8961,6 +8979,7 @@ underlying system, so should run in the browser, Node, or Plask.
       cursor = timeAt(event);
       drag = null;
       if (Math.abs(event.clientX - origin.x) > 5 && Math.abs(cursor - origin.from) >= Math.min(1e3, axisMs)) {
+        followingFull = false;
         start = Math.min(cursor, origin.from);
         end = Math.max(cursor, origin.from);
         pinned = origin.pinned;
@@ -9020,6 +9039,16 @@ underlying system, so should run in the browser, Node, or Plask.
       }
       cursor = Math.max(start, Math.min(end, cursor + originShift));
     }
+    function fitFullRange() {
+      [start, end] = config.fitVisibleRange ? visibleAnalysisWindow(series, hidden, axisMs) : [0, axisMs];
+      cursor = Math.max(start, Math.min(end, cursor));
+    }
+    function resetRange() {
+      followingFull = true;
+      fitFullRange();
+      draw();
+    }
+    if (config.fitVisibleRange && followingFull) fitFullRange();
     filterLines();
     renderLinePage();
     draw();
@@ -9028,7 +9057,8 @@ underlying system, so should run in the browser, Node, or Plask.
       canvas,
       settings,
       draw,
-      capture: () => __spreadValues(__spreadValues({
+      resetRange,
+      capture: () => __spreadValues(__spreadValues(__spreadValues({
         start,
         end,
         cursor,
@@ -9036,7 +9066,7 @@ underlying system, so should run in the browser, Node, or Plask.
         axisMs,
         axisMode,
         hidden: [...hidden]
-      }, datedAxis() ? { originAt: config.originAt, sourceIds: config.sourceIds } : {}), paged ? { linePage, lineQuery } : {}),
+      }, datedAxis() ? { originAt: config.originAt, sourceIds: config.sourceIds } : {}), config.fitVisibleRange ? { followingFull } : {}), paged ? { linePage, lineQuery } : {}),
       update(nextSeries, nextAxis, nextMetricLabel, nextMode = "elapsed", nextConfig = config) {
         if (disposed) return;
         const originShift = datedAxis() && datedAxis(nextMode) ? (config.originAt || 0) - (nextConfig.originAt || 0) : 0;
@@ -9051,7 +9081,9 @@ underlying system, so should run in the browser, Node, or Plask.
           end = axisMs;
           cursor = 0;
           pinned = false;
+          followingFull = true;
         } else fitWindow(previousAxis, originShift);
+        if (config.fitVisibleRange && followingFull) fitFullRange();
         drag = null;
         refreshSeriesStyling();
         canvas.setAttribute("aria-label", chartLabel());
@@ -9096,19 +9128,16 @@ underlying system, so should run in the browser, Node, or Plask.
     return colors;
   }
   function buildLiveModelSeries(archives, metric = "room", options = {}) {
-    let latest = 0, earliest = Infinity;
+    let latest = 0;
     for (const archive of archives) for (const time of archive.session.history.timestamps) {
       if (!Number.isSafeInteger(time) || time < 0 || time > 864e13) continue;
       latest = Math.max(latest, time);
-      earliest = Math.min(earliest, time);
     }
     const now = options.now === void 0 ? latest : options.now;
     const windowMs = options.windowMs === void 0 ? 36e5 : options.windowMs;
     if (!Number.isSafeInteger(now) || now < 0 || now > 864e13 || !(windowMs === Infinity || Number.isSafeInteger(windowMs) && windowMs > 0)) throw new Error("Invalid live comparison window.");
-    const originAt = options.originAt === void 0 ? Math.max(0, windowMs === Infinity ? earliest === Infinity ? now : Math.min(earliest, now) : now - windowMs) : options.originAt;
-    if (!Number.isSafeInteger(originAt) || originAt < 0 || originAt > now) throw new Error("Invalid live comparison origin.");
-    let excludedSamples = 0;
-    const series = archives.map((archive) => {
+    let excludedSamples = 0, earliest = Infinity, acceptedLatest = 0;
+    const accepted = archives.map((archive) => {
       const input = analysisSeries(archive, metric), timestamps = archive.session.history.timestamps;
       const output = { times: [], values: [], breaks: [], timestamps: [] };
       let previous = -1, interrupted = false;
@@ -9119,18 +9148,27 @@ underlying system, so should run in the browser, Node, or Plask.
           interrupted = true;
           return;
         }
-        output.times.push(time - originAt);
+        output.times.push(time);
         output.values.push(value);
         output.breaks.push(interrupted || !!input.breaks[index]);
         output.timestamps.push(time);
+        earliest = Math.min(earliest, time);
+        acceptedLatest = Math.max(acceptedLatest, time);
         previous = time;
         interrupted = false;
       });
+      return output;
+    });
+    const originAt = options.originAt === void 0 ? Math.max(0, windowMs === Infinity ? earliest === Infinity ? now : earliest : now - windowMs) : options.originAt;
+    if (!Number.isSafeInteger(originAt) || originAt < 0 || originAt > now) throw new Error("Invalid live comparison origin.");
+    const axisEnd = windowMs === Infinity && earliest !== Infinity ? acceptedLatest : now;
+    const series = accepted.map((output) => {
+      output.times = output.times.map((time) => time - originAt);
       const first = Math.max(0, analysisSampleIndex(output.times, 0));
       for (const key of ["times", "values", "breaks", "timestamps"]) output[key] = output[key].slice(first);
       return output;
     });
-    return { series, labels: archives.map((archive) => archive.room), originAt, axisMs: Math.max(1e3, now - originAt), excludedSamples };
+    return { series, labels: archives.map((archive) => archive.room), originAt, axisMs: Math.max(1e3, axisEnd - originAt), excludedSamples };
   }
 
   // src/live-model-comparison.js
@@ -9162,10 +9200,16 @@ underlying system, so should run in the browser, Node, or Plask.
       rowLimit: MODEL_PAGE_SIZE,
       reportPage: 0,
       chartState: null,
-      chartIds: []
+      chartIds: [],
+      hiddenSources: /* @__PURE__ */ new Set()
     };
   }
   function renderLiveModelsComparison(parent, { state, getMetric, metricControl, currentRoom = "" }) {
+    var _a;
+    if (!state.hiddenSources) {
+      const hidden = new Set(((_a = state.chartState) == null ? void 0 : _a.hidden) || []);
+      state.hiddenSources = new Set(state.chartIds.filter((id, index) => hidden.has(index)));
+    }
     const root = toolNode(parent, "section");
     root.id = "tools-live-models";
     toolNode(root, "h3", "Live models comparison");
@@ -9189,8 +9233,7 @@ underlying system, so should run in the browser, Node, or Plask.
     windowSelect.value = String(state.windowMs);
     windowSelect.onchange = () => {
       state.windowMs = Number(windowSelect.value);
-      clearChart();
-      state.chartState = null;
+      resetRange = true;
       plotSignature = "";
       refresh();
     };
@@ -9268,7 +9311,7 @@ underlying system, so should run in the browser, Node, or Plask.
     });
     const reportBody = toolNode(table, "tbody");
     toolNode(root, "p", "The chart uses actual dates and clock times, including midnight crossings. Gaps stay gaps and lines end at their last accepted sample. A stale source may be suspended or closed; its old counts are never treated as a fresh scan. Keeping sessions in Library remains a separate choice.", "tools-muted");
-    let disposed = false, refreshing = false, view = null, observer = null, detach = null;
+    let disposed = false, refreshing = false, view = null, observer = null, detach = null, resetRange = false;
     let rows = /* @__PURE__ */ new Map(), currentGroups = /* @__PURE__ */ new Map(), reportData = [], topology = "", plotSignature = "", notice = "", userNotice = "";
     function age(time, at) {
       if (!Number.isFinite(time)) return "No sample";
@@ -9281,9 +9324,18 @@ underlying system, so should run in the browser, Node, or Plask.
     function eligible(source) {
       return source && source.sampleCount > 0 && !["reset", "unavailable", "stale"].includes(source.status);
     }
+    function rememberChart() {
+      if (!view) return;
+      state.chartState = view.capture();
+      const hidden = new Set(state.chartState.hidden);
+      state.chartIds.forEach((id, index) => {
+        if (hidden.has(index)) state.hiddenSources.add(id);
+        else state.hiddenSources.delete(id);
+      });
+    }
     function clearChart() {
       if (view) {
-        state.chartState = view.capture();
+        rememberChart();
         view.dispose();
         view = null;
       }
@@ -9336,8 +9388,11 @@ underlying system, so should run in the browser, Node, or Plask.
           rows.set(room2, { row, check, select, tabNote, detail, snapshot });
           check.onchange = () => choose(state.known.get(state.choices.get(room2)), check.checked);
           select.onchange = () => {
+            rememberChart();
             const old = state.choices.get(room2), checked = state.selected.delete(old);
             state.choices.set(room2, select.value);
+            if (state.hiddenSources.has(old)) state.hiddenSources.add(select.value);
+            else state.hiddenSources.delete(select.value);
             if (checked) state.selected.add(select.value);
             state.autoPicked = true;
             plotSignature = "";
@@ -9402,6 +9457,7 @@ underlying system, so should run in the browser, Node, or Plask.
       plotSignature = signature;
       if (!selected.length) {
         clearChart();
+        state.chartIds = [];
         reportData = [];
         renderReports();
         return;
@@ -9410,11 +9466,28 @@ underlying system, so should run in the browser, Node, or Plask.
       const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
       if (!same) {
         clearChart();
-        state.chartState = null;
+        state.chartState = __spreadProps(__spreadValues({}, state.chartState), {
+          start: 0,
+          end: data.axisMs,
+          cursor: 0,
+          pinned: false,
+          axisMs: data.axisMs,
+          axisMode: "live",
+          originAt: data.originAt,
+          sourceIds: ids,
+          hidden: ids.flatMap((id, index) => state.hiddenSources.has(id) ? [index] : [])
+        });
         state.reportPage = 0;
+        resetRange = true;
       }
       state.colors = allocateLiveModelColors(selected.map((source) => source.room), state.colors, currentRoom);
-      const config = { originAt: data.originAt, sourceIds: ids, colorIndices: selected.map((source) => state.colors.get(source.room)) };
+      const config = {
+        originAt: data.originAt,
+        sourceIds: ids,
+        fitVisibleRange: state.windowMs === Infinity,
+        allowAllHidden: true,
+        colorIndices: selected.map((source) => state.colors.get(source.room))
+      };
       if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[getMetric()], "live", config);
       else {
         view = renderAnalysisChart(
@@ -9423,7 +9496,7 @@ underlying system, so should run in the browser, Node, or Plask.
           selected.map((source) => source.room),
           data.axisMs,
           ANALYSIS_METRICS[getMetric()],
-          same ? state.chartState : null,
+          state.chartState,
           "live",
           config
         );
@@ -9431,6 +9504,10 @@ underlying system, so should run in the browser, Node, or Plask.
           observer = new window.ResizeObserver(view.draw);
           observer.observe(view.canvas);
         }
+      }
+      if (resetRange) {
+        view.resetRange();
+        resetRange = false;
       }
       state.chartIds = ids.slice();
       state.displayAt = state.frozen ? state.frozenAt : at;
@@ -9494,6 +9571,11 @@ underlying system, so should run in the browser, Node, or Plask.
           const preferred = candidates.sort((a, b) => b.sampleCount - a.sampleCount || Number(b.id === choice) - Number(a.id === choice) || (b.sampleAt || 0) - (a.sampleAt || 0) || a.id.localeCompare(b.id))[0];
           const changedSession = previous && entries.some((source) => available.has(source.id) && source.publisherId === previous.publisherId && source.id !== choice);
           if (!state.frozen && preferred && !result.error && (!choice || !state.selected.has(choice) || (previous == null ? void 0 : previous.status) !== "reset" && !changedSession && (!available.has(choice) || (previous == null ? void 0 : previous.status) === "stale" || preferred.sampleCount > previous.sampleCount))) {
+            if (choice && choice !== preferred.id) {
+              rememberChart();
+              if (state.hiddenSources.has(choice)) state.hiddenSources.add(preferred.id);
+              else state.hiddenSources.delete(preferred.id);
+            }
             if (state.selected.delete(choice)) state.selected.add(preferred.id);
             state.choices.set(room2, preferred.id);
           } else if (!choice) state.choices.set(room2, entries[0].id);
@@ -9543,7 +9625,7 @@ underlying system, so should run in the browser, Node, or Plask.
         disposed = true;
         if (detach) detach();
         if (view) {
-          state.chartState = view.capture();
+          rememberChart();
           view.dispose();
         }
         if (observer) observer.disconnect();
@@ -14204,7 +14286,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.32.0-beta.2";
+    runtime.TIERSCOPE_VERSION = "3.32.0-beta.3";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

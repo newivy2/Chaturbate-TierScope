@@ -1,5 +1,5 @@
 import { buildClockPlot, inspectClockSample } from './analysis-clock-data.js';
-import { ANALYSIS_LINE_PAGE_SIZE, COMPARISON_BACKGROUND_OPACITY, COMPARISON_FOREGROUND_COUNT, comparisonLabel, comparisonLineColor, comparisonOpacity, comparisonSeriesOrder, analysisSampleIndex, buildAnalysisPlot, inspectAnalysisSample, zoomAnalysisWindow } from './analysis-chart-data.js';
+import { ANALYSIS_LINE_PAGE_SIZE, COMPARISON_BACKGROUND_OPACITY, COMPARISON_FOREGROUND_COUNT, comparisonLabel, comparisonLineColor, comparisonOpacity, comparisonSeriesOrder, analysisSampleIndex, buildAnalysisPlot, inspectAnalysisSample, visibleAnalysisWindow, zoomAnalysisWindow } from './analysis-chart-data.js';
 import { toolNode as node, toolButton as button } from './tools-view-helpers.js';
 
 // Receives snapshots of analysis values, not live/playback owners or archives.
@@ -8,6 +8,7 @@ import { toolNode as node, toolButton as button } from './tools-view-helpers.js'
 export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel, savedState = null, axisMode = 'elapsed', config = {}) {
     const element = node(parent, 'div'); element.id = 'tools-chart-view'; parent = element;
     let start = 0, end = axisMs, cursor = 0, pinned = false, drag = null, disposed = false;
+    let followingFull = savedState?.followingFull ?? true;
     function datedAxis(mode = axisMode) { return mode === 'live' || mode === 'timeline'; }
     const hidden = new Set(), controls = node(parent, 'div', undefined, 'tools-actions');
     if (savedState && (savedState.axisMode || 'elapsed') === axisMode) {
@@ -37,7 +38,7 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
     const zoomOut = button(controls, 'Zoom −', () => zoom(2), 'tools-chart-zoom-out');
     const panLeft = button(controls, '‹', () => pan(-1), 'tools-chart-pan-left'); panLeft.setAttribute('aria-label', 'Pan earlier');
     const panRight = button(controls, '›', () => pan(1), 'tools-chart-pan-right'); panRight.setAttribute('aria-label', 'Pan later');
-    button(controls, 'Full range', () => { start = 0; end = axisMs; draw(); }, 'tools-chart-reset');
+    button(controls, 'Full range', resetRange, 'tools-chart-reset');
     const pin = button(controls, 'Pin cursor', () => { pinned = !pinned; inspect(); }, 'tools-chart-pin');
     const legend = node(parent, 'div', undefined, 'tools-chart-legend');
     // Original session dates own saved-session styling even when a rolling
@@ -96,7 +97,7 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         for (const [i, item] of legendLabels) {
             const label = labels[i], background = backgroundSeries[i];
             item.control.style.color = background ? legendBackground : comparisonLineColor(colorIndices[i], legendDark);
-            item.check.checked = !hidden.has(i); item.check.disabled = hidden.size === series.length - 1 && !hidden.has(i);
+            item.check.checked = !hidden.has(i); item.check.disabled = !config.allowAllHidden && hidden.size === series.length - 1 && !hidden.has(i);
             item.swatch.style.borderTopStyle = solidSeries[i] ? 'solid' : 'dashed';
             item.swatch.style.opacity = String(opacities[i]);
             const marker = styledTimeline ? (primarySeries[i] ? ' · Current' : trackedSeries[i] ? ' · Tracked' : '') :
@@ -120,8 +121,9 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
             const swatch = node(control, 'span', '', 'tools-series-swatch'); swatch.setAttribute('aria-hidden', 'true');
             const text = node(control, 'span'); legendLabels.set(i, {control, check, swatch, text});
             check.onchange = () => {
-                if (!check.checked && hidden.size === series.length - 1) {check.checked = true; return;}
-                if (check.checked) hidden.delete(i); else hidden.add(i); draw();
+                if (!check.checked && !config.allowAllHidden && hidden.size === series.length - 1) {check.checked = true; return;}
+                if (check.checked) hidden.delete(i); else hidden.add(i);
+                if (config.fitVisibleRange) resetRange(); else draw();
             };
             const row = node(body, 'tr'); row.dataset.analysisInspection = String(i);
             const heading = node(row, 'th', axisMode === 'live' ? labels[i] : comparisonLabel(i)); heading.scope = 'row'; heading.title = labels[i];
@@ -139,8 +141,9 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         const bounds = canvas.getBoundingClientRect(), x = (event.clientX - bounds.left) * width / bounds.width;
         return start + Math.max(0, Math.min(1, (x - left) / (right - left))) * (end - start);
     };
-    function zoom(factor) { [start, end] = zoomAnalysisWindow(axisMs, start, end, factor, cursor); cursor = Math.max(start, Math.min(end, cursor)); draw(); }
+    function zoom(factor) { followingFull = false; [start, end] = zoomAnalysisWindow(axisMs, start, end, factor, cursor); cursor = Math.max(start, Math.min(end, cursor)); draw(); }
     function pan(direction) {
+        followingFull = false;
         const span = end - start, next = Math.max(0, Math.min(axisMs - span, start + direction * span / 2));
         start = next; end = next + span; cursor = Math.max(start, Math.min(end, cursor)); draw();
     }
@@ -266,7 +269,7 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         if (!drag) return;
         const origin = drag; cursor = timeAt(event); drag = null;
         if (Math.abs(event.clientX-origin.x)>5 && Math.abs(cursor-origin.from)>=Math.min(1000,axisMs)) {
-            start = Math.min(cursor,origin.from);end = Math.max(cursor,origin.from);pinned = origin.pinned;draw();
+            followingFull = false; start = Math.min(cursor,origin.from);end = Math.max(cursor,origin.from);pinned = origin.pinned;draw();
         } else {pinned=!origin.pinned;inspect();}
         if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);
     };
@@ -298,10 +301,17 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         }
         cursor = Math.max(start, Math.min(end, cursor + originShift));
     }
+    function fitFullRange() {
+        [start, end] = config.fitVisibleRange ? visibleAnalysisWindow(series, hidden, axisMs) : [0, axisMs];
+        cursor = Math.max(start, Math.min(end, cursor));
+    }
+    function resetRange() {followingFull = true; fitFullRange(); draw();}
+    if (config.fitVisibleRange && followingFull) fitFullRange();
     filterLines(); renderLinePage(); draw();
-    return {element, canvas, settings, draw,
+    return {element, canvas, settings, draw, resetRange,
         capture: () => ({start, end, cursor, pinned, axisMs, axisMode, hidden: [...hidden],
             ...(datedAxis() ? {originAt: config.originAt, sourceIds: config.sourceIds} : {}),
+            ...(config.fitVisibleRange ? {followingFull} : {}),
             ...(paged ? {linePage, lineQuery} : {})}),
         update(nextSeries, nextAxis, nextMetricLabel, nextMode = 'elapsed', nextConfig = config) {
             if (disposed) return;
@@ -309,8 +319,9 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
             const previousAxis = axisMs; series = nextSeries; axisMs = nextAxis; metricLabel = nextMetricLabel;
             config = nextConfig;
             if (axisMode !== nextMode) {
-                axisMode = nextMode; start = 0; end = axisMs; cursor = 0; pinned = false;
+                axisMode = nextMode; start = 0; end = axisMs; cursor = 0; pinned = false; followingFull = true;
             } else fitWindow(previousAxis, originShift);
+            if (config.fitVisibleRange && followingFull) fitFullRange();
             drag = null; refreshSeriesStyling();
             canvas.setAttribute('aria-label', chartLabel());
             draw();

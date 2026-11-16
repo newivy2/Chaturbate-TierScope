@@ -15,3 +15,5 @@ Favorite models use their existing automatic-keeping consent and minimum recorde
 This is an experimental API-only feature. Chaturbate may refuse a room's data when its page is not open, or when access is restricted. The beta reports failures rather than opening the room or clicking tabs. A successful mocked browser test cannot establish what the live service permits; testing real public rooms is part of this beta review.
 
 Current Live Session shortcuts now read **Compare with previous**, **Compare all live sessions**, **Compare last 24h sessions**, and **Compare without watching**. Other comparison navigation labels remain unchanged.
+
+**3.32.0-beta.3 chart ranges:** In Live comparison, **Full sessions** fits the first and last accepted samples of visible, selected recordings. Hidden lines do not reserve empty space, and paused or stopped sessions do not add an empty tail to the current time. Adding/removing selections or hiding/showing a line refits this full view. Range presets preserve the model selections and hidden lines. Ordinary sample updates preserve manual zoom; **Full range** restores the fitted view.

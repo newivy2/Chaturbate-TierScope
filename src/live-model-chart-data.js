@@ -38,20 +38,17 @@ export function allocateLiveModelColors(rooms, previous = new Map(), primaryRoom
 /** @param {AnalysisArchive[]} archives @param {string} metric
  * @param {{now?:number,windowMs?:number,originAt?:number}} options */
 export function buildLiveModelSeries(archives, metric = 'room', options = {}) {
-    let latest = 0, earliest = Infinity;
+    let latest = 0;
     for (const archive of archives) for (const time of archive.session.history.timestamps) {
         if (!Number.isSafeInteger(time) || time < 0 || time > 8640000000000000) continue;
-        latest = Math.max(latest, time); earliest = Math.min(earliest, time);
+        latest = Math.max(latest, time);
     }
     const now = options.now === undefined ? latest : options.now;
     const windowMs = options.windowMs === undefined ? 3600000 : options.windowMs;
     if (!Number.isSafeInteger(now) || now < 0 || now > 8640000000000000 ||
         !(windowMs === Infinity || Number.isSafeInteger(windowMs) && windowMs > 0)) throw new Error('Invalid live comparison window.');
-    const originAt = options.originAt === undefined ? Math.max(0, windowMs === Infinity ?
-        (earliest === Infinity ? now : Math.min(earliest, now)) : now - windowMs) : options.originAt;
-    if (!Number.isSafeInteger(originAt) || originAt < 0 || originAt > now) throw new Error('Invalid live comparison origin.');
-    let excludedSamples = 0;
-    const series = archives.map(archive => {
+    let excludedSamples = 0, earliest = Infinity, acceptedLatest = 0;
+    const accepted = archives.map(archive => {
         const input = analysisSeries(archive, metric), timestamps = archive.session.history.timestamps;
         /** @type {InspectionSeries} */
         const output = {times: [], values: [], breaks: [], timestamps: []};
@@ -62,15 +59,26 @@ export function buildLiveModelSeries(archives, metric = 'room', options = {}) {
                 !Number.isSafeInteger(value) || value < 0) {
                 excludedSamples++; interrupted = true; return;
             }
-            output.times.push(time - originAt); output.values.push(value);
+            output.times.push(time); output.values.push(value);
             output.breaks.push(interrupted || !!input.breaks[index]); output.timestamps.push(time);
+            earliest = Math.min(earliest, time); acceptedLatest = Math.max(acceptedLatest, time);
             previous = time; interrupted = false;
         });
+        return output;
+    });
+    // Full sessions use accepted sample endpoints, rather than an idle tail to
+    // the current clock. Finite presets retain their explicit now-based window.
+    const originAt = options.originAt === undefined ? Math.max(0, windowMs === Infinity ?
+        (earliest === Infinity ? now : earliest) : now - windowMs) : options.originAt;
+    if (!Number.isSafeInteger(originAt) || originAt < 0 || originAt > now) throw new Error('Invalid live comparison origin.');
+    const axisEnd = windowMs === Infinity && earliest !== Infinity ? acceptedLatest : now;
+    const series = accepted.map(output => {
+        output.times = output.times.map(time => time - originAt);
         // Retain at most one predecessor so a covered interval crossing the
         // left edge remains inspectable. Never extend beyond the last sample.
         const first = Math.max(0, analysisSampleIndex(output.times, 0));
         for (const key of ['times', 'values', 'breaks', 'timestamps']) output[key] = output[key].slice(first);
         return output;
     });
-    return {series, labels: archives.map(archive => archive.room), originAt, axisMs: Math.max(1000, now - originAt), excludedSamples};
+    return {series, labels: archives.map(archive => archive.room), originAt, axisMs: Math.max(1000, axisEnd - originAt), excludedSamples};
 }

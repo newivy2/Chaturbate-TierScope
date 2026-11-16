@@ -160,3 +160,31 @@ test('single samples, equal timestamps and empty live comparisons remain inspect
     const empty = buildLiveModelSeries([], 'room', {now});
     assert.deepEqual(empty.series, []); assert.equal(empty.axisMs, 3600000);
 });
+
+test('Full sessions fits accepted endpoints of the selected recordings without an idle clock tail', async () => {
+    const {buildLiveModelSeries} = await import('../src/live-model-chart-data.js');
+    const now = Date.UTC(2026, 10, 16, 12), oldest = archive('older', [now - 7200000, now - 3600000], [10, 20]);
+    const newer = archive('newer', [now - 1800000, now - 600000], [30, 40]);
+    const full = buildLiveModelSeries([oldest, newer], 'total', {now, windowMs: Infinity});
+    assert.equal(full.originAt, now - 7200000); assert.equal(full.originAt + full.axisMs, now - 600000);
+    const selected = buildLiveModelSeries([newer], 'total', {now, windowMs: Infinity});
+    assert.equal(selected.originAt, now - 1800000); assert.equal(selected.axisMs, 1200000);
+    assert.deepEqual(selected.series[0].times, [0, 1200000]);
+    const finite = buildLiveModelSeries([newer], 'total', {now, windowMs: 3600000});
+    assert.equal(finite.originAt, now - 3600000); assert.equal(finite.axisMs, 3600000, 'fixed windows still end at now');
+});
+
+test('Full sessions bounds exclude future, out-of-order and invalid-value samples', async () => {
+    const {buildLiveModelSeries} = await import('../src/live-model-chart-data.js');
+    const now = 1000000;
+    const data = archive('mixed', [100000, 200000, 150000, 400000, now + 1], [NaN, 20, 999, 40, 1000]);
+    const result = buildLiveModelSeries([data], 'total', {now, windowMs: Infinity});
+    assert.equal(result.originAt, 200000); assert.equal(result.axisMs, 200000);
+    assert.deepEqual(result.series[0].timestamps, [200000, 400000]);
+    assert.deepEqual(result.series[0].breaks, [true, true]); assert.equal(result.excludedSamples, 3);
+    const futureOnly = buildLiveModelSeries([archive('future', [now + 1], [10])], 'total', {now, windowMs: Infinity});
+    assert.equal(futureOnly.originAt, now); assert.equal(futureOnly.axisMs, 1000);
+    assert.deepEqual(futureOnly.series[0].times, []); assert.equal(futureOnly.excludedSamples, 1);
+    const empty = buildLiveModelSeries([], 'total', {now, windowMs: Infinity});
+    assert.equal(empty.originAt, now); assert.equal(empty.axisMs, 1000);
+});

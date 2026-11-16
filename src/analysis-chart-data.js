@@ -64,6 +64,27 @@ export function zoomAnalysisWindow(span, start, end, factor, anchor) {
     return [left, left + width];
 }
 
+// Fit only enabled lines. Hidden recordings must not reserve empty horizontal
+// space, while a single accepted point still receives an inspectable window.
+/** @param {InspectionSeries[]} series @param {ReadonlySet<number>} hidden
+ * @param {number} axisMs @returns {[number, number]} */
+export function visibleAnalysisWindow(series, hidden, axisMs) {
+    if (!Number.isFinite(axisMs) || axisMs < 0) throw new Error('Invalid chart range.');
+    let first = Infinity, last = -Infinity;
+    series.forEach((source, index) => {
+        if (hidden.has(index)) return;
+        source.times.forEach((time, sample) => {
+            const value = source.values[sample];
+            if (!Number.isFinite(time) || time < 0 || time > axisMs || !Number.isSafeInteger(value) || value < 0) return;
+            first = Math.min(first, time); last = Math.max(last, time);
+        });
+    });
+    if (first === Infinity) return [0, axisMs];
+    const width = Math.min(axisMs, Math.max(1000, last - first));
+    const start = Math.max(0, Math.min(axisMs - width, first - (width - (last - first)) / 2));
+    return [start, start + width];
+}
+
 // The most recent twelve remain individually readable; older sessions are a
 // faint background. Apply background opacity once to their composited layer.
 export const COMPARISON_FOREGROUND_COUNT = 12;
