@@ -1,6 +1,7 @@
 import { CLOCK_DAY_MS, clockSessionDuration, projectClockSeries } from './analysis-clock-data.js';
 import { createAnalysisFollower } from './analysis-follow.js';
-import { getPersistentBackgroundComparisonStates, initializeBackgroundTracking, startPersistentBackgroundComparison, stopPersistentBackgroundComparison, subscribePersistentBackgroundComparison } from './background-tracking-lifecycle.js';
+import { getPersistentBackgroundComparisonStates, initializeBackgroundTracking, readPersistentBackgroundComparisonSources, startPersistentBackgroundComparison, stopPersistentBackgroundComparison, subscribePersistentBackgroundComparison } from './background-tracking-lifecycle.js';
+import { clearComparisonDismissalsForRoom, dismissComparisonSources, isComparisonDismissed, subscribeComparisonDismissals } from './comparison-dismissals.js';
 import { renderMetricStrip } from './analysis-metric-view.js';
 import { automaticLibraryStatus, keepFavoriteSession } from './automatic-library.js';
 import { changeModelFavorite } from './favorite-controls.js';
@@ -113,7 +114,7 @@ export function openSessionTools(focusTarget) {
     let compareMode = 'saved', liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
     const recentState = createRecentComparisonState();
-    let backgroundRoomDraft = '', detachBackgroundStatus = null;
+    let backgroundRoomDraft = '', detachBackgroundStatus = null, detachComparisonDismissals = null;
     const pendingBackgroundSelection = new Set();
     const followers = {summary: createAnalysisFollower(), compare: createAnalysisFollower(), history: createAnalysisFollower()};
     try { currentArchive = captureSessionFile(); } catch (error) { /* Tools also work on directory pages. */ }
@@ -503,6 +504,7 @@ export function openSessionTools(focusTarget) {
                 event.preventDefault();
                 try {
                     if (input.value.trim().toLowerCase() === getModelName().toLowerCase()) throw new Error('This room is already being tracked. Enter another room name.');
+                    clearComparisonDismissalsForRoom(input.value.trim().toLowerCase());
                     input.disabled = true; start.disabled = true;
                     const state = await startPersistentBackgroundComparison(input.value);
                     if (!current()) return;
@@ -521,11 +523,29 @@ export function openSessionTools(focusTarget) {
             node(section, 'p', 'Add rooms without opening their videos. Tracking continues while Chaturbate is open. Stops after more than 15 minutes of confirmed broadcaster absence, or when you press Stop.', 'tools-muted');
         }
         const status = node(section, 'div', undefined, 'tools-background-status'); status.id = 'tools-background-status';
+        button(section, 'Clear stopped/stale', () => {
+            try {dismissComparisonSources(inactiveBackgroundSources()); refreshBackgroundControls();}
+            catch (error) {tell('Some entries could not be cleared: ' + error.message, true);}
+        }, 'tools-clear-background-inactive').title = 'Hide old tracking entries without deleting saved sessions or recovery data.';
         refreshBackgroundControls();
     }
+    function backgroundSourcesForView() {
+        const raw = readPersistentBackgroundComparisonSources().sources;
+        const displayed = new Map(readLiveModelSources().sources.map(source => [source.id, source]));
+        return raw.map(source => displayed.get(source.id) || source);
+    }
+    function inactiveBackgroundSources() {
+        return backgroundSourcesForView().filter(source => ['stopped', 'stale'].includes(source.status) && !isComparisonDismissed(source));
+    }
     function refreshBackgroundControls() {
-        const states = getPersistentBackgroundComparisonStates(), status = dialog.querySelector('#tools-background-status');
+        const status = dialog.querySelector('#tools-background-status');
         if (!status) return;
+        const sources = backgroundSourcesForView(), states = getPersistentBackgroundComparisonStates().filter(state => {
+            const source = sources.find(item => item.room === state.room);
+            return !source || !isComparisonDismissed(source);
+        });
+        const clear = dialog.querySelector('#tools-clear-background-inactive');
+        if (clear) clear.disabled = !inactiveBackgroundSources().length;
         status.hidden = !states.length;
         const visible = new Set(states.map(state => state.room));
         for (const row of Array.from(status.children)) if (!visible.has(row.dataset.backgroundRoom)) row.remove();
@@ -1104,6 +1124,7 @@ export function openSessionTools(focusTarget) {
         }
     }
     function close() {
+        if (detachComparisonDismissals) {detachComparisonDismissals(); detachComparisonDismissals = null;}
         if (detachBackgroundStatus) {detachBackgroundStatus(); detachBackgroundStatus = null;}
         if (compactView) {compactView.dispose(); compactView = null;}
         if (recentView) { recentView.dispose(); recentView = null; }
@@ -1171,5 +1192,6 @@ export function openSessionTools(focusTarget) {
         selectBackgroundComparisons(); refreshBackgroundControls();
         if (liveModelsView) liveModelsView.refresh();
     });
+    detachComparisonDismissals = subscribeComparisonDismissals(() => {if (current()) refreshBackgroundControls();});
     render('library'); dialog.querySelector('#tools-close').focus();
 }

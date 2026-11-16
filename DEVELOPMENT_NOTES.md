@@ -10,7 +10,7 @@ Detailed reference for **3.31.1**. [Connection recovery guide](docs/connection-r
 
 ## Contents
 
-**3.32.0-beta.3 preview:** [Compare without watching](docs/compare-without-watching.md) tracks multiple selected rooms across Library closing, navigation and reloads, with per-room Stop, confirmed-absence stopping, three-hour recovery and normal favorite-model keeping. Main remains on 3.31.1 during beta review.
+**3.32.0-beta.4 preview:** [Compare without watching](docs/compare-without-watching.md) tracks multiple selected rooms across Library closing, navigation and reloads, with per-room Stop, confirmed-absence stopping, three-hour recovery and normal favorite-model keeping. Main remains on 3.31.1 during beta review.
 
 [Live models comparison across tabs](docs/live-models-comparison.md) is available in **3.30.0**.
 
@@ -565,6 +565,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.32.0-beta.4** | Add Clear stopped/stale in background tracking and Live comparison. Dismiss old entries and their traces across Library reopenings without deleting saved/recovery data or stopping active rooms; fresh samples and explicit restarts return them to view. |
 | **3.32.0-beta.3** | Fit Full sessions to visible selected sample bounds, excluding hidden recordings and idle tails. Preserve model and line visibility across range changes and source selection changes; keep manual zoom during ordinary updates. |
 | **3.32.0-beta.2** | Track multiple comparison rooms until individual Stop or more than 15 minutes of confirmed broadcaster absence. Remember selections across pages and tabs, coordinate ownership to avoid duplicate background polling, recover aggregate sessions for three hours and keep eligible favorites under existing automatic-keeping rules. |
 | **3.32.0-beta.1** | Preview Compare without watching from a room-name box in Current Live Session. Track one temporary comparison room while Library is open, with separate samples and lower-priority API requests, explicit Stop and failure status. Clarify the four Current Live Session comparison shortcut labels. |

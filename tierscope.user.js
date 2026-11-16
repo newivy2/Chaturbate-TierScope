@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.32.0-beta.3
+// @version      3.32.0-beta.4
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -3504,8 +3504,8 @@ underlying system, so should run in the browser, Node, or Plask.
     try {
       const key = getStorageKey(room2);
       if (runtime.activeSessionStorageKey !== key) return;
-      const identity = room2 + ":" + runtime.sessionStartedAt + ":" + runtime.activeRoomEpoch;
-      if (checkpoint.identity !== identity) checkpoint = { room: room2, identity, signature: "", phase: "", attemptedAt: null, savedAt: null, error: "" };
+      const identity2 = room2 + ":" + runtime.sessionStartedAt + ":" + runtime.activeRoomEpoch;
+      if (checkpoint.identity !== identity2) checkpoint = { room: room2, identity: identity2, signature: "", phase: "", attemptedAt: null, savedAt: null, error: "" };
       const preference = readModelFavorite(room2);
       if (!preference.autoKeep) {
         clearAutomaticLibraryStatus(room2);
@@ -5734,7 +5734,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/analysis-follow.js
   function createAnalysisFollower() {
-    let enabled = true, identity = null, signature = "", expired = false;
+    let enabled = true, identity2 = null, signature = "", expired = false;
     const snapshots = /* @__PURE__ */ new Map();
     return {
       get enabled() {
@@ -5744,7 +5744,7 @@ underlying system, so should run in the browser, Node, or Plask.
         return expired;
       },
       get identity() {
-        return identity;
+        return identity2;
       },
       get(id) {
         return snapshots.get(id);
@@ -5757,13 +5757,13 @@ underlying system, so should run in the browser, Node, or Plask.
         signature = "";
       },
       reset() {
-        identity = null;
+        identity2 = null;
         signature = "";
         expired = false;
         snapshots.clear();
       },
       check(nextIdentity) {
-        if (identity !== null && identity !== nextIdentity) {
+        if (identity2 !== null && identity2 !== nextIdentity) {
           enabled = false;
           expired = true;
         }
@@ -5775,7 +5775,7 @@ underlying system, so should run in the browser, Node, or Plask.
           var _a;
           return ((_a = snapshots.get(entry.id)) == null ? void 0 : _a.archive) === archive;
         })) return false;
-        identity = nextIdentity;
+        identity2 = nextIdentity;
         signature = nextSignature;
         for (const entry of entries) snapshots.set(entry.id, __spreadProps(__spreadValues({}, entry), { archive }));
         return true;
@@ -6437,7 +6437,7 @@ underlying system, so should run in the browser, Node, or Plask.
   }
   function createBackgroundRecordingStore(effects) {
     const libraryCheckpoints = /* @__PURE__ */ new Map();
-    const keyFor = (room2) => BACKGROUND_RECORDING_PREFIX + recordingRoom(room2);
+    const keyFor2 = (room2) => BACKGROUND_RECORDING_PREFIX + recordingRoom(room2);
     function clean(room2, input, savedAt) {
       var _a, _b, _c, _d;
       const archive = effects.validateArchive(input == null ? void 0 : input.archive), raw = input == null ? void 0 : input.source, state = input == null ? void 0 : input.state;
@@ -6486,7 +6486,7 @@ underlying system, so should run in the browser, Node, or Plask.
     }
     function read(room2) {
       room2 = recordingRoom(room2);
-      const raw = effects.get(keyFor(room2), void 0);
+      const raw = effects.get(keyFor2(room2), void 0);
       if (raw === void 0) return null;
       const record = decode(room2, raw);
       return effects.now() - record.savedAt > BACKGROUND_RECORDING_TTL_MS ? null : record;
@@ -6496,7 +6496,7 @@ underlying system, so should run in the browser, Node, or Plask.
       for (const key of effects.list().filter((value) => value.startsWith(BACKGROUND_RECORDING_PREFIX))) {
         try {
           const room2 = key.slice(BACKGROUND_RECORDING_PREFIX.length);
-          if (keyFor(room2) !== key) continue;
+          if (keyFor2(room2) !== key) continue;
           const record = read(room2);
           if (record) records.push(record);
         } catch (_) {
@@ -6538,7 +6538,7 @@ underlying system, so should run in the browser, Node, or Plask.
       } catch (error2) {
         return { saved: false, error: error2.message || String(error2), library: { saved: false, waiting: false, error: "" } };
       }
-      const key = keyFor(room2), value = JSON.stringify(record);
+      const key = keyFor2(room2), value = JSON.stringify(record);
       let saved = false, error = "", before, attempted = false;
       try {
         before = effects.get(key, void 0);
@@ -6588,7 +6588,7 @@ underlying system, so should run in the browser, Node, or Plask.
       for (const key of effects.list().filter((value) => value.startsWith(BACKGROUND_RECORDING_PREFIX))) {
         try {
           const room2 = key.slice(BACKGROUND_RECORDING_PREFIX.length);
-          if (keyFor(room2) !== key) throw new Error("Invalid background recording key.");
+          if (keyFor2(room2) !== key) throw new Error("Invalid background recording key.");
           const before = effects.get(key, void 0), record = decode(room2, before);
           if (effects.now() - record.savedAt <= BACKGROUND_RECORDING_TTL_MS) continue;
           if (effects.get(key, void 0) !== before) {
@@ -7435,6 +7435,187 @@ underlying system, so should run in the browser, Node, or Plask.
   }
   function subscribePersistentBackgroundComparison(changed) {
     return tracking.subscribe(changed);
+  }
+
+  // src/comparison-dismissals.js
+  var COMPARISON_DISMISSAL_PREFIX = "tierscope:comparison-dismissal:v1:";
+  var COMPARISON_DISMISSAL_NOTICE = "tierscope:comparison-dismissal:changed:v1";
+  function identity(value) {
+    if (!value || typeof value.id !== "string" || !value.id.length || value.id.length > 512 || /[\s\x00-\x1f\x7f]/.test(value.id) || typeof value.room !== "string" || !/^[a-z0-9_-]{1,100}$/i.test(value.room) || !(value.sessionStartedAt === null || isStorageTimestamp(value.sessionStartedAt)) || !Number.isSafeInteger(value.sampleCount) || value.sampleCount < 0 || value.sampleCount > 1e6 || !(value.sampleCount === 0 ? value.sampleAt === null : isStorageTimestamp(value.sampleAt))) {
+      throw new Error("Invalid comparison entry.");
+    }
+    return {
+      id: value.id,
+      room: value.room.toLowerCase(),
+      sessionStartedAt: value.sessionStartedAt,
+      sampleAt: value.sampleAt,
+      sampleCount: value.sampleCount
+    };
+  }
+  function keyFor(id) {
+    return COMPARISON_DISMISSAL_PREFIX + id;
+  }
+  function createComparisonDismissals(effects) {
+    const cache = /* @__PURE__ */ new Map(), listeners = /* @__PURE__ */ new Set();
+    let detachRemote = null;
+    function decode(raw, key) {
+      if (raw === void 0) return null;
+      const value = JSON.parse(raw), marker = identity(value);
+      if (value.schemaVersion !== 1 || !isStorageTimestamp(value.dismissedAt) || keyFor(marker.id) !== key) {
+        throw new Error("Invalid comparison cleanup preference.");
+      }
+      return Object.freeze(__spreadProps(__spreadValues({}, marker), { schemaVersion: 1, dismissedAt: value.dismissedAt }));
+    }
+    function read(id) {
+      const at = effects.now(), cached = cache.get(id);
+      if (cached && at >= cached.at && at - cached.at < 1e3) return cached.marker;
+      const key = keyFor(id), raw = effects.get(key, void 0), marker = decode(raw, key);
+      cache.set(id, { at, marker });
+      return marker;
+    }
+    function isHidden(source) {
+      try {
+        const value = identity(source), marker = read(value.id);
+        return !!marker && marker.room === value.room && marker.sessionStartedAt === value.sessionStartedAt && value.sampleCount <= marker.sampleCount && (value.sampleAt === null || marker.sampleAt !== null && value.sampleAt <= marker.sampleAt);
+      } catch (_) {
+        return false;
+      }
+    }
+    function changed() {
+      cache.clear();
+      for (const listener of listeners) {
+        try {
+          listener();
+        } catch (_) {
+        }
+      }
+    }
+    function notify() {
+      changed();
+      try {
+        if (effects.notice) effects.notice();
+      } catch (_) {
+      }
+    }
+    function dismiss(sources) {
+      if (!Array.isArray(sources)) throw new Error("Choose comparison entries to clear.");
+      const values = new Map(sources.map((source) => {
+        const value = identity(source);
+        return [value.id, value];
+      }));
+      let count = 0;
+      for (const value of values.values()) {
+        const key = keyFor(value.id), before = effects.get(key, void 0), previous = decode(before, key);
+        const same = (previous == null ? void 0 : previous.room) === value.room && previous.sessionStartedAt === value.sessionStartedAt;
+        const sampleAt = same ? previous.sampleAt === null ? value.sampleAt : value.sampleAt === null ? previous.sampleAt : Math.max(previous.sampleAt, value.sampleAt) : value.sampleAt;
+        const sampleCount = same ? Math.max(previous.sampleCount, value.sampleCount) : value.sampleCount;
+        if (same && previous.sampleAt === sampleAt && previous.sampleCount === sampleCount) continue;
+        const record = __spreadProps(__spreadValues({}, value), { sampleAt, sampleCount, schemaVersion: 1, dismissedAt: effects.now() });
+        if (!isStorageTimestamp(record.dismissedAt)) throw new Error("Invalid cleanup timestamp.");
+        const raw = JSON.stringify(record);
+        try {
+          if (effects.get(key, void 0) !== before) throw new Error("Comparison cleanup preferences changed in another tab. Try again.");
+          effects.set(key, raw);
+          if (effects.get(key, void 0) !== raw) throw new Error("Comparison cleanup preference could not be verified.");
+        } catch (error) {
+          try {
+            if (effects.get(key, void 0) === raw) {
+              if (before === void 0) effects.remove(key);
+              else effects.set(key, before);
+            }
+          } catch (_) {
+          }
+          notify();
+          throw error;
+        }
+        count++;
+      }
+      if (count) notify();
+      return count;
+    }
+    function removeMatching(matches) {
+      let count = 0;
+      try {
+        for (const key of effects.list().filter((key2) => key2.startsWith(COMPARISON_DISMISSAL_PREFIX))) {
+          const before = effects.get(key, void 0);
+          let marker;
+          try {
+            marker = decode(before, key);
+          } catch (_) {
+            continue;
+          }
+          if (!marker || !matches(marker)) continue;
+          if (effects.get(key, void 0) !== before) throw new Error("Comparison cleanup preferences changed in another tab. Try again.");
+          effects.remove(key);
+          if (effects.get(key, void 0) !== void 0) throw new Error("Comparison cleanup preference could not be cleared.");
+          count++;
+        }
+      } catch (error) {
+        notify();
+        throw error;
+      }
+      if (count) notify();
+      return count;
+    }
+    function clearRoom(room2) {
+      if (typeof room2 !== "string" || !/^[a-z0-9_-]{1,100}$/i.test(room2)) throw new Error("Invalid room name.");
+      return removeMatching((marker) => marker.room === room2.toLowerCase());
+    }
+    function prune(knownSources) {
+      const ids = new Set(knownSources.map((source) => identity(source).id));
+      return removeMatching((marker) => !ids.has(marker.id));
+    }
+    function subscribe(listener) {
+      cache.clear();
+      listeners.add(listener);
+      if (listeners.size === 1 && effects.subscribe) detachRemote = effects.subscribe(changed);
+      return () => {
+        listeners.delete(listener);
+        if (!listeners.size && detachRemote) {
+          detachRemote();
+          detachRemote = null;
+        }
+      };
+    }
+    return { isHidden, dismiss, clearRoom, prune, subscribe };
+  }
+  var dismissals = createComparisonDismissals({
+    get: (key, fallback) => GM_getValue(key, fallback),
+    set: (key, value) => GM_setValue(key, value),
+    remove: (key) => GM_deleteValue(key),
+    list: () => GM_listValues(),
+    now: () => Date.now(),
+    notice: () => GM_setValue(COMPARISON_DISMISSAL_NOTICE, { version: 1, at: Date.now(), revision: makeStorageId() }),
+    subscribe: (changed) => {
+      let id = null;
+      try {
+        if (typeof GM_addValueChangeListener === "function") id = GM_addValueChangeListener(
+          COMPARISON_DISMISSAL_NOTICE,
+          (key, before, after, remote) => {
+            if (remote !== false) changed();
+          }
+        );
+      } catch (_) {
+      }
+      return () => {
+        try {
+          if (id !== null && typeof GM_removeValueChangeListener === "function") GM_removeValueChangeListener(id);
+        } catch (_) {
+        }
+      };
+    }
+  });
+  function isComparisonDismissed(source) {
+    return dismissals.isHidden(source);
+  }
+  function dismissComparisonSources(sources) {
+    return dismissals.dismiss(sources);
+  }
+  function clearComparisonDismissalsForRoom(room2) {
+    return dismissals.clearRoom(room2);
+  }
+  function subscribeComparisonDismissals(listener) {
+    return dismissals.subscribe(listener);
   }
 
   // src/tools-view-helpers.js
@@ -9224,6 +9405,17 @@ underlying system, so should run in the browser, Node, or Plask.
     }, "tools-live-freeze");
     freeze.className = "tools-primary";
     toolButton(controls, "Refresh sources", () => refresh(true), "tools-live-refresh");
+    const clearInactive = toolButton(controls, "Clear stopped/stale", () => {
+      try {
+        dismissComparisonSources(clearableSources);
+        state.autoPicked = true;
+        plotSignature = "";
+        refresh();
+      } catch (error) {
+        status.textContent = "Some entries could not be cleared: " + error.message;
+      }
+    }, "tools-live-clear-inactive");
+    clearInactive.title = "Hide stopped, stale and closed comparison entries. Saved recordings and active tracking are preserved.";
     const rangeLabel = toolNode(controls, "label", "Show "), windowSelect = toolNode(rangeLabel, "select");
     windowSelect.id = "tools-live-window";
     for (const [value, label] of [[9e5, "Last 15 minutes"], [36e5, "Last hour"], [144e5, "Last 4 hours"], [864e5, "Last 24 hours"], [Infinity, "Full sessions"]]) {
@@ -9311,7 +9503,8 @@ underlying system, so should run in the browser, Node, or Plask.
     });
     const reportBody = toolNode(table, "tbody");
     toolNode(root, "p", "The chart uses actual dates and clock times, including midnight crossings. Gaps stay gaps and lines end at their last accepted sample. A stale source may be suspended or closed; its old counts are never treated as a fresh scan. Keeping sessions in Library remains a separate choice.", "tools-muted");
-    let disposed = false, refreshing = false, view = null, observer = null, detach = null, resetRange = false;
+    let disposed = false, refreshing = false, view = null, observer = null, detach = null, detachDismissals = null, resetRange = false;
+    let clearableSources = [];
     let rows = /* @__PURE__ */ new Map(), currentGroups = /* @__PURE__ */ new Map(), reportData = [], topology = "", plotSignature = "", notice = "", userNotice = "";
     function age(time, at) {
       if (!Number.isFinite(time)) return "No sample";
@@ -9549,14 +9742,23 @@ underlying system, so should run in the browser, Node, or Plask.
       refreshing = true;
       try {
         notice = "";
-        const at = Date.now(), result = readLiveModelSources(force), sources = [...result.sources || []], available = new Map(sources.map((source) => [source.id, source]));
+        const at = Date.now(), result = readLiveModelSources(force), sources = (result.sources || []).filter((source) => !isComparisonDismissed(source)), available = new Map(sources.map((source) => [source.id, source]));
         sourceExplanation.textContent = sources.some((source) => source.kind === "background") ? "Uses scans from TierScope tabs and Compare without watching. Rooms tracked without watching make additional API requests while running." : "Uses scans from your other TierScope tabs. No additional API requests.";
         if (result.error) notice = "Live sharing is unavailable: " + result.error + ". Previous snapshots are retained.";
         for (const id of state.selected) {
           if (available.has(id)) continue;
           const previous = state.known.get(id);
+          if (previous && isComparisonDismissed(previous)) {
+            state.selected.delete(id);
+            state.snapshots.delete(id);
+            state.known.delete(id);
+            if (state.choices.get(previous.room) === id) state.choices.delete(previous.room);
+            continue;
+          }
           if (previous) sources.push(__spreadProps(__spreadValues({}, previous), { status: "unavailable" }));
         }
+        clearableSources = sources.filter((source) => ["stopped", "stale"].includes(source.status) || source.status === "unavailable" && !available.has(source.id));
+        clearInactive.disabled = !clearableSources.length;
         const groups = /* @__PURE__ */ new Map();
         sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
         for (const source of sources) {
@@ -9615,6 +9817,7 @@ underlying system, so should run in the browser, Node, or Plask.
     }
     refresh();
     detach = subscribeLiveModelSources(() => refresh());
+    detachDismissals = subscribeComparisonDismissals(() => refresh());
     return {
       refresh,
       draw() {
@@ -9624,6 +9827,7 @@ underlying system, so should run in the browser, Node, or Plask.
         if (disposed) return;
         disposed = true;
         if (detach) detach();
+        if (detachDismissals) detachDismissals();
         if (view) {
           rememberChart();
           view.dispose();
@@ -11055,7 +11259,7 @@ underlying system, so should run in the browser, Node, or Plask.
     let compareMode = "saved", liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
     const recentState = createRecentComparisonState();
-    let backgroundRoomDraft = "", detachBackgroundStatus = null;
+    let backgroundRoomDraft = "", detachBackgroundStatus = null, detachComparisonDismissals = null;
     const pendingBackgroundSelection = /* @__PURE__ */ new Set();
     const followers = { summary: createAnalysisFollower(), compare: createAnalysisFollower(), history: createAnalysisFollower() };
     try {
@@ -11275,16 +11479,16 @@ underlying system, so should run in the browser, Node, or Plask.
     }
     function followContext() {
       const room2 = getModelName(), history = runtime.history;
-      const identity = room2 + ":" + runtime.sessionStartedAt + ":" + runtime.activeRoomEpoch;
+      const identity2 = room2 + ":" + runtime.sessionStartedAt + ":" + runtime.activeRoomEpoch;
       if (!current() || room2 === "unknown" || location.href !== runtime.lastUrl || runtime.activeSessionStorageKey !== getStorageKey(room2) || !history.timestamps.length) {
-        return { identity, reason: "Waiting for a live session in this room." };
+        return { identity: identity2, reason: "Waiting for a live session in this room." };
       }
       try {
-        if (!readModelFavorite(room2).autoKeep) return { identity, reason: "Confirm this model as a favorite to follow their live session." };
+        if (!readModelFavorite(room2).autoKeep) return { identity: identity2, reason: "Confirm this model as a favorite to follow their live session." };
       } catch (error) {
-        return { identity, reason: "Favorite setting unavailable; this view is frozen." };
+        return { identity: identity2, reason: "Favorite setting unavailable; this view is frozen." };
       }
-      return { identity, room: room2, signature: [identity, history.timestamps[0], history.timestamps.at(-1), history.timestamps.length, runtime.isPaused, runtime.isStopped, runtime.stoppedAt].join(":") };
+      return { identity: identity2, room: room2, signature: [identity2, history.timestamps[0], history.timestamps.at(-1), history.timestamps.length, runtime.isPaused, runtime.isStopped, runtime.stoppedAt].join(":") };
     }
     function followedEntries() {
       return followers.history.project(library.entries);
@@ -11580,6 +11784,7 @@ underlying system, so should run in the browser, Node, or Plask.
           event.preventDefault();
           try {
             if (input.value.trim().toLowerCase() === getModelName().toLowerCase()) throw new Error("This room is already being tracked. Enter another room name.");
+            clearComparisonDismissalsForRoom(input.value.trim().toLowerCase());
             input.disabled = true;
             start.disabled = true;
             const state = await startPersistentBackgroundComparison(input.value);
@@ -11610,11 +11815,33 @@ underlying system, so should run in the browser, Node, or Plask.
       }
       const status = node(section, "div", void 0, "tools-background-status");
       status.id = "tools-background-status";
+      button(section, "Clear stopped/stale", () => {
+        try {
+          dismissComparisonSources(inactiveBackgroundSources());
+          refreshBackgroundControls();
+        } catch (error) {
+          tell("Some entries could not be cleared: " + error.message, true);
+        }
+      }, "tools-clear-background-inactive").title = "Hide old tracking entries without deleting saved sessions or recovery data.";
       refreshBackgroundControls();
     }
+    function backgroundSourcesForView() {
+      const raw = readPersistentBackgroundComparisonSources().sources;
+      const displayed = new Map(readLiveModelSources().sources.map((source) => [source.id, source]));
+      return raw.map((source) => displayed.get(source.id) || source);
+    }
+    function inactiveBackgroundSources() {
+      return backgroundSourcesForView().filter((source) => ["stopped", "stale"].includes(source.status) && !isComparisonDismissed(source));
+    }
     function refreshBackgroundControls() {
-      const states = getPersistentBackgroundComparisonStates(), status = dialog.querySelector("#tools-background-status");
+      const status = dialog.querySelector("#tools-background-status");
       if (!status) return;
+      const sources = backgroundSourcesForView(), states = getPersistentBackgroundComparisonStates().filter((state) => {
+        const source = sources.find((item) => item.room === state.room);
+        return !source || !isComparisonDismissed(source);
+      });
+      const clear = dialog.querySelector("#tools-clear-background-inactive");
+      if (clear) clear.disabled = !inactiveBackgroundSources().length;
       status.hidden = !states.length;
       const visible = new Set(states.map((state) => state.room));
       for (const row of Array.from(status.children)) if (!visible.has(row.dataset.backgroundRoom)) row.remove();
@@ -12533,6 +12760,10 @@ underlying system, so should run in the browser, Node, or Plask.
       }
     }
     function close() {
+      if (detachComparisonDismissals) {
+        detachComparisonDismissals();
+        detachComparisonDismissals = null;
+      }
       if (detachBackgroundStatus) {
         detachBackgroundStatus();
         detachBackgroundStatus = null;
@@ -12659,6 +12890,9 @@ underlying system, so should run in the browser, Node, or Plask.
       selectBackgroundComparisons();
       refreshBackgroundControls();
       if (liveModelsView) liveModelsView.refresh();
+    });
+    detachComparisonDismissals = subscribeComparisonDismissals(() => {
+      if (current()) refreshBackgroundControls();
     });
     render("library");
     dialog.querySelector("#tools-close").focus();
@@ -14286,7 +14520,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.32.0-beta.3";
+    runtime.TIERSCOPE_VERSION = "3.32.0-beta.4";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

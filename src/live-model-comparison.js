@@ -2,6 +2,7 @@ import { renderAnalysisChart } from './analysis-chart-view.js';
 import { allocateLiveModelColors, buildLiveModelSeries } from './live-model-chart-data.js';
 import { readLiveModelArchive, readLiveModelSources, retainLiveModelArchives, subscribeLiveModelSources } from './live-model-sources.js';
 import { ANALYSIS_METRICS } from './session-analysis.js';
+import { dismissComparisonSources, isComparisonDismissed, subscribeComparisonDismissals } from './comparison-dismissals.js';
 import { toolNode as node, toolButton as button } from './tools-view-helpers.js';
 
 const MODEL_PAGE_SIZE = 50;
@@ -34,6 +35,12 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
     }, 'tools-live-freeze');
     freeze.className = 'tools-primary';
     button(controls, 'Refresh sources', () => refresh(true), 'tools-live-refresh');
+    const clearInactive = button(controls, 'Clear stopped/stale', () => {
+        try {
+            dismissComparisonSources(clearableSources); state.autoPicked = true; plotSignature = ''; refresh();
+        } catch (error) {status.textContent = 'Some entries could not be cleared: ' + error.message;}
+    }, 'tools-live-clear-inactive');
+    clearInactive.title = 'Hide stopped, stale and closed comparison entries. Saved recordings and active tracking are preserved.';
     const rangeLabel = node(controls, 'label', 'Show '), windowSelect = node(rangeLabel, 'select'); windowSelect.id = 'tools-live-window';
     for (const [value, label] of [[900000, 'Last 15 minutes'], [3600000, 'Last hour'], [14400000, 'Last 4 hours'], [86400000, 'Last 24 hours'], [Infinity, 'Full sessions']]) {
         const option = node(windowSelect, 'option', label); option.value = String(value);
@@ -81,7 +88,8 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
     ['Model', 'Count', 'Sample time', 'Samples', 'Source status'].forEach(text => {node(heading, 'th', text).scope = 'col';});
     const reportBody = node(table, 'tbody');
     node(root, 'p', 'The chart uses actual dates and clock times, including midnight crossings. Gaps stay gaps and lines end at their last accepted sample. A stale source may be suspended or closed; its old counts are never treated as a fresh scan. Keeping sessions in Library remains a separate choice.', 'tools-muted');
-    let disposed = false, refreshing = false, view = null, observer = null, detach = null, resetRange = false;
+    let disposed = false, refreshing = false, view = null, observer = null, detach = null, detachDismissals = null, resetRange = false;
+    let clearableSources = [];
     let rows = new Map(), currentGroups = new Map(), reportData = [], topology = '', plotSignature = '', notice = '', userNotice = '';
     function age(time, at) {
         if (!Number.isFinite(time)) return 'No sample';
@@ -235,7 +243,7 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
         refreshing = true;
         try {
             notice = '';
-            const at = Date.now(), result = readLiveModelSources(force), sources = [...(result.sources || [])], available = new Map(sources.map(source => [source.id, source]));
+            const at = Date.now(), result = readLiveModelSources(force), sources = (result.sources || []).filter(source => !isComparisonDismissed(source)), available = new Map(sources.map(source => [source.id, source]));
             sourceExplanation.textContent = sources.some(source => source.kind === 'background') ?
                 'Uses scans from TierScope tabs and Compare without watching. Rooms tracked without watching make additional API requests while running.' :
                 'Uses scans from your other TierScope tabs. No additional API requests.';
@@ -243,8 +251,16 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
             for (const id of state.selected) {
                 if (available.has(id)) continue;
                 const previous = state.known.get(id);
+                if (previous && isComparisonDismissed(previous)) {
+                    state.selected.delete(id); state.snapshots.delete(id); state.known.delete(id);
+                    if (state.choices.get(previous.room) === id) state.choices.delete(previous.room);
+                    continue;
+                }
                 if (previous) sources.push({...previous, status: 'unavailable'});
             }
+            clearableSources = sources.filter(source => ['stopped', 'stale'].includes(source.status) ||
+                source.status === 'unavailable' && !available.has(source.id));
+            clearInactive.disabled = !clearableSources.length;
             const groups = new Map();
             sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
             for (const source of sources) {
@@ -302,11 +318,13 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
     }
     refresh();
     detach = subscribeLiveModelSources(() => refresh());
+    detachDismissals = subscribeComparisonDismissals(() => refresh());
     return {
         refresh, draw() {if (view) view.draw();},
         dispose() {
             if (disposed) return; disposed = true;
             if (detach) detach();
+            if (detachDismissals) detachDismissals();
             if (view) {rememberChart(); view.dispose();}
             if (observer) observer.disconnect();
         }
