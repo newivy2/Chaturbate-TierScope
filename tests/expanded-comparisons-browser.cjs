@@ -90,8 +90,8 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.evaluate(()=>{ViewerTracker.__expanded.setup();ViewerTracker.__expanded.seedSaved();ViewerTracker.__expanded.seedLive();});
   const savedBefore=await page.evaluate(()=>ViewerTracker.__expanded.saved()),liveBefore=await page.evaluate(()=>ViewerTracker.__expanded.state());
   await page.click('#btn-control-library');
-  assert.equal(await page.locator('#tools-compare-live').textContent(),'Live sessions');
-  assert.equal(await page.locator('#tools-compare-last24h').textContent(),'Last 24h sessions');
+  assert.equal(await page.locator('#tools-compare-live').textContent(),'Compare all live sessions');
+  assert.equal(await page.locator('#tools-compare-last24h').textContent(),'Compare last 24h sessions');
   await page.screenshot({path:'/tmp/tierscope-current-session-shortcuts-'+engine+'.png'});
   await page.click('#tools-compare-live');assert.equal(await page.locator('[data-tools-tab=compare]').getAttribute('aria-pressed'),'true');
   assert.match(await page.locator('#tools-live-status').textContent(),/40 models selected/);

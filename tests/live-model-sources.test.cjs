@@ -190,3 +190,49 @@ test('waiting sources announce no history and stale metadata cannot direct a rea
         assert.equal(h.exchange.readSources().sources.length, 0);
     }
 });
+
+test('comparison-only metadata preserves sample revisions without claiming a stored tab record', async () => {
+    const h = await fixture(), original = h.seed('background-a', 'alice');
+    const source = {...original, kind: 'background', recordKey: null, recordSavedAt: null};
+    const decoded = h.data.decodeInMemoryLiveModelSource(source, h.now());
+    assert.equal(decoded.kind, 'background'); assert.equal(decoded.revision, source.revision);
+    assert.equal(decoded.recordKey, null); assert.equal(decoded.status, 'tracking');
+    assert.equal(h.data.decodeInMemoryLiveModelSource(source, h.now() + 180001).status, 'stale');
+    for (const patch of [{kind: 'tab'}, {recordKey: original.recordKey}, {recordSavedAt: h.now()},
+        {sampleAt: h.now() + 10000}, {id: 'different-room'}, {revision: null}]) {
+        assert.equal(h.data.decodeInMemoryLiveModelSource({...source, ...patch}, h.now()), null);
+    }
+    assert.equal(h.stats().validations, 0, 'announcements never validate a growing recording');
+});
+
+test('in-memory providers notify comparison readers and reject stale revisions without reading GM histories', async () => {
+    const h = await fixture(), at = Date.now();
+    let current = {...h.seed('background-a', 'alice', {lastSeenAt: at, sampleAt: at,
+        sessionStartedAt: at - 1000}), kind: 'background', recordKey: null, recordSavedAt: null};
+    const globals = ['GM_listValues', 'GM_getValue'];
+    const previous = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+    let getCount = 0, archiveReads = 0, changed = null, detached = false, unsubscribe = null, unregister = null;
+    Object.assign(globalThis, {GM_listValues: () => [], GM_getValue: () => {getCount++; throw Error('No GM histories allowed');}});
+    try {
+        unregister = h.module.registerLiveModelSourceProvider({
+            readSources: () => ({sources: [current], error: ''}),
+            readArchive: () => {archiveReads++; return {};},
+            subscribe: callback => {changed = callback; return () => {detached = true;};}
+        });
+        const result = h.module.readLiveModelSources(true);
+        assert.equal(result.error, ''); assert.equal(result.sources.length, 1);
+        assert.equal(result.sources[0].kind, 'background'); assert.equal(getCount, 0);
+        const notified = new Promise(resolve => {unsubscribe = h.module.subscribeLiveModelSources(resolve);});
+        current = {...current, revision: 'accepted-next-sample'}; changed(); await notified;
+        assert.throws(() => h.module.readLiveModelArchive(result.sources[0]), /changed or is unavailable/);
+        assert.equal(archiveReads, 0, 'a late read cannot consume a different accepted sample');
+        assert.throws(() => h.module.readLiveModelArchive(h.module.readLiveModelSources().sources[0]), /session file/);
+        assert.equal(archiveReads, 1, 'selected data goes to its provider, never a GM record');
+        unregister(); unregister(); assert(detached);
+        assert.equal(h.module.readLiveModelSources(true).sources.length, 0);
+        assert.equal(getCount, 0);
+    } finally {
+        if (unsubscribe) unsubscribe(); if (unregister) unregister();
+        for (const [key, descriptor] of previous) {if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key];}
+    }
+});

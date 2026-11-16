@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.31.1
+// @version      3.32.0-beta.1
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -3705,7 +3705,7 @@ underlying system, so should run in the browser, Node, or Plask.
       displayHighs[key] = __spreadProps(__spreadValues({}, high), { label: highLabel(high), shortLabel: highLabel(high, true), description: highDescription(high) });
       if (runtime.highMode === "ath" && high.source && value > 0 && value >= high.value) highlights[key] = true;
     }
-    const comparison = !frame.isRestored && runtime.hasTrendBaseline ? getComparisonCounts().counts : null;
+    const comparison2 = !frame.isRestored && runtime.hasTrendBaseline ? getComparisonCounts().counts : null;
     const modelName = frame.isPlayback && runtime.playback && runtime.playback.archive ? runtime.playback.archive.room : getModelName();
     let favorite = { favorite: false, autoKeep: false };
     if (modelName !== "unknown") {
@@ -3744,13 +3744,13 @@ underlying system, so should run in the browser, Node, or Plask.
       textColor: themeColor("text"),
       withTokensColor: themeColor("warning"),
       roomTotalColor: themeColor("accent"),
-      comparison: comparison ? __spreadValues({}, comparison) : null,
+      comparison: comparison2 ? __spreadValues({}, comparison2) : null,
       comparisonLabel: runtime.trendComparisonMode === "last" ? "previous sample" : runtime.trendComparisonMode === "start" ? "first retained sample" : runtime.trendComparisonMode,
       freshness: runtime.isMinimized ? buildFreshnessModel() : null
     });
   }
   function buildTrendDisplayModel() {
-    const frame = buildLiveDisplayFrame(), comparison = getComparisonCounts();
+    const frame = buildLiveDisplayFrame(), comparison2 = getComparisonCounts();
     return freezeRecordingData({
       isPlayback: runtime.presentationMode === "PLAYBACK",
       isRestored: !!runtime.restoredDisplayFrame,
@@ -3762,7 +3762,7 @@ underlying system, so should run in the browser, Node, or Plask.
       anonymousCount: frame.anonymousCount,
       fullRoomTotal: frame.fullRoomTotal,
       historyLength: runtime.history.timestamps.length,
-      comparison: __spreadProps(__spreadValues({}, comparison), { counts: comparison.counts ? __spreadValues({}, comparison.counts) : null }),
+      comparison: __spreadProps(__spreadValues({}, comparison2), { counts: comparison2.counts ? __spreadValues({}, comparison2.counts) : null }),
       tierLabels: Object.fromEntries(runtime.PANEL_ROWS.map((row) => [row.key, row.label])),
       tierMarkers: Object.fromEntries(Object.keys(runtime.TIERS).map((key) => [key, getTierMarker(key)]))
     });
@@ -4042,21 +4042,21 @@ underlying system, so should run in the browser, Node, or Plask.
   // src/compact-view.js
   function updateCompactDashboard(frame) {
     if (!frame.minimized) return;
-    var comparison = frame.comparison;
+    var comparison2 = frame.comparison;
     var mode = frame.comparisonLabel;
     function delta(id, value, old) {
       var el = document.getElementById(id);
       if (!el) return "";
-      var change = comparison ? value - old : null;
+      var change = comparison2 ? value - old : null;
       var text = change === null ? "" : change > 0 ? "+" + compactNumber(change) : change < 0 ? "−" + compactNumber(-change) : "0";
       el.textContent = text;
       el.style.color = change > 0 ? "var(--panel-delta-up)" : change < 0 ? "var(--panel-delta-down)" : "var(--panel-warning)";
       el.title = change === null ? "Waiting for a fresh sample and comparison history" : "Change versus " + mode + ": " + change;
       return text;
     }
-    delta("mini-withtokens-change", frame.withTokens, comparison && comparison.withTokens);
-    delta("mini-total-change", frame.total, comparison && comparison.total);
-    var roomChange = delta("mini-room-change", frame.fullRoomTotal, comparison && comparison.total + comparison.anonymous);
+    delta("mini-withtokens-change", frame.withTokens, comparison2 && comparison2.withTokens);
+    delta("mini-total-change", frame.total, comparison2 && comparison2.total);
+    var roomChange = delta("mini-room-change", frame.fullRoomTotal, comparison2 && comparison2.total + comparison2.anonymous);
     var roomCount = document.getElementById("mini-room-count");
     if (roomCount) {
       roomCount.textContent = compactNumber(frame.fullRoomTotal);
@@ -4323,10 +4323,10 @@ underlying system, so should run in the browser, Node, or Plask.
       return;
     }
     var counts = model.counts, total = model.total, withTokens = model.withTokens, anonymousCount = model.anonymousCount;
-    var comparison = model.comparison;
-    var comparisonCounts = comparison.counts;
-    var shortSession = comparison.short;
-    var actualMinutes = comparison.actualMinutes;
+    var comparison2 = model.comparison;
+    var comparisonCounts = comparison2.counts;
+    var shortSession = comparison2.short;
+    var actualMinutes = comparison2.actualMinutes;
     if (!comparisonCounts) {
       var waitingText = model.historyLength === 1 ? "Waiting for second scan..." : "Waiting for scan...";
       trendContainer.innerHTML = '<div style="font-size:8px;color:var(--panel-faint);text-align:center;padding:8px;">' + waitingText + "</div>";
@@ -5783,6 +5783,442 @@ underlying system, so should run in the browser, Node, or Plask.
     };
   }
 
+  // src/user-list-data.js
+  function parseGetChatUserListResponse(text) {
+    if (typeof text !== "string" || !text.trim()) throw new Error("Empty API response");
+    var parts = text.trim().split(",");
+    if (!/^\d+$/.test(parts[0])) throw new Error("Invalid API anonymous count");
+    var anonymousCount = Number(parts[0]);
+    if (!Number.isSafeInteger(anonymousCount)) throw new Error("Unsafe API anonymous count");
+    var firstUser = 1;
+    if (parts.length > 1 && /^\d+$/.test(parts[1])) {
+      if (!Number.isSafeInteger(Number(parts[1]))) throw new Error("Unsafe API metadata count");
+      firstUser = 2;
+    }
+    var classTiers = { m: "red", f: "green", l: "purple", p: "pink", tr: "dark-blue", t: "light-blue", g: "gray" };
+    var genders = { m: "male", f: "female", s: "trans", c: "couple" };
+    var seen = /* @__PURE__ */ new Set();
+    var parsedUsers = [];
+    var unknownClasses = /* @__PURE__ */ Object.create(null);
+    var unknownGenders = /* @__PURE__ */ Object.create(null);
+    for (var i = firstUser; i < parts.length; i++) {
+      var fields = parts[i].split("|");
+      if (fields.length !== 4 || !/^[A-Za-z0-9_-]{2,30}$/.test(fields[0]) || fields.slice(1).some(function(field) {
+        return !/^[^\s|,<>\x00-\x1f]+$/.test(field);
+      })) {
+        throw new Error("Malformed API record at index " + i);
+      }
+      var username = fields[0];
+      var key = username.toLowerCase();
+      if (seen.has(key)) throw new Error("Duplicate API username at index " + i);
+      seen.add(key);
+      var rawClass = fields[1];
+      var genderCode = fields[2];
+      var isOwner = rawClass === "o";
+      var tier = Object.prototype.hasOwnProperty.call(classTiers, rawClass) ? classTiers[rawClass] : null;
+      var gender = Object.prototype.hasOwnProperty.call(genders, genderCode) ? genders[genderCode] : "unknown";
+      if (!tier && !isOwner) unknownClasses[rawClass] = (unknownClasses[rawClass] || 0) + 1;
+      if (gender === "unknown") unknownGenders[genderCode] = (unknownGenders[genderCode] || 0) + 1;
+      parsedUsers.push({
+        username,
+        rawClass,
+        tier,
+        genderCode,
+        gender,
+        rawFlag: fields[3],
+        isOwner
+      });
+    }
+    var registeredCount = parsedUsers.length;
+    var totalUsers = anonymousCount + registeredCount;
+    if (!Number.isSafeInteger(totalUsers)) throw new Error("Unsafe API total users");
+    return {
+      anonymousCount,
+      registeredCount,
+      totalUsers,
+      users: parsedUsers,
+      diagnostics: { unknownClasses, unknownGenders }
+    };
+  }
+  function validateRoomSnapshot(snapshot) {
+    if (!snapshot || !Number.isSafeInteger(snapshot.roomTotal) || snapshot.roomTotal < 0 || !Array.isArray(snapshot.users)) throw new Error("Invalid room snapshot");
+    if (snapshot.source === "API" && (!Number.isSafeInteger(snapshot.anonymousCount) || snapshot.anonymousCount < 0 || snapshot.registeredCount !== snapshot.users.length || snapshot.totalUsers !== snapshot.anonymousCount + snapshot.registeredCount || snapshot.roomTotal !== snapshot.totalUsers)) {
+      throw new Error("Inconsistent API anonymous, registered, or total user counts");
+    }
+  }
+
+  // src/background-comparison.js
+  var INTERVAL_MS = 6e4, TIMEOUT_MS = 1e4;
+  var SERIES = ["red", "green", "purple", "pink", "dark-blue", "light-blue", "gray", "female-trans", "withTokens", "total", "anonymous"];
+  function normalizeBackgroundRoom(value) {
+    if (typeof value !== "string") throw new Error("Enter a room username.");
+    const room2 = value.trim().toLowerCase();
+    if (!/^[a-z0-9_-]{1,100}$/.test(room2) || !roomFromUrl("https://chaturbate.com/" + room2 + "/")) {
+      throw new Error("Enter a room username, without a URL or spaces.");
+    }
+    return room2;
+  }
+  function createBackgroundComparison(effects) {
+    let session = null, generation = 0, timer = null, pending = null;
+    const listeners = /* @__PURE__ */ new Set(), interval = effects.interval || INTERVAL_MS;
+    const now = effects.now, setTimer = effects.setTimeout, clearTimer = effects.clearTimeout;
+    function emit() {
+      for (const changed of listeners) {
+        try {
+          changed();
+        } catch (_) {
+        }
+      }
+    }
+    function state() {
+      var _a;
+      return Object.freeze(session ? {
+        room: session.room,
+        active: session.active,
+        status: session.status,
+        message: session.message,
+        sampleCount: session.history.timestamps.length,
+        sampleAt: (_a = session.history.timestamps.at(-1)) != null ? _a : null,
+        nextAt: session.nextAt
+      } : { room: null, active: false, status: "stopped", message: "", sampleCount: 0, sampleAt: null, nextAt: null });
+    }
+    function clearScheduled() {
+      if (timer !== null) clearTimer(timer);
+      timer = null;
+    }
+    function stop(options = {}) {
+      generation++;
+      clearScheduled();
+      if (session) {
+        session.active = false;
+        session.status = "stopped";
+        session.message = "Comparison tracking stopped.";
+        session.nextAt = null;
+        if (session.controller) session.controller.abort();
+      }
+      pending = null;
+      if (options.clear) session = null;
+      emit();
+      return state();
+    }
+    function current(target, token) {
+      return session === target && target.active && generation === token && effects.host() === target.host;
+    }
+    function schedule(target) {
+      clearScheduled();
+      if (target === session && target.active) timer = setTimer(() => {
+        timer = null;
+        refresh();
+      }, Math.max(0, target.nextAt - now()));
+    }
+    function start(value) {
+      const room2 = normalizeBackgroundRoom(value);
+      stop({ clear: true });
+      const at = now(), publisherId2 = "background-" + effects.id(), history = { timestamps: [], breaks: [] }, highs = {};
+      for (const key of SERIES) {
+        history[key] = [];
+        highs[key] = { value: 0, time: null };
+      }
+      session = {
+        room: room2,
+        host: effects.host(),
+        publisherId: publisherId2,
+        startedAt: at,
+        active: true,
+        status: "waiting",
+        message: "Waiting for the first audience sample.",
+        nextAt: at,
+        history,
+        highs,
+        roomHigh: 0,
+        roomHighTime: null,
+        revision: 0,
+        archive: null,
+        failures: 0,
+        gap: false,
+        coveredMs: 0,
+        controller: null
+      };
+      schedule(session);
+      emit();
+      return state();
+    }
+    function readSources() {
+      var _a;
+      if (!session) return { sources: [], error: "" };
+      if (effects.host() !== session.host) {
+        stop({ clear: true });
+        return { sources: [], error: "" };
+      }
+      const s = session, sessionId = "background@" + s.startedAt;
+      return { sources: [Object.freeze({
+        version: 1,
+        id: s.publisherId + ":" + s.room + ":" + sessionId,
+        publisherId: s.publisherId,
+        room: s.room,
+        roomEpoch: "background",
+        sessionId,
+        sessionStartedAt: s.startedAt,
+        kind: "background",
+        status: s.status,
+        lastSeenAt: now(),
+        sampleAt: (_a = s.history.timestamps.at(-1)) != null ? _a : null,
+        sampleCount: s.history.timestamps.length,
+        revision: String(s.revision),
+        recordKey: null,
+        recordSavedAt: null
+      })], error: "" };
+    }
+    function readArchive(source) {
+      const actual = readSources().sources[0];
+      if (!actual || source.id !== actual.id || source.revision !== actual.revision || !actual.sampleCount) {
+        throw new Error("This background comparison changed or has no accepted samples yet.");
+      }
+      if (!session.archive) {
+        const history = {}, sessionHighs = {};
+        for (const [key, values] of Object.entries(session.history)) history[key] = values.slice();
+        for (const key of SERIES) sessionHighs[key] = __spreadValues({}, session.highs[key]);
+        const lastAt = history.timestamps.at(-1);
+        session.archive = freezeRecordingData(effects.archive(session.room, {
+          schemaVersion: effects.schemaVersion(),
+          timestamp: lastAt,
+          history,
+          sessionStartedAt: session.startedAt,
+          sessionStartEstimated: false,
+          sessionHighs,
+          roomTotalHigh: session.roomHigh,
+          roomTotalHighTime: session.roomHighTime,
+          pausedElapsedTime: session.coveredMs,
+          isPaused: true,
+          isStopped: false,
+          stoppedAt: null,
+          stopReason: null
+        }));
+      }
+      return session.archive;
+    }
+    function accept(target, snapshot, at) {
+      validateRoomSnapshot(snapshot);
+      const owners = snapshot.users.filter((user) => user.isOwner);
+      if (owners.length !== 1 || owners[0].username.toLowerCase() !== target.room) {
+        throw Object.assign(new Error("The response does not identify this room’s broadcaster. Waiting for a confirmed room response."), { roomUnavailable: true });
+      }
+      const history = target.history, previousAt = history.timestamps.at(-1);
+      if (previousAt !== void 0 && at <= previousAt) throw new Error("Waiting for the recording clock to advance.");
+      const previousTotal = previousAt === void 0 ? 0 : history.total.at(-1) + history.anonymous.at(-1);
+      const previousUsers = history.total.at(-1) || 0;
+      if (previousTotal && (!snapshot.roomTotal || Math.abs(snapshot.roomTotal - previousTotal) / previousTotal <= 0.1 && previousUsers && (previousUsers - snapshot.users.length) / previousUsers > 0.5)) throw new Error("Audience sample was incomplete.");
+      const counts = Object.fromEntries(SERIES.map((key) => [key, 0]));
+      for (const user of snapshot.users) {
+        if (user.tier && Object.prototype.hasOwnProperty.call(counts, user.tier)) counts[user.tier]++;
+        if (user.gender === "female" || user.gender === "trans") counts["female-trans"]++;
+      }
+      counts.total = snapshot.users.length;
+      counts.anonymous = snapshot.anonymousCount;
+      counts.withTokens = ["red", "green", "purple", "pink", "dark-blue", "light-blue"].reduce((sum, key) => sum + counts[key], 0);
+      const gap = previousAt !== void 0 && (target.gap || at - previousAt > interval * 2 + TIMEOUT_MS);
+      if (previousAt !== void 0 && !gap) target.coveredMs += at - previousAt;
+      history.timestamps.push(at);
+      history.breaks.push(gap);
+      for (const key of SERIES) {
+        history[key].push(counts[key]);
+        if (counts[key] > target.highs[key].value) target.highs[key] = { value: counts[key], time: at };
+      }
+      if (snapshot.roomTotal > target.roomHigh) {
+        target.roomHigh = snapshot.roomTotal;
+        target.roomHighTime = at;
+      }
+      if (history.timestamps.length > effects.maxHistory()) for (const values of Object.values(history)) values.shift();
+      target.revision++;
+      target.archive = null;
+      target.gap = false;
+      target.failures = 0;
+    }
+    async function run(target, token) {
+      let timeout = null;
+      try {
+        const permission = effects.permission();
+        if (permission.offline || permission.blocked || permission.until > now()) {
+          target.gap = true;
+          target.status = permission.offline ? "offline" : "retry";
+          target.message = permission.offline ? "Offline. Comparison will retry when the connection returns." : "Waiting for the shared API restriction to end.";
+          target.nextAt = Math.max(now() + interval, permission.until || 0);
+          emit();
+          return;
+        }
+        target.status = "waiting";
+        target.message = "Waiting for a background API request slot.";
+        emit();
+        const canRequest = () => {
+          if (!current(target, token)) return false;
+          const policy = effects.permission();
+          return !policy.offline && !policy.blocked && policy.until <= now();
+        };
+        if (!await effects.waitForSlot(canRequest) || !canRequest()) {
+          if (current(target, token)) {
+            target.status = "retry";
+            target.message = "Background request deferred. Normal tracking has priority.";
+            target.nextAt = now() + interval;
+            emit();
+          }
+          return;
+        }
+        const controller = new AbortController();
+        target.controller = controller;
+        const snapshot = await Promise.race([effects.request(target.room, controller.signal), new Promise((resolve, reject) => {
+          timeout = setTimer(() => {
+            controller.abort();
+            reject(Object.assign(new Error("Background request timed out."), { connectionFailure: true }));
+          }, TIMEOUT_MS);
+        })]);
+        if (!current(target, token)) return;
+        accept(target, snapshot, now());
+        target.status = "tracking";
+        target.message = "Tracking " + target.room + " without opening their room. Updates every 60 seconds.";
+        target.nextAt = now() + interval;
+        emit();
+      } catch (error) {
+        if (!current(target, token)) return;
+        target.gap = true;
+        target.failures = Math.min(20, target.failures + 1);
+        const status = error.status || 0, at = now();
+        const wait = status === 429 || status >= 500 ? Math.min(9e5, interval * Math.pow(2, target.failures - 1)) : interval;
+        target.nextAt = Math.max(at + wait, error.retryAt || 0);
+        if (status === 429 || status >= 500 || error.retryAt > at) effects.publish(target.nextAt);
+        target.active = ![400, 401, 403, 404].includes(status);
+        target.status = target.active ? effects.permission().offline ? "offline" : error.roomUnavailable ? "unavailable" : "retry" : "unavailable";
+        target.message = status ? "Compare without watching: HTTP " + status + (target.active ? ". Retrying after the API wait." : ". Room data unavailable; check the username and try again.") : "Compare without watching: " + error.message + " Previous samples are retained.";
+        if (!target.active) target.nextAt = null;
+        emit();
+      } finally {
+        if (timeout !== null) clearTimer(timeout);
+        if (session === target) target.controller = null;
+      }
+    }
+    function refresh() {
+      if (!session || !session.active) return Promise.resolve(state());
+      if (effects.host() !== session.host) {
+        stop({ clear: true });
+        return Promise.resolve(state());
+      }
+      if (pending) return pending;
+      const target = session, token = generation;
+      clearScheduled();
+      const operation = run(target, token).finally(() => {
+        if (pending === operation) pending = null;
+        if (current(target, token)) schedule(target);
+      });
+      pending = operation;
+      return operation;
+    }
+    return { start, stop, state, refresh, readSources, readArchive, subscribe(changed) {
+      listeners.add(changed);
+      return () => listeners.delete(changed);
+    } };
+  }
+  function createBackgroundPermissionReader(effects) {
+    return () => {
+      const at = effects.now(), sharedUntil = effects.deadline();
+      try {
+        const raw = effects.read(), cached = effects.foregroundPolicy();
+        const policies = raw === null ? [] : [JSON.parse(raw)];
+        if (cached) policies.push(cached);
+        let until = sharedUntil, blocked = false;
+        for (const policy of policies) {
+          if (!policy || !Number.isFinite(policy.until) || policy.until < 0 || policy.until > 864e13 || ![0, 401, 403].includes(policy.blocked) || policy.serverUntil !== void 0 && (!Number.isSafeInteger(policy.serverUntil) || policy.serverUntil < 0 || policy.serverUntil > 864e13)) throw new Error("Invalid shared restriction.");
+          blocked = blocked || policy.blocked !== 0;
+          until = Math.max(until, policy.until, policy.serverUntil || 0);
+        }
+        return { offline: effects.offline(), blocked, until };
+      } catch (_) {
+        return { offline: effects.offline(), blocked: true, until: Math.max(sharedUntil, at + INTERVAL_MS) };
+      }
+    };
+  }
+  var coordinator = createRequestCoordinator("tierscope", true);
+  var backgroundPermission = createBackgroundPermissionReader({
+    now: () => Date.now(),
+    offline: isBrowserOffline,
+    read: () => GM_getValue(runtime.REQUEST_POLICY_KEY, null),
+    foregroundPolicy: () => runtime.requestPolicyCache,
+    deadline: () => Math.max(coordinator.deadline(), requestCoordinator.deadline())
+  });
+  var comparison = createBackgroundComparison({
+    now: () => Date.now(),
+    host: () => location.href,
+    id: makeStorageId,
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id),
+    maxHistory: () => runtime.MAX_HISTORY_LENGTH,
+    schemaVersion: () => runtime.STORAGE_SCHEMA_VERSION,
+    archive: (room2, session) => validateSessionFile({
+      format: runtime.SESSION_FILE_FORMAT,
+      formatVersion: runtime.SESSION_FILE_VERSION,
+      producerVersion: runtime.TIERSCOPE_VERSION,
+      room: room2,
+      session
+    }),
+    permission: backgroundPermission,
+    waitForSlot: (current) => coordinator.waitForSlot(current),
+    publish: (until) => coordinator.publish(until),
+    request: async (room2, signal) => {
+      const url = new URL("/api/getchatuserlist/", location.origin);
+      for (const [key, value] of Object.entries({ roomname: room2, private: "false", sort_by: "a", exclude_staff: "false" })) url.searchParams.set(key, value);
+      let response;
+      try {
+        response = await fetch(url.href, {
+          method: "GET",
+          credentials: "same-origin",
+          mode: "same-origin",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+          cache: "no-store",
+          redirect: "error",
+          signal
+        });
+      } catch (error) {
+        throw Object.assign(new Error(error.message || "Connection unavailable."), { connectionFailure: true });
+      }
+      if (!response.ok) {
+        const raw = response.headers.get("Retry-After"), at = Date.now();
+        const retryAt = raw && /^\d+$/.test(raw.trim()) ? at + Number(raw.trim()) * 1e3 : raw ? Date.parse(raw) : 0;
+        throw Object.assign(new Error("API HTTP " + response.status), {
+          status: response.status,
+          retryAt: Number.isSafeInteger(retryAt) && retryAt > at && retryAt <= 864e13 ? retryAt : 0
+        });
+      }
+      const snapshot = parseGetChatUserListResponse(await response.text());
+      return __spreadProps(__spreadValues({}, snapshot), { roomTotal: snapshot.totalUsers, source: "API" });
+    }
+  });
+  function discardBackgroundComparison() {
+    comparison.stop({ clear: true });
+  }
+  function startBackgroundComparison(room2) {
+    const state = comparison.start(room2);
+    window.addEventListener("pagehide", discardBackgroundComparison);
+    return state;
+  }
+  function stopBackgroundComparison(options = {}) {
+    const state = comparison.stop(options);
+    if (options.clear) window.removeEventListener("pagehide", discardBackgroundComparison);
+    return state;
+  }
+  function getBackgroundComparisonState() {
+    return comparison.state();
+  }
+  function refreshBackgroundComparison() {
+    return comparison.refresh();
+  }
+  function readBackgroundComparisonSources() {
+    return comparison.readSources();
+  }
+  function readBackgroundComparisonArchive(source) {
+    return comparison.readArchive(source);
+  }
+  function subscribeBackgroundComparison(changed) {
+    return comparison.subscribe(changed);
+  }
+
   // src/tools-view-helpers.js
   function toolNode(parent, tag, text, className) {
     const node = document.createElement(tag);
@@ -6824,6 +7260,8 @@ underlying system, so should run in the browser, Node, or Plask.
 #tools-content{padding:10px 12px 14px;overflow:auto;min-height:0;flex:1;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#ff69b470 transparent}
 #tools-message:not(:empty){padding:7px 12px;border-bottom:1px solid var(--panel-divider);font-size:.95em;white-space:pre-line;overflow-wrap:anywhere;flex-shrink:0}
 #tierscope-session-tools .tools-actions{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:8px 0}
+#tierscope-session-tools .tools-background-form input{flex:1 1 100px;width:100px}
+#tierscope-session-tools .tools-background-form button{flex:0 1 auto}
 #tierscope-session-tools .tools-muted{color:var(--panel-muted);font-size:.92em;line-height:1.45}
 #tierscope-session-tools .tools-comparison-mode{padding-bottom:7px;border-bottom:1px solid var(--panel-divider)}
 #tierscope-session-tools .tools-comparison-mode button{flex:1}
@@ -7526,6 +7964,16 @@ underlying system, so should run in the browser, Node, or Plask.
     if (at - source.lastSeenAt > LIVE_MODEL_STALE_MS) return "stale";
     return source.status;
   }
+  function decodeInMemoryLiveModelSource(value, at) {
+    if (!value || value.kind !== "background" || value.recordKey !== null || value.recordSavedAt !== null || typeof value.revision !== "string" || value.revision.length > 512) return null;
+    const source = decodeLiveModelSource(__spreadProps(__spreadValues({}, value), { revision: "" }), LIVE_MODEL_PREFIX + value.publisherId, at);
+    if (!source) return null;
+    return __spreadProps(__spreadValues({}, source), {
+      kind: "background",
+      revision: value.revision,
+      status: at - source.lastSeenAt > LIVE_MODEL_STALE_MS ? "stale" : source.status
+    });
+  }
 
   // src/live-model-sources.js
   function createLiveModelExchange(effects) {
@@ -7620,6 +8068,34 @@ underlying system, so should run in the browser, Node, or Plask.
     })
   });
   var publisherId = null, heartbeat = null, announced = false, started = false, cleanupInitialized = false, savedBinding = null;
+  var sourceProviders = /* @__PURE__ */ new Set(), sourceSubscribers = /* @__PURE__ */ new Set();
+  function registerLiveModelSourceProvider(provider) {
+    if (!provider || !["readSources", "readArchive", "subscribe"].every((key) => typeof provider[key] === "function")) {
+      throw new Error("Invalid comparison source provider.");
+    }
+    const entry = { provider, detach: null };
+    const changed = () => {
+      for (const notify of sourceSubscribers) notify();
+    };
+    entry.detach = provider.subscribe(changed);
+    sourceProviders.add(entry);
+    changed();
+    return () => {
+      if (!sourceProviders.delete(entry)) return;
+      if (typeof entry.detach === "function") entry.detach();
+      changed();
+    };
+  }
+  function providerSources(provider) {
+    const result = provider.readSources(), sources = [];
+    let error = (result == null ? void 0 : result.error) || "";
+    for (const value of (result == null ? void 0 : result.sources) || []) {
+      const source = decodeInMemoryLiveModelSource(value, Date.now());
+      if (source) sources.push(Object.freeze(source));
+      else error = "Some comparison-only sources could not be read.";
+    }
+    return { sources, error };
+  }
   function notifyLiveModels() {
     exchange.invalidate();
     GM_setValue(LIVE_MODEL_NOTICE, { version: 1, at: Date.now(), token: makeStorageId() });
@@ -7706,10 +8182,40 @@ underlying system, so should run in the browser, Node, or Plask.
     exchange.clear();
   }
   function readLiveModelSources(force = false) {
-    return exchange.readSources(force);
+    const result = exchange.readSources(force), sources = result.sources.slice();
+    const ids = new Set(sources.map((source) => source.id)), errors = result.error ? [result.error] : [];
+    for (const { provider } of sourceProviders) {
+      try {
+        const extra = providerSources(provider);
+        if (extra.error) errors.push(extra.error);
+        for (const source of extra.sources) {
+          if (ids.has(source.id)) {
+            errors.push("A comparison-only source identity is duplicated.");
+            continue;
+          }
+          sources.push(source);
+          ids.add(source.id);
+        }
+      } catch (_) {
+        errors.push("Comparison-only sources are unavailable. Their previous snapshots are retained.");
+      }
+    }
+    sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
+    return { sources, error: errors.join(" ") };
   }
   function readLiveModelArchive(source) {
-    return exchange.readArchive(source);
+    if (source.kind !== "background") return exchange.readArchive(source);
+    for (const { provider } of sourceProviders) {
+      const current = providerSources(provider).sources.find((value) => value.id === source.id);
+      if (!current) continue;
+      if (current.revision !== source.revision || current.room !== source.room || current.sessionId !== source.sessionId || current.sampleCount !== source.sampleCount || current.sampleAt !== source.sampleAt || !current.sampleCount || ["reset", "unavailable", "stale"].includes(current.status)) break;
+      const archive = freezeRecordingData(validateSessionFile(provider.readArchive(current))), session = archive.session;
+      if (archive.room.toLowerCase() !== current.room || session.sessionStartedAt !== current.sessionStartedAt || session.history.timestamps.length !== current.sampleCount || session.history.timestamps.at(-1) !== current.sampleAt) break;
+      const latest = providerSources(provider).sources.find((value) => value.id === current.id);
+      if (!latest || latest.revision !== current.revision) break;
+      return archive;
+    }
+    throw new Error("This comparison-only source changed or is unavailable. Its previous chart snapshot is retained.");
   }
   function retainLiveModelArchives(ids) {
     exchange.retain(ids);
@@ -7723,6 +8229,7 @@ underlying system, so should run in the browser, Node, or Plask.
         if (!disposed) changed();
       }, 80);
     }
+    sourceSubscribers.add(schedule);
     try {
       if (typeof GM_addValueChangeListener === "function") listener = GM_addValueChangeListener(LIVE_MODEL_NOTICE, () => {
         exchange.invalidate();
@@ -7734,6 +8241,7 @@ underlying system, so should run in the browser, Node, or Plask.
     return () => {
       disposed = true;
       clearInterval(timer);
+      sourceSubscribers.delete(schedule);
       if (pending !== null) clearTimeout(pending);
       if (listener !== null) {
         try {
@@ -7781,7 +8289,8 @@ underlying system, so should run in the browser, Node, or Plask.
     const root = toolNode(parent, "section");
     root.id = "tools-live-models";
     toolNode(root, "h3", "Live models comparison");
-    toolNode(root, "p", "Uses scans from your other TierScope tabs. No additional API requests.", "tools-muted");
+    const sourceExplanation = toolNode(root, "p", "Uses scans from your other TierScope tabs. No additional API requests.", "tools-muted");
+    sourceExplanation.id = "tools-live-source-explanation";
     const controls = toolNode(root, "div", void 0, "tools-actions");
     const freeze = toolButton(controls, "", () => {
       state.frozen = !state.frozen;
@@ -7914,7 +8423,7 @@ underlying system, so should run in the browser, Node, or Plask.
       refresh();
     }
     function sourceText(source, index, at) {
-      return "Tab " + (index + 1) + " · " + describe(source) + " · " + (source.sampleAt ? new Date(source.sampleAt).toLocaleTimeString() : "no sample");
+      return (source.kind === "background" ? "Compare without watching" : "Tab " + (index + 1)) + " · " + describe(source) + " · " + (source.sampleAt ? new Date(source.sampleAt).toLocaleTimeString() : "no sample");
     }
     function updateRows(groups, at) {
       const query = state.query.trim().toLowerCase(), filtered = [...groups].filter(([room2]) => room2.includes(query));
@@ -7933,7 +8442,7 @@ underlying system, so should run in the browser, Node, or Plask.
           toolNode(label, "strong", room2);
           const select = toolNode(row, "select");
           select.dataset.liveTab = room2;
-          select.setAttribute("aria-label", "Source tab for " + room2);
+          select.setAttribute("aria-label", "Tracking source for " + room2);
           for (const source of sources) {
             const option = toolNode(select, "option");
             option.value = source.id;
@@ -7971,8 +8480,8 @@ underlying system, so should run in the browser, Node, or Plask.
         });
         const publishers = new Set(sources.filter((item) => item.status !== "unavailable" && item.status !== "reset").map((item) => item.publisherId));
         row.tabNote.hidden = publishers.size < 2;
-        row.tabNote.textContent = publishers.size + " tabs · using the session with the most samples";
-        row.detail.textContent = describe(source);
+        row.tabNote.textContent = publishers.size + (sources.some((item) => item.kind === "background") ? " sources" : " tabs") + " · using the session with the most samples";
+        row.detail.textContent = (source.kind === "background" ? "Compare without watching · " : "") + describe(source);
         row.snapshot.textContent = source.sampleCount ? source.sampleCount.toLocaleString() + " samples · latest " + age(source.sampleAt, at) : "Waiting for a first accepted sample";
         row.row.dataset.liveState = source.status;
         row.row.dataset.liveSampleCount = String(source.sampleCount);
@@ -8084,6 +8593,7 @@ underlying system, so should run in the browser, Node, or Plask.
       try {
         notice = "";
         const at = Date.now(), result = readLiveModelSources(force), sources = [...result.sources || []], available = new Map(sources.map((source) => [source.id, source]));
+        sourceExplanation.textContent = sources.some((source) => source.kind === "background") ? "Uses scans from TierScope tabs and Compare without watching. Rooms tracked without watching make additional API requests while running." : "Uses scans from your other TierScope tabs. No additional API requests.";
         if (result.error) notice = "Live sharing is unavailable: " + result.error + ". Previous snapshots are retained.";
         for (const id of state.selected) {
           if (available.has(id)) continue;
@@ -8124,12 +8634,12 @@ underlying system, so should run in the browser, Node, or Plask.
         freeze.disabled = !state.snapshots.size;
         chooserTitle.textContent = "Models being tracked · " + groups.size + " · " + state.selected.size + " selected";
         empty.hidden = groups.size > 0;
-        empty.textContent = "Open broadcast rooms in other tabs with TierScope enabled. Models appear after their tabs start tracking; no favorite or saved Library session is required.";
+        empty.textContent = "Open broadcast rooms in other tabs with TierScope enabled, or use Compare without watching in Current Live Session. Models appear after tracking starts; no favorite or saved Library session is required.";
         const unavailable = selected.filter((source) => ["unavailable", "reset", "stale"].includes(source.status)).length;
         status.textContent = (state.frozen ? "Frozen at " + new Date(state.frozenAt).toLocaleTimeString() + " · source status still updates." : "Following new scans · " + state.selected.size + " models selected.") + (unavailable ? " " + unavailable + " source(s) unavailable or stale; open Models being tracked for details." : "") + (notice ? " " + notice : "") + (userNotice ? " " + userNotice : "");
         if (!groups.size) {
           chooser.open = true;
-          status.textContent = "Open a room in another TierScope tab to start comparing live models.";
+          status.textContent = "Open a room in another TierScope tab or use Compare without watching in Current Live Session.";
         }
         for (const id of [...state.snapshots.keys()]) if (!state.selected.has(id)) state.snapshots.delete(id);
         retainLiveModelArchives(state.selected);
@@ -9582,6 +10092,7 @@ underlying system, so should run in the browser, Node, or Plask.
     let compareMode = "saved", liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
     const recentState = createRecentComparisonState();
+    let backgroundRoomDraft = "", detachBackgroundStatus = null, detachBackgroundProvider = null;
     const followers = { summary: createAnalysisFollower(), compare: createAnalysisFollower(), history: createAnalysisFollower() };
     try {
       currentArchive = captureSessionFile();
@@ -9880,6 +10391,7 @@ underlying system, so should run in the browser, Node, or Plask.
     }
     function refreshCurrent() {
       var _a;
+      refreshBackgroundControls();
       if (tab === "compare" && recentView) {
         recentView.refresh();
         return;
@@ -10052,8 +10564,9 @@ underlying system, so should run in the browser, Node, or Plask.
       history.dataset.cardHistory = "";
       if (!replay) {
         const comparisons = node(card, "div", void 0, "tools-actions");
-        button(comparisons, "Live sessions", openLiveComparison, "tools-compare-live").title = "Compare models being tracked in your open TierScope tabs.";
-        button(comparisons, "Last 24h sessions", openRecentComparison, "tools-compare-last24h").title = "Compare all models with saved samples in the last 24 hours.";
+        button(comparisons, "Compare all live sessions", openLiveComparison, "tools-compare-live").title = "Compare models being tracked in your open TierScope tabs and this Library.";
+        button(comparisons, "Compare last 24h sessions", openRecentComparison, "tools-compare-last24h").title = "Compare all models with saved samples in the last 24 hours.";
+        backgroundComparisonControls(card, true);
       }
       if (replay) {
         const exports = node(card, "div", void 0, "tools-actions tools-exports");
@@ -10076,6 +10589,78 @@ underlying system, so should run in the browser, Node, or Plask.
         const status = node(card, "div", "", "tools-muted");
         status.id = "session-save-info";
         status.setAttribute("role", "status");
+      }
+    }
+    function backgroundComparisonControls(parent, allowStart) {
+      const section = node(parent, "div", void 0, "tools-background-comparison");
+      if (allowStart) {
+        const form = node(section, "form", void 0, "tools-actions tools-background-form");
+        const input = node(form, "input");
+        input.id = "tools-background-room";
+        input.type = "text";
+        input.placeholder = "Room name";
+        input.maxLength = 100;
+        input.required = true;
+        input.value = backgroundRoomDraft;
+        input.setAttribute("aria-label", "Room to compare without watching");
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        input.oninput = () => {
+          backgroundRoomDraft = input.value;
+          input.setCustomValidity("");
+        };
+        const start = node(form, "button", "Compare without watching");
+        start.type = "submit";
+        start.id = "tools-compare-background";
+        form.onsubmit = (event) => {
+          event.preventDefault();
+          try {
+            if (input.value.trim().toLowerCase() === getModelName().toLowerCase()) throw new Error("This room is already being tracked. Enter another room name.");
+            startBackgroundComparison(input.value);
+            backgroundRoomDraft = getBackgroundComparisonState().room;
+            liveModelsState.selected.clear();
+            liveModelsState.choices.clear();
+            liveModelsState.autoPicked = true;
+            liveModelsState.frozen = false;
+            liveModelsState.chartState = null;
+            selectBackgroundComparison(backgroundRoomDraft);
+            compareMode = "live";
+            render("compare");
+          } catch (error) {
+            input.setCustomValidity(error.message);
+            input.reportValidity();
+          }
+        };
+        node(section, "p", "Compare one room without opening its video. Refreshes about once a minute while Library is open; not saved automatically.", "tools-muted");
+      }
+      const status = node(section, "p", "", "tools-muted");
+      status.id = "tools-background-status";
+      status.setAttribute("role", "status");
+      button(section, "Stop tracking this room", () => {
+        stopBackgroundComparison();
+        refreshBackgroundControls();
+      }, "tools-background-stop");
+      refreshBackgroundControls();
+    }
+    function refreshBackgroundControls() {
+      const state = getBackgroundComparisonState(), status = dialog.querySelector("#tools-background-status");
+      if (!status) return;
+      status.hidden = !state.room;
+      status.textContent = state.room ? "Compare without watching · " + state.room + " · " + state.message : "";
+      status.style.color = ["retry", "unavailable", "offline"].includes(state.status) ? "var(--panel-warning)" : "var(--panel-muted)";
+      const stop = dialog.querySelector("#tools-background-stop");
+      if (stop) stop.hidden = !state.active;
+    }
+    function selectBackgroundComparison(targetRoom) {
+      const { sources } = readLiveModelSources(true);
+      for (const room2 of [getModelName().toLowerCase(), targetRoom]) {
+        const candidates = sources.filter((source) => source.room === room2 && !["reset", "unavailable", "stale"].includes(source.status));
+        candidates.sort((a, b) => b.sampleCount - a.sampleCount || (b.sampleAt || 0) - (a.sampleAt || 0) || a.id.localeCompare(b.id));
+        const chosen = candidates[0];
+        if (chosen) {
+          liveModelsState.selected.add(chosen.id);
+          liveModelsState.choices.set(room2, chosen.id);
+        }
       }
     }
     function compareLiveWithPrevious() {
@@ -10763,6 +11348,7 @@ underlying system, so should run in the browser, Node, or Plask.
           return;
         }
         if (compareMode === "live") {
+          if (getBackgroundComparisonState().room) backgroundComparisonControls(content, false);
           liveModelsView = renderLiveModelsComparison(content, {
             state: liveModelsState,
             currentRoom: getModelName(),
@@ -10952,6 +11538,10 @@ underlying system, so should run in the browser, Node, or Plask.
       }
     }
     function close() {
+      if (detachBackgroundStatus) {
+        detachBackgroundStatus();
+        detachBackgroundStatus = null;
+      }
       if (compactView) {
         compactView.dispose();
         compactView = null;
@@ -10963,6 +11553,11 @@ underlying system, so should run in the browser, Node, or Plask.
       if (liveModelsView) {
         liveModelsView.dispose();
         liveModelsView = null;
+      }
+      stopBackgroundComparison({ clear: true });
+      if (detachBackgroundProvider) {
+        detachBackgroundProvider();
+        detachBackgroundProvider = null;
       }
       fileRequest++;
       refreshSessionTools = null;
@@ -11068,6 +11663,16 @@ underlying system, so should run in the browser, Node, or Plask.
       },
       modeChanged: (enabled) => detachDock.setChartOnly(enabled),
       redraw: () => detachDock.redraw()
+    });
+    detachBackgroundProvider = registerLiveModelSourceProvider({
+      readSources: readBackgroundComparisonSources,
+      readArchive: readBackgroundComparisonArchive,
+      subscribe: subscribeBackgroundComparison
+    });
+    detachBackgroundStatus = subscribeBackgroundComparison(() => {
+      if (!current()) return;
+      refreshBackgroundControls();
+      if (liveModelsView) liveModelsView.refresh();
     });
     render("library");
     dialog.querySelector("#tools-close").focus();
@@ -11914,67 +12519,8 @@ underlying system, so should run in the browser, Node, or Plask.
   }
 
   // src/scanning.js
-  function parseGetChatUserListResponse(text) {
-    if (typeof text !== "string" || !text.trim()) throw new Error("Empty API response");
-    var parts = text.trim().split(",");
-    if (!/^\d+$/.test(parts[0])) throw new Error("Invalid API anonymous count");
-    var anonymousCount = Number(parts[0]);
-    if (!Number.isSafeInteger(anonymousCount)) throw new Error("Unsafe API anonymous count");
-    var firstUser = 1;
-    if (parts.length > 1 && /^\d+$/.test(parts[1])) {
-      if (!Number.isSafeInteger(Number(parts[1]))) throw new Error("Unsafe API metadata count");
-      firstUser = 2;
-    }
-    var classTiers = { m: "red", f: "green", l: "purple", p: "pink", tr: "dark-blue", t: "light-blue", g: "gray" };
-    var genders = { m: "male", f: "female", s: "trans", c: "couple" };
-    var seen = /* @__PURE__ */ new Set();
-    var parsedUsers = [];
-    var unknownClasses = /* @__PURE__ */ Object.create(null);
-    var unknownGenders = /* @__PURE__ */ Object.create(null);
-    for (var i = firstUser; i < parts.length; i++) {
-      var fields = parts[i].split("|");
-      if (fields.length !== 4 || !/^[A-Za-z0-9_-]{2,30}$/.test(fields[0]) || fields.slice(1).some(function(field) {
-        return !/^[^\s|,<>\x00-\x1f]+$/.test(field);
-      })) {
-        throw new Error("Malformed API record at index " + i);
-      }
-      var username = fields[0];
-      var key = username.toLowerCase();
-      if (seen.has(key)) throw new Error("Duplicate API username at index " + i);
-      seen.add(key);
-      var rawClass = fields[1];
-      var genderCode = fields[2];
-      var isOwner = rawClass === "o";
-      var tier = Object.prototype.hasOwnProperty.call(classTiers, rawClass) ? classTiers[rawClass] : null;
-      var gender = Object.prototype.hasOwnProperty.call(genders, genderCode) ? genders[genderCode] : "unknown";
-      if (!tier && !isOwner) unknownClasses[rawClass] = (unknownClasses[rawClass] || 0) + 1;
-      if (gender === "unknown") unknownGenders[genderCode] = (unknownGenders[genderCode] || 0) + 1;
-      parsedUsers.push({
-        username,
-        rawClass,
-        tier,
-        genderCode,
-        gender,
-        rawFlag: fields[3],
-        isOwner
-      });
-    }
-    var registeredCount = parsedUsers.length;
-    var totalUsers = anonymousCount + registeredCount;
-    if (!Number.isSafeInteger(totalUsers)) throw new Error("Unsafe API total users");
-    return {
-      anonymousCount,
-      registeredCount,
-      totalUsers,
-      users: parsedUsers,
-      diagnostics: { unknownClasses, unknownGenders }
-    };
-  }
-  function validateRoomSnapshot(snapshot) {
-    if (!snapshot || !Number.isSafeInteger(snapshot.roomTotal) || snapshot.roomTotal < 0 || !Array.isArray(snapshot.users)) throw new Error("Invalid room snapshot");
-    if (snapshot.source === "API" && (!Number.isSafeInteger(snapshot.anonymousCount) || snapshot.anonymousCount < 0 || snapshot.registeredCount !== snapshot.users.length || snapshot.totalUsers !== snapshot.anonymousCount + snapshot.registeredCount || snapshot.roomTotal !== snapshot.totalUsers)) {
-      throw new Error("Inconsistent API anonymous, registered, or total user counts");
-    }
+  function validateRoomSnapshot2(snapshot) {
+    validateRoomSnapshot(snapshot);
     if (!isScanValid(snapshot.users.length, snapshot.roomTotal)) {
       throw new Error("Sample rejected by 3.0.0 scan-validity checks");
     }
@@ -12120,7 +12666,7 @@ underlying system, so should run in the browser, Node, or Plask.
       resumeSessionForOwnerReturn(Date.now());
       startTrackingTimer();
       updateStopControls();
-      validateRoomSnapshot(snapshot);
+      validateRoomSnapshot2(snapshot);
       return snapshot;
     } catch (error) {
       if (!isAcquisitionCurrent(context)) return null;
@@ -12141,7 +12687,7 @@ underlying system, so should run in the browser, Node, or Plask.
       if (checkAbsenceStop() || !isAcquisitionCurrent(context)) return null;
       observeSessionPresence(snapshot, Date.now());
       if (checkAbsenceStop() || !isAcquisitionCurrent(context)) return null;
-      validateRoomSnapshot(snapshot);
+      validateRoomSnapshot2(snapshot);
       clearDOMFailures();
       clearRequestFailures(context.policyRevision, context.policyStorageRevision);
       return snapshot;
@@ -12169,7 +12715,7 @@ underlying system, so should run in the browser, Node, or Plask.
     try {
       var fallback = await acquireDOMSnapshot(context, returnToChat);
       if (!isAcquisitionCurrent(context)) return null;
-      validateRoomSnapshot(fallback);
+      validateRoomSnapshot2(fallback);
       log("DOM fallback succeeded; room=" + context.room + " records=" + fallback.users.length);
       return fallback;
     } catch (err) {
@@ -12749,7 +13295,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.31.1";
+    runtime.TIERSCOPE_VERSION = "3.32.0-beta.1";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

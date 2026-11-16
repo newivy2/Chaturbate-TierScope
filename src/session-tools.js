@@ -1,5 +1,6 @@
 import { CLOCK_DAY_MS, clockSessionDuration, projectClockSeries } from './analysis-clock-data.js';
 import { createAnalysisFollower } from './analysis-follow.js';
+import { getBackgroundComparisonState, readBackgroundComparisonArchive, readBackgroundComparisonSources, startBackgroundComparison, stopBackgroundComparison, subscribeBackgroundComparison } from './background-comparison.js';
 import { renderMetricStrip } from './analysis-metric-view.js';
 import { automaticLibraryStatus, keepFavoriteSession } from './automatic-library.js';
 import { changeModelFavorite } from './favorite-controls.js';
@@ -19,6 +20,7 @@ import { readAutomaticKeepingMinutes, saveAutomaticKeepingMinutes, readLibraryLi
 import { renderAutomaticKeepingSettings, renderLibraryCapacity } from './library-capacity-view.js';
 import { libraryShell } from './library-shell.js';
 import { createLiveComparisonState, renderLiveModelsComparison } from './live-model-comparison.js';
+import { readLiveModelSources, registerLiveModelSourceProvider } from './live-model-sources.js';
 import { createRecentComparisonState, renderRecentComparison } from './recent-comparison.js';
 import { RECENT_COMPARISON_MS } from './recent-comparison-data.js';
 import { migrateRecordingFavorites, readModelFavorites, readModelFavorite } from './library-models.js';
@@ -110,6 +112,7 @@ export function openSessionTools(focusTarget) {
     let compareMode = 'saved', liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
     const recentState = createRecentComparisonState();
+    let backgroundRoomDraft = '', detachBackgroundStatus = null, detachBackgroundProvider = null;
     const followers = {summary: createAnalysisFollower(), compare: createAnalysisFollower(), history: createAnalysisFollower()};
     try { currentArchive = captureSessionFile(); } catch (error) { /* Tools also work on directory pages. */ }
     const content = dialog.querySelector('#tools-content'), message = dialog.querySelector('#tools-message');
@@ -326,6 +329,7 @@ export function openSessionTools(focusTarget) {
         if (followers[tab]) followers[tab].reset();
     }
     function refreshCurrent() {
+        refreshBackgroundControls();
         if (tab === 'compare' && recentView) { recentView.refresh(); return; }
         if (tab === 'compare' && liveModelsView) { liveModelsView.refresh(); return; }
         if (followers[tab] && updateFollowing()) refreshFollowedView();
@@ -466,8 +470,9 @@ export function openSessionTools(focusTarget) {
         history.dataset.cardHistory = '';
         if (!replay) {
             const comparisons = node(card, 'div', undefined, 'tools-actions');
-            button(comparisons, 'Live sessions', openLiveComparison, 'tools-compare-live').title = 'Compare models being tracked in your open TierScope tabs.';
-            button(comparisons, 'Last 24h sessions', openRecentComparison, 'tools-compare-last24h').title = 'Compare all models with saved samples in the last 24 hours.';
+            button(comparisons, 'Compare all live sessions', openLiveComparison, 'tools-compare-live').title = 'Compare models being tracked in your open TierScope tabs and this Library.';
+            button(comparisons, 'Compare last 24h sessions', openRecentComparison, 'tools-compare-last24h').title = 'Compare all models with saved samples in the last 24 hours.';
+            backgroundComparisonControls(card, true);
         }
         if (replay) {
             const exports = node(card, 'div', undefined, 'tools-actions tools-exports');
@@ -481,6 +486,49 @@ export function openSessionTools(focusTarget) {
         const retry = button(card, 'Retry keeping', () => { keepFavoriteSession(star.dataset.favoriteRoom, true); render('library'); }, 'tools-retry-automatic' + suffix); retry.dataset.cardRetry = '';
         if (!replay) {
             const status = node(card, 'div', '', 'tools-muted'); status.id = 'session-save-info'; status.setAttribute('role', 'status');
+        }
+    }
+    function backgroundComparisonControls(parent, allowStart) {
+        const section = node(parent, 'div', undefined, 'tools-background-comparison');
+        if (allowStart) {
+            const form = node(section, 'form', undefined, 'tools-actions tools-background-form');
+            const input = node(form, 'input'); input.id = 'tools-background-room'; input.type = 'text';
+            input.placeholder = 'Room name'; input.maxLength = 100; input.required = true; input.value = backgroundRoomDraft;
+            input.setAttribute('aria-label', 'Room to compare without watching'); input.autocomplete = 'off'; input.spellcheck = false;
+            input.oninput = () => {backgroundRoomDraft = input.value; input.setCustomValidity('');};
+            const start = node(form, 'button', 'Compare without watching'); start.type = 'submit'; start.id = 'tools-compare-background';
+            form.onsubmit = event => {
+                event.preventDefault();
+                try {
+                    if (input.value.trim().toLowerCase() === getModelName().toLowerCase()) throw new Error('This room is already being tracked. Enter another room name.');
+                    startBackgroundComparison(input.value);
+                    backgroundRoomDraft = getBackgroundComparisonState().room;
+                    liveModelsState.selected.clear(); liveModelsState.choices.clear(); liveModelsState.autoPicked = true;
+                    liveModelsState.frozen = false; liveModelsState.chartState = null;
+                    selectBackgroundComparison(backgroundRoomDraft); compareMode = 'live'; render('compare');
+                } catch (error) {input.setCustomValidity(error.message); input.reportValidity();}
+            };
+            node(section, 'p', 'Compare one room without opening its video. Refreshes about once a minute while Library is open; not saved automatically.', 'tools-muted');
+        }
+        const status = node(section, 'p', '', 'tools-muted'); status.id = 'tools-background-status'; status.setAttribute('role', 'status');
+        button(section, 'Stop tracking this room', () => {stopBackgroundComparison(); refreshBackgroundControls();}, 'tools-background-stop');
+        refreshBackgroundControls();
+    }
+    function refreshBackgroundControls() {
+        const state = getBackgroundComparisonState(), status = dialog.querySelector('#tools-background-status');
+        if (!status) return;
+        status.hidden = !state.room;
+        status.textContent = state.room ? 'Compare without watching · ' + state.room + ' · ' + state.message : '';
+        status.style.color = ['retry', 'unavailable', 'offline'].includes(state.status) ? 'var(--panel-warning)' : 'var(--panel-muted)';
+        const stop = dialog.querySelector('#tools-background-stop'); if (stop) stop.hidden = !state.active;
+    }
+    function selectBackgroundComparison(targetRoom) {
+        const {sources} = readLiveModelSources(true);
+        for (const room of [getModelName().toLowerCase(), targetRoom]) {
+            const candidates = sources.filter(source => source.room === room && !['reset', 'unavailable', 'stale'].includes(source.status));
+            candidates.sort((a, b) => b.sampleCount - a.sampleCount || (b.sampleAt || 0) - (a.sampleAt || 0) || a.id.localeCompare(b.id));
+            const chosen = candidates[0];
+            if (chosen) {liveModelsState.selected.add(chosen.id); liveModelsState.choices.set(room, chosen.id);}
         }
     }
     function compareLiveWithPrevious() {
@@ -889,6 +937,7 @@ export function openSessionTools(focusTarget) {
                 chartDraw = recentView.draw; return;
             }
             if (compareMode === 'live') {
+                if (getBackgroundComparisonState().room) backgroundComparisonControls(content, false);
                 liveModelsView = renderLiveModelsComparison(content, {state: liveModelsState, currentRoom: getModelName(), getMetric: () => metric,
                     metricControl: (parent, changed) => metricStrip(parent, changed, 'tools-live-metric')});
                 chartDraw = liveModelsView.draw;
@@ -1031,9 +1080,12 @@ export function openSessionTools(focusTarget) {
         }
     }
     function close() {
+        if (detachBackgroundStatus) {detachBackgroundStatus(); detachBackgroundStatus = null;}
         if (compactView) {compactView.dispose(); compactView = null;}
         if (recentView) { recentView.dispose(); recentView = null; }
         if (liveModelsView) { liveModelsView.dispose(); liveModelsView = null; }
+        stopBackgroundComparison({clear: true});
+        if (detachBackgroundProvider) {detachBackgroundProvider(); detachBackgroundProvider = null;}
         fileRequest++; refreshSessionTools = null; refreshCapacity = null; chartDraw = null; historyView = null; followControls = null; liveCapture = null;
         if (chartDispose) { chartDispose(); chartDispose = null; }
         analysisStates.clear(); analysisView = null; analysisSources = null; analysisOutput = null; analysisReports = null;
@@ -1091,6 +1143,13 @@ export function openSessionTools(focusTarget) {
                 status, warning: sourceWarning || (compareMode === 'recent' ? !!(recentState.notice || recentState.liveNotice) : /unavailable|stale|pending|failed/i.test(status))};
         },
         modeChanged: enabled => detachDock.setChartOnly(enabled), redraw: () => detachDock.redraw()
+    });
+    detachBackgroundProvider = registerLiveModelSourceProvider({readSources: readBackgroundComparisonSources,
+        readArchive: readBackgroundComparisonArchive, subscribe: subscribeBackgroundComparison});
+    detachBackgroundStatus = subscribeBackgroundComparison(() => {
+        if (!current()) return;
+        refreshBackgroundControls();
+        if (liveModelsView) liveModelsView.refresh();
     });
     render('library'); dialog.querySelector('#tools-close').focus();
 }

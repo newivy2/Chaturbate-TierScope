@@ -20,7 +20,8 @@ export function createLiveComparisonState() {
 export function renderLiveModelsComparison(parent, {state, getMetric, metricControl, currentRoom = ''}) {
     const root = node(parent, 'section'); root.id = 'tools-live-models';
     node(root, 'h3', 'Live models comparison');
-    node(root, 'p', 'Uses scans from your other TierScope tabs. No additional API requests.', 'tools-muted');
+    const sourceExplanation = node(root, 'p', 'Uses scans from your other TierScope tabs. No additional API requests.', 'tools-muted');
+    sourceExplanation.id = 'tools-live-source-explanation';
     const controls = node(root, 'div', undefined, 'tools-actions');
     const freeze = button(controls, '', () => {
         state.frozen = !state.frozen;
@@ -97,7 +98,7 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
         plotSignature = ''; userNotice = ''; refresh();
     }
     function sourceText(source, index, at) {
-        return 'Tab ' + (index + 1) + ' · ' + describe(source) + ' · ' + (source.sampleAt ? new Date(source.sampleAt).toLocaleTimeString() : 'no sample');
+        return (source.kind === 'background' ? 'Compare without watching' : 'Tab ' + (index + 1)) + ' · ' + describe(source) + ' · ' + (source.sampleAt ? new Date(source.sampleAt).toLocaleTimeString() : 'no sample');
     }
     function updateRows(groups, at) {
         const query = state.query.trim().toLowerCase(), filtered = [...groups].filter(([room]) => room.includes(query));
@@ -109,7 +110,7 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
                 const row = node(rowsElement, 'div', undefined, 'tools-live-source'); row.dataset.liveRoom = room;
                 const label = node(row, 'label', undefined, 'tools-live-model');
                 const check = node(label, 'input'); check.type = 'checkbox'; node(label, 'strong', room);
-                const select = node(row, 'select'); select.dataset.liveTab = room; select.setAttribute('aria-label', 'Source tab for ' + room);
+                const select = node(row, 'select'); select.dataset.liveTab = room; select.setAttribute('aria-label', 'Tracking source for ' + room);
                 for (const source of sources) {const option = node(select, 'option'); option.value = source.id;}
                 const tabNote = node(row, 'span', '', 'tools-muted'); tabNote.dataset.liveTabNote = '';
                 const detail = node(row, 'span', '', 'tools-muted'); detail.dataset.liveStatus = '';
@@ -136,8 +137,8 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
             [...row.select.options].forEach((option, index) => {option.textContent = sourceText(sources[index], index, at);});
             const publishers = new Set(sources.filter(item => item.status !== 'unavailable' && item.status !== 'reset').map(item => item.publisherId));
             row.tabNote.hidden = publishers.size < 2;
-            row.tabNote.textContent = publishers.size + ' tabs · using the session with the most samples';
-            row.detail.textContent = describe(source);
+            row.tabNote.textContent = publishers.size + (sources.some(item => item.kind === 'background') ? ' sources' : ' tabs') + ' · using the session with the most samples';
+            row.detail.textContent = (source.kind === 'background' ? 'Compare without watching · ' : '') + describe(source);
             row.snapshot.textContent = source.sampleCount ? source.sampleCount.toLocaleString() + ' samples · latest ' + age(source.sampleAt, at) : 'Waiting for a first accepted sample';
             row.row.dataset.liveState = source.status;
             row.row.dataset.liveSampleCount = String(source.sampleCount);
@@ -211,6 +212,9 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
         try {
             notice = '';
             const at = Date.now(), result = readLiveModelSources(force), sources = [...(result.sources || [])], available = new Map(sources.map(source => [source.id, source]));
+            sourceExplanation.textContent = sources.some(source => source.kind === 'background') ?
+                'Uses scans from TierScope tabs and Compare without watching. Rooms tracked without watching make additional API requests while running.' :
+                'Uses scans from your other TierScope tabs. No additional API requests.';
             if (result.error) notice = 'Live sharing is unavailable: ' + result.error + '. Previous snapshots are retained.';
             for (const id of state.selected) {
                 if (available.has(id)) continue;
@@ -255,12 +259,12 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
             freeze.setAttribute('aria-pressed', String(state.frozen)); freeze.disabled = !state.snapshots.size;
             chooserTitle.textContent = 'Models being tracked · ' + groups.size + ' · ' + state.selected.size + ' selected';
             empty.hidden = groups.size > 0;
-            empty.textContent = 'Open broadcast rooms in other tabs with TierScope enabled. Models appear after their tabs start tracking; no favorite or saved Library session is required.';
+            empty.textContent = 'Open broadcast rooms in other tabs with TierScope enabled, or use Compare without watching in Current Live Session. Models appear after tracking starts; no favorite or saved Library session is required.';
             const unavailable = selected.filter(source => ['unavailable', 'reset', 'stale'].includes(source.status)).length;
             status.textContent = (state.frozen ? 'Frozen at ' + new Date(state.frozenAt).toLocaleTimeString() + ' · source status still updates.' : 'Following new scans · ' + state.selected.size + ' models selected.') +
                 (unavailable ? ' ' + unavailable + ' source(s) unavailable or stale; open Models being tracked for details.' : '') +
                 (notice ? ' ' + notice : '') + (userNotice ? ' ' + userNotice : '');
-            if (!groups.size) {chooser.open = true; status.textContent = 'Open a room in another TierScope tab to start comparing live models.';}
+            if (!groups.size) {chooser.open = true; status.textContent = 'Open a room in another TierScope tab or use Compare without watching in Current Live Session.';}
             for (const id of [...state.snapshots.keys()]) if (!state.selected.has(id)) state.snapshots.delete(id);
             retainLiveModelArchives(state.selected);
             const chosenIds = new Set(state.choices.values());

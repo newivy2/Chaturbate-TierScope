@@ -35,3 +35,14 @@ export function liveModelSourceStatus(source, at, epoch) {
     if (at - source.lastSeenAt > LIVE_MODEL_STALE_MS) return 'stale';
     return source.status;
 }
+
+// Comparison-only providers own their histories in memory. Reuse the same
+// identity/timestamp checks without implying that a GM record exists.
+export function decodeInMemoryLiveModelSource(value, at) {
+    if (!value || value.kind !== 'background' || value.recordKey !== null || value.recordSavedAt !== null ||
+        typeof value.revision !== 'string' || value.revision.length > 512) return null;
+    const source = decodeLiveModelSource({...value, revision: ''}, LIVE_MODEL_PREFIX + value.publisherId, at);
+    if (!source) return null;
+    return {...source, kind: 'background', revision: value.revision,
+        status: at - source.lastSeenAt > LIVE_MODEL_STALE_MS ? 'stale' : source.status};
+}

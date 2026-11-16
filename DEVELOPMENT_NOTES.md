@@ -10,6 +10,8 @@ Detailed reference for **3.31.1**. [Connection recovery guide](docs/connection-r
 
 ## Contents
 
+**3.32.0-beta.1 preview:** [Compare without watching](docs/compare-without-watching.md) adds a room-name box to Current Live Session for an isolated, temporary comparison without opening that room's tab. Main remains on 3.31.1 during beta review.
+
 [Live models comparison across tabs](docs/live-models-comparison.md) is available in **3.30.0**.
 
 - [Installation and updates](#installation-and-updates)
@@ -563,6 +565,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.32.0-beta.1** | Preview Compare without watching from a room-name box in Current Live Session. Track one temporary comparison room while Library is open, with separate samples and lower-priority API requests, explicit Stop and failure status. Clarify the four Current Live Session comparison shortcut labels. |
 | **3.31.1** | Release same-model Saved sessions shortcuts in full and chart-only views, a three-minute automatic keeping default that preserves saved choices, matching resize cursors and Scope’s live percentage/reset display. |
 | **3.31.1-beta.2** | Match Library’s resize cursor to Scope’s. Show Scope’s current scale on its reset button during resizing and after reload; clicking restores 100%. Keep Scope, full Library and chart-only Library sizes independent. |
 | **3.31.1-beta.1** | Make Saved sessions shortcuts rebuild the current model’s comparison with earlier saved sessions, clear stale selections/filters, and handle missing samples/history without choosing other models. Default automatic keeping to three minutes while preserving saved custom settings. |
