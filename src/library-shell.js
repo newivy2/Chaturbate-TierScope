@@ -50,6 +50,8 @@ export function libraryShell() {
 #tierscope-session-tools .tools-actions{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:8px 0}
 #tierscope-session-tools .tools-background-form input{flex:1 1 100px;width:100px}
 #tierscope-session-tools .tools-background-form button{flex:0 1 auto}
+#tierscope-session-tools .tools-background-row{display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--panel-divider)}
+#tierscope-session-tools .tools-background-row>[data-background-message]{flex:1;min-width:0;overflow-wrap:anywhere}
 #tierscope-session-tools .tools-muted{color:var(--panel-muted);font-size:.92em;line-height:1.45}
 #tierscope-session-tools .tools-comparison-mode{padding-bottom:7px;border-bottom:1px solid var(--panel-divider)}
 #tierscope-session-tools .tools-comparison-mode button{flex:1}

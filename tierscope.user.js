@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.32.0-beta.1
+// @version      3.32.0-beta.2
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -2478,7 +2478,7 @@ underlying system, so should run in the browser, Node, or Plask.
       return (value == null ? void 0 : value.version) === 1 && Number.isSafeInteger(value.until) && value.until >= 0 && value.until <= 864e13 ? value.until : 0;
     }
     function deadline() {
-      for (const owner of ["tierscope", "viewer-probe"]) rememberedUntil = Math.max(rememberedUntil, validUntil(read("cooldown:" + owner)));
+      for (const owner2 of ["tierscope", "viewer-probe"]) rememberedUntil = Math.max(rememberedUntil, validUntil(read("cooldown:" + owner2)));
       return rememberedUntil;
     }
     function publish(until) {
@@ -5859,9 +5859,10 @@ underlying system, so should run in the browser, Node, or Plask.
     return room2;
   }
   function createBackgroundComparison(effects) {
-    let session = null, generation = 0, timer = null, pending = null;
-    const listeners = /* @__PURE__ */ new Set(), interval = effects.interval || INTERVAL_MS;
+    const sessions = /* @__PURE__ */ new Map(), listeners = /* @__PURE__ */ new Set(), interval = effects.interval || INTERVAL_MS;
     const now = effects.now, setTimer = effects.setTimeout, clearTimer = effects.clearTimeout;
+    const absenceStopMs = 15 * 6e4, absenceGapMs = interval * 2 + TIMEOUT_MS;
+    let latestRoom = null, timer = null, work = Promise.resolve();
     function emit() {
       for (const changed of listeners) {
         try {
@@ -5870,64 +5871,103 @@ underlying system, so should run in the browser, Node, or Plask.
         }
       }
     }
-    function state() {
+    function targetFor(room2) {
+      return sessions.get(room2 || latestRoom) || null;
+    }
+    function view(target) {
       var _a;
-      return Object.freeze(session ? {
-        room: session.room,
-        active: session.active,
-        status: session.status,
-        message: session.message,
-        sampleCount: session.history.timestamps.length,
-        sampleAt: (_a = session.history.timestamps.at(-1)) != null ? _a : null,
-        nextAt: session.nextAt
-      } : { room: null, active: false, status: "stopped", message: "", sampleCount: 0, sampleAt: null, nextAt: null });
+      return Object.freeze(target ? {
+        room: target.room,
+        active: target.active,
+        status: target.status,
+        message: target.message,
+        sampleCount: target.history.timestamps.length,
+        sampleAt: (_a = target.history.timestamps.at(-1)) != null ? _a : null,
+        nextAt: target.nextAt,
+        absentSince: target.absentSince,
+        absenceObservedAt: target.absenceObservedAt,
+        absenceObservations: target.absenceObservations,
+        absenceMs: target.absentSince === null ? 0 : Math.max(0, target.absenceObservedAt - target.absentSince),
+        stoppedReason: target.stoppedReason
+      } : {
+        room: null,
+        active: false,
+        status: "stopped",
+        message: "",
+        sampleCount: 0,
+        sampleAt: null,
+        nextAt: null,
+        absentSince: null,
+        absenceObservedAt: null,
+        absenceObservations: 0,
+        absenceMs: 0,
+        stoppedReason: null
+      });
+    }
+    function state(room2) {
+      return view(targetFor(room2));
+    }
+    function states() {
+      return Object.freeze([...sessions.values()].map(view));
     }
     function clearScheduled() {
       if (timer !== null) clearTimer(timer);
       timer = null;
     }
-    function stop(options = {}) {
-      generation++;
+    function schedule() {
       clearScheduled();
-      if (session) {
-        session.active = false;
-        session.status = "stopped";
-        session.message = "Comparison tracking stopped.";
-        session.nextAt = null;
-        if (session.controller) session.controller.abort();
+      const due = [...sessions.values()].filter((target) => target.active && !target.pending);
+      if (!due.length) return;
+      const nextAt = Math.min(...due.map((target) => target.nextAt));
+      timer = setTimer(() => {
+        timer = null;
+        for (const target of sessions.values()) if (target.active && !target.pending && target.nextAt <= now()) refresh(target.room);
+        schedule();
+      }, Math.max(0, nextAt - now()));
+    }
+    function resetAbsence(target) {
+      target.absentSince = null;
+      target.absenceObservedAt = null;
+      target.absenceObservations = 0;
+    }
+    function stop(value = {}, options = {}) {
+      const room2 = typeof value === "string" ? normalizeBackgroundRoom(value) : null;
+      const settings = room2 ? options : value || {};
+      const targets = room2 ? [sessions.get(room2)].filter((target) => !!target) : [...sessions.values()];
+      for (const target of targets) {
+        target.generation++;
+        target.active = false;
+        target.status = "stopped";
+        target.stoppedReason = "manual";
+        target.message = "Comparison tracking stopped.";
+        target.nextAt = null;
+        if (target.controller) target.controller.abort();
+        if (settings.clear) sessions.delete(target.room);
       }
-      pending = null;
-      if (options.clear) session = null;
+      if (!sessions.has(latestRoom)) latestRoom = [...sessions.keys()].at(-1) || null;
+      schedule();
       emit();
-      return state();
+      return room2 ? state(room2) : state();
     }
     function current(target, token) {
-      return session === target && target.active && generation === token && effects.host() === target.host;
+      return sessions.get(target.room) === target && target.active && target.generation === token && effects.host() === target.host && (!effects.ownership || target.ownership !== null && effects.ownership(target.room) === target.ownership);
     }
-    function schedule(target) {
-      clearScheduled();
-      if (target === session && target.active) timer = setTimer(() => {
-        timer = null;
-        refresh();
-      }, Math.max(0, target.nextAt - now()));
-    }
-    function start(value) {
-      const room2 = normalizeBackgroundRoom(value);
-      stop({ clear: true });
-      const at = now(), publisherId2 = "background-" + effects.id(), history = { timestamps: [], breaks: [] }, highs = {};
+    function fresh(room2, at, publisherId2) {
+      const history = { timestamps: [], breaks: [] }, highs = {};
       for (const key of SERIES) {
         history[key] = [];
         highs[key] = { value: 0, time: null };
       }
-      session = {
+      return {
         room: room2,
         host: effects.host(),
+        ownership: effects.ownership ? effects.ownership(room2) : "standalone",
         publisherId: publisherId2,
         startedAt: at,
         active: true,
         status: "waiting",
         message: "Waiting for the first audience sample.",
-        nextAt: at,
+        nextAt: now(),
         history,
         highs,
         roomHigh: 0,
@@ -5937,76 +5977,143 @@ underlying system, so should run in the browser, Node, or Plask.
         failures: 0,
         gap: false,
         coveredMs: 0,
-        controller: null
+        controller: null,
+        generation: 0,
+        pending: null,
+        stoppedReason: null,
+        absentSince: null,
+        absenceObservedAt: null,
+        absenceObservations: 0
       };
-      schedule(session);
-      emit();
-      return state();
     }
-    function readSources() {
-      var _a;
-      if (!session) return { sources: [], error: "" };
-      if (effects.host() !== session.host) {
-        stop({ clear: true });
-        return { sources: [], error: "" };
+    function start(value) {
+      const room2 = normalizeBackgroundRoom(value), existing = sessions.get(room2);
+      latestRoom = room2;
+      if (existing == null ? void 0 : existing.active) return state(room2);
+      if (existing) stop(room2, { clear: true });
+      const target = fresh(room2, now(), "background-" + effects.id());
+      sessions.set(room2, target);
+      schedule();
+      emit();
+      return state(room2);
+    }
+    function restore(value, checkpoint2) {
+      var _a, _b;
+      const room2 = normalizeBackgroundRoom(value);
+      if ((_a = sessions.get(room2)) == null ? void 0 : _a.active) {
+        latestRoom = room2;
+        return state(room2);
       }
-      const s = session, sessionId = "background@" + s.startedAt;
-      return { sources: [Object.freeze({
+      if (typeof ((_b = checkpoint2 == null ? void 0 : checkpoint2.archive) == null ? void 0 : _b.room) !== "string" || checkpoint2.archive.room.toLowerCase() !== room2) throw new Error("Invalid saved background comparison.");
+      const archive = effects.archive(room2, checkpoint2.archive.session), source = checkpoint2 == null ? void 0 : checkpoint2.source;
+      const session = archive.session, startAt = session.sessionStartedAt;
+      if (archive.room.toLowerCase() !== room2 || !source || source.room !== room2 || source.kind !== "background" || !/^background-[a-z0-9-]{1,140}$/i.test(source.publisherId) || !Number.isSafeInteger(startAt) || startAt < 0 || source.sessionStartedAt !== startAt || source.sessionId !== "background@" + startAt || source.id !== source.publisherId + ":" + room2 + ":background@" + startAt || !session.history.timestamps.length || session.history.timestamps.length > effects.maxHistory()) {
+        throw new Error("Invalid saved background comparison.");
+      }
+      const target = fresh(room2, startAt, source.publisherId);
+      for (const [key, values] of Object.entries(session.history)) target.history[key] = values.slice();
+      for (const key of SERIES) target.highs[key] = __spreadValues({}, session.sessionHighs[key]);
+      target.roomHigh = session.roomTotalHigh;
+      target.roomHighTime = session.roomTotalHighTime;
+      target.coveredMs = session.pausedElapsedTime;
+      target.revision = /^\d+$/.test(source.revision) && Number.isSafeInteger(Number(source.revision)) && Number(source.revision) < Number.MAX_SAFE_INTEGER ? Number(source.revision) + 1 : 1;
+      target.gap = true;
+      target.message = "Resuming this comparison. The interruption remains a recording gap.";
+      if (sessions.has(room2)) stop(room2, { clear: true });
+      sessions.set(room2, target);
+      latestRoom = room2;
+      schedule();
+      emit();
+      return state(room2);
+    }
+    function sourceFor(target) {
+      var _a;
+      const sessionId = "background@" + target.startedAt;
+      return Object.freeze({
         version: 1,
-        id: s.publisherId + ":" + s.room + ":" + sessionId,
-        publisherId: s.publisherId,
-        room: s.room,
+        id: target.publisherId + ":" + target.room + ":" + sessionId,
+        publisherId: target.publisherId,
+        room: target.room,
         roomEpoch: "background",
         sessionId,
-        sessionStartedAt: s.startedAt,
+        sessionStartedAt: target.startedAt,
         kind: "background",
-        status: s.status,
+        status: target.status,
         lastSeenAt: now(),
-        sampleAt: (_a = s.history.timestamps.at(-1)) != null ? _a : null,
-        sampleCount: s.history.timestamps.length,
-        revision: String(s.revision),
+        sampleAt: (_a = target.history.timestamps.at(-1)) != null ? _a : null,
+        sampleCount: target.history.timestamps.length,
+        revision: String(target.revision),
         recordKey: null,
         recordSavedAt: null
-      })], error: "" };
+      });
+    }
+    function readSources() {
+      const outdated = [...sessions.values()].filter((target) => effects.host() !== target.host);
+      for (const target of outdated) stop(target.room, { clear: true });
+      return { sources: [...sessions.values()].map(sourceFor), error: "" };
     }
     function readArchive(source) {
-      const actual = readSources().sources[0];
+      const target = sessions.get(source.room), actual = target ? sourceFor(target) : null;
       if (!actual || source.id !== actual.id || source.revision !== actual.revision || !actual.sampleCount) {
         throw new Error("This background comparison changed or has no accepted samples yet.");
       }
-      if (!session.archive) {
+      if (!target.archive) {
         const history = {}, sessionHighs = {};
-        for (const [key, values] of Object.entries(session.history)) history[key] = values.slice();
-        for (const key of SERIES) sessionHighs[key] = __spreadValues({}, session.highs[key]);
-        const lastAt = history.timestamps.at(-1);
-        session.archive = freezeRecordingData(effects.archive(session.room, {
+        for (const [key, values] of Object.entries(target.history)) history[key] = values.slice();
+        for (const key of SERIES) sessionHighs[key] = __spreadValues({}, target.highs[key]);
+        target.archive = freezeRecordingData(effects.archive(target.room, {
           schemaVersion: effects.schemaVersion(),
-          timestamp: lastAt,
+          timestamp: history.timestamps.at(-1),
           history,
-          sessionStartedAt: session.startedAt,
+          sessionStartedAt: target.startedAt,
           sessionStartEstimated: false,
           sessionHighs,
-          roomTotalHigh: session.roomHigh,
-          roomTotalHighTime: session.roomHighTime,
-          pausedElapsedTime: session.coveredMs,
+          roomTotalHigh: target.roomHigh,
+          roomTotalHighTime: target.roomHighTime,
+          pausedElapsedTime: target.coveredMs,
           isPaused: true,
           isStopped: false,
           stoppedAt: null,
           stopReason: null
         }));
       }
-      return session.archive;
+      return target.archive;
+    }
+    function observeAbsence(target, at) {
+      if (target.absenceObservedAt === null || at <= target.absenceObservedAt || at - target.absenceObservedAt > absenceGapMs) {
+        target.absentSince = at;
+        target.absenceObservations = 0;
+      }
+      target.absenceObservedAt = at;
+      target.absenceObservations++;
+      target.gap = true;
+      target.failures = 0;
+      if (target.absenceObservations >= 2 && at - target.absentSince > absenceStopMs) {
+        target.active = false;
+        target.status = "stopped";
+        target.stoppedReason = "absence";
+        target.nextAt = null;
+        target.message = "Stopped after confirming the broadcaster absent for more than 15 minutes.";
+      } else {
+        target.status = "waiting";
+        target.nextAt = at + interval;
+        target.message = "Broadcaster absent in the latest room list. Confirming absence before stopping after 15 minutes.";
+      }
     }
     function accept(target, snapshot, at) {
       validateRoomSnapshot(snapshot);
       const owners = snapshot.users.filter((user) => user.isOwner);
+      if (!owners.length) {
+        observeAbsence(target, at);
+        return false;
+      }
       if (owners.length !== 1 || owners[0].username.toLowerCase() !== target.room) {
         throw Object.assign(new Error("The response does not identify this room’s broadcaster. Waiting for a confirmed room response."), { roomUnavailable: true });
       }
+      resetAbsence(target);
       const history = target.history, previousAt = history.timestamps.at(-1);
       if (previousAt !== void 0 && at <= previousAt) throw new Error("Waiting for the recording clock to advance.");
-      const previousTotal = previousAt === void 0 ? 0 : history.total.at(-1) + history.anonymous.at(-1);
-      const previousUsers = history.total.at(-1) || 0;
+      const previousTotal = previousAt === void 0 ? 0 : history.total.at(-1) + history.anonymous.at(-1), previousUsers = history.total.at(-1) || 0;
       if (previousTotal && (!snapshot.roomTotal || Math.abs(snapshot.roomTotal - previousTotal) / previousTotal <= 0.1 && previousUsers && (previousUsers - snapshot.users.length) / previousUsers > 0.5)) throw new Error("Audience sample was incomplete.");
       const counts = Object.fromEntries(SERIES.map((key) => [key, 0]));
       for (const user of snapshot.users) {
@@ -6016,7 +6123,7 @@ underlying system, so should run in the browser, Node, or Plask.
       counts.total = snapshot.users.length;
       counts.anonymous = snapshot.anonymousCount;
       counts.withTokens = ["red", "green", "purple", "pink", "dark-blue", "light-blue"].reduce((sum, key) => sum + counts[key], 0);
-      const gap = previousAt !== void 0 && (target.gap || at - previousAt > interval * 2 + TIMEOUT_MS);
+      const gap = previousAt !== void 0 && (target.gap || at - previousAt > absenceGapMs);
       if (previousAt !== void 0 && !gap) target.coveredMs += at - previousAt;
       history.timestamps.push(at);
       history.breaks.push(gap);
@@ -6033,12 +6140,18 @@ underlying system, so should run in the browser, Node, or Plask.
       target.archive = null;
       target.gap = false;
       target.failures = 0;
+      return true;
     }
     async function run(target, token) {
-      let timeout = null;
+      let timeout = null, abortListener = null;
       try {
+        if (!current(target, token)) {
+          target.nextAt = now() + interval;
+          return;
+        }
         const permission = effects.permission();
         if (permission.offline || permission.blocked || permission.until > now()) {
+          resetAbsence(target);
           target.gap = true;
           target.status = permission.offline ? "offline" : "retry";
           target.message = permission.offline ? "Offline. Comparison will retry when the connection returns." : "Waiting for the shared API restriction to end.";
@@ -6050,12 +6163,13 @@ underlying system, so should run in the browser, Node, or Plask.
         target.message = "Waiting for a background API request slot.";
         emit();
         const canRequest = () => {
-          if (!current(target, token)) return false;
           const policy = effects.permission();
-          return !policy.offline && !policy.blocked && policy.until <= now();
+          return current(target, token) && !policy.offline && !policy.blocked && policy.until <= now();
         };
         if (!await effects.waitForSlot(canRequest) || !canRequest()) {
           if (current(target, token)) {
+            resetAbsence(target);
+            target.gap = true;
             target.status = "retry";
             target.message = "Background request deferred. Normal tracking has priority.";
             target.nextAt = now() + interval;
@@ -6070,51 +6184,75 @@ underlying system, so should run in the browser, Node, or Plask.
             controller.abort();
             reject(Object.assign(new Error("Background request timed out."), { connectionFailure: true }));
           }, TIMEOUT_MS);
+          abortListener = () => reject(new Error("Background request canceled."));
+          controller.signal.addEventListener("abort", abortListener, { once: true });
         })]);
         if (!current(target, token)) return;
-        accept(target, snapshot, now());
-        target.status = "tracking";
-        target.message = "Tracking " + target.room + " without opening their room. Updates every 60 seconds.";
-        target.nextAt = now() + interval;
+        if (accept(target, snapshot, now())) {
+          target.status = "tracking";
+          target.message = "Tracking " + target.room + " without opening their room. Updates about once a minute.";
+          target.nextAt = now() + interval;
+        }
         emit();
       } catch (error) {
         if (!current(target, token)) return;
+        resetAbsence(target);
         target.gap = true;
         target.failures = Math.min(20, target.failures + 1);
         const status = error.status || 0, at = now();
         const wait = status === 429 || status >= 500 ? Math.min(9e5, interval * Math.pow(2, target.failures - 1)) : interval;
         target.nextAt = Math.max(at + wait, error.retryAt || 0);
         if (status === 429 || status >= 500 || error.retryAt > at) effects.publish(target.nextAt);
-        target.active = ![400, 401, 403, 404].includes(status);
-        target.status = target.active ? effects.permission().offline ? "offline" : error.roomUnavailable ? "unavailable" : "retry" : "unavailable";
-        target.message = status ? "Compare without watching: HTTP " + status + (target.active ? ". Retrying after the API wait." : ". Room data unavailable; check the username and try again.") : "Compare without watching: " + error.message + " Previous samples are retained.";
-        if (!target.active) target.nextAt = null;
+        target.status = effects.permission().offline ? "offline" : error.roomUnavailable || [400, 401, 403, 404].includes(status) ? "unavailable" : "retry";
+        target.message = status ? "Compare without watching: HTTP " + status + ". Room data unavailable; tracking will retry." : "Compare without watching: " + error.message + " Previous samples are retained.";
         emit();
       } finally {
         if (timeout !== null) clearTimer(timeout);
-        if (session === target) target.controller = null;
+        if (target.controller && abortListener) target.controller.signal.removeEventListener("abort", abortListener);
+        target.controller = null;
+        if (sessions.get(target.room) === target && target.active && !current(target, token)) {
+          resetAbsence(target);
+          target.gap = true;
+          target.nextAt = now() + interval;
+        }
       }
     }
-    function refresh() {
-      if (!session || !session.active) return Promise.resolve(state());
-      if (effects.host() !== session.host) {
-        stop({ clear: true });
-        return Promise.resolve(state());
+    function refresh(room2) {
+      if (room2 === void 0) {
+        return Promise.all([...sessions.values()].filter((target2) => target2.active).map((target2) => refresh(target2.room))).then(() => state());
       }
-      if (pending) return pending;
-      const target = session, token = generation;
-      clearScheduled();
-      const operation = run(target, token).finally(() => {
-        if (pending === operation) pending = null;
-        if (current(target, token)) schedule(target);
+      const target = sessions.get(normalizeBackgroundRoom(room2));
+      if (!target || !target.active) return Promise.resolve(state(room2));
+      if (effects.host() !== target.host) {
+        stop(target.room, { clear: true });
+        return Promise.resolve(state(room2));
+      }
+      if (target.pending) return target.pending;
+      const token = target.generation;
+      const operation = work.then(() => run(target, token)).finally(() => {
+        if (target.pending === operation) target.pending = null;
+        schedule();
       });
-      pending = operation;
-      return operation;
+      target.pending = operation;
+      work = operation.catch(() => {
+      });
+      schedule();
+      return operation.then(() => state(room2));
     }
-    return { start, stop, state, refresh, readSources, readArchive, subscribe(changed) {
-      listeners.add(changed);
-      return () => listeners.delete(changed);
-    } };
+    return {
+      start,
+      restore,
+      stop,
+      state,
+      states,
+      refresh,
+      readSources,
+      readArchive,
+      subscribe(changed) {
+        listeners.add(changed);
+        return () => listeners.delete(changed);
+      }
+    };
   }
   function createBackgroundPermissionReader(effects) {
     return () => {
@@ -6143,10 +6281,15 @@ underlying system, so should run in the browser, Node, or Plask.
     foregroundPolicy: () => runtime.requestPolicyCache,
     deadline: () => Math.max(coordinator.deadline(), requestCoordinator.deadline())
   });
+  var ownershipProvider = () => "standalone";
+  function setBackgroundComparisonOwnership(provider) {
+    ownershipProvider = typeof provider === "function" ? provider : () => "standalone";
+  }
   var comparison = createBackgroundComparison({
     now: () => Date.now(),
-    host: () => location.href,
+    host: () => location.origin,
     id: makeStorageId,
+    ownership: (room2) => ownershipProvider(room2),
     setTimeout: (fn, ms) => setTimeout(fn, ms),
     clearTimeout: (id) => clearTimeout(id),
     maxHistory: () => runtime.MAX_HISTORY_LENGTH,
@@ -6190,24 +6333,23 @@ underlying system, so should run in the browser, Node, or Plask.
       return __spreadProps(__spreadValues({}, snapshot), { roomTotal: snapshot.totalUsers, source: "API" });
     }
   });
-  function discardBackgroundComparison() {
-    comparison.stop({ clear: true });
-  }
   function startBackgroundComparison(room2) {
-    const state = comparison.start(room2);
-    window.addEventListener("pagehide", discardBackgroundComparison);
-    return state;
+    return comparison.start(room2);
   }
-  function stopBackgroundComparison(options = {}) {
-    const state = comparison.stop(options);
-    if (options.clear) window.removeEventListener("pagehide", discardBackgroundComparison);
-    return state;
+  function restoreBackgroundComparison(room2, record) {
+    return comparison.restore(room2, record);
   }
-  function getBackgroundComparisonState() {
-    return comparison.state();
+  function stopBackgroundComparison(roomOrOptions = {}, options = {}) {
+    return comparison.stop(roomOrOptions, options);
   }
-  function refreshBackgroundComparison() {
-    return comparison.refresh();
+  function getBackgroundComparisonState(room2) {
+    return comparison.state(room2);
+  }
+  function getBackgroundComparisonStates() {
+    return comparison.states();
+  }
+  function refreshBackgroundComparison(room2) {
+    return comparison.refresh(room2);
   }
   function readBackgroundComparisonSources() {
     return comparison.readSources();
@@ -6217,6 +6359,1065 @@ underlying system, so should run in the browser, Node, or Plask.
   }
   function subscribeBackgroundComparison(changed) {
     return comparison.subscribe(changed);
+  }
+
+  // src/live-model-data.js
+  var LIVE_MODEL_PREFIX = "tierscope:live:v1:source:";
+  var LIVE_MODEL_NOTICE = "tierscope:live:v1:changed";
+  var LIVE_MODEL_HEARTBEAT_MS = 3e4;
+  var LIVE_MODEL_STALE_MS = 18e4;
+  var statuses = /* @__PURE__ */ new Set(["tracking", "paused", "stopped", "waiting", "offline", "retry", "reset", "unavailable"]);
+  var timestamp = (value) => Number.isSafeInteger(value) && value >= 0 && value <= 864e13;
+  function decodeLiveModelSource(value, key, at) {
+    if (!value || value.version !== 1 || typeof value.publisherId !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.publisherId) || key !== LIVE_MODEL_PREFIX + value.publisherId || typeof value.room !== "string" || !/^[a-z0-9_-]{1,100}$/.test(value.room) || typeof value.roomEpoch !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.roomEpoch) || !(value.sessionStartedAt === null || timestamp(value.sessionStartedAt)) || value.sessionId !== value.roomEpoch + "@" + (value.sessionStartedAt === null ? "pending" : value.sessionStartedAt) || value.id !== value.publisherId + ":" + value.room + ":" + value.sessionId || !statuses.has(value.status) || !timestamp(value.lastSeenAt) || value.lastSeenAt > at + 5e3 || !Number.isSafeInteger(value.sampleCount) || value.sampleCount < 0 || value.sampleCount > 1e6 || !(value.sampleCount === 0 ? value.sampleAt === null : timestamp(value.sampleAt) && value.sampleAt <= value.lastSeenAt) || !(value.sessionStartedAt === null || value.sessionStartedAt <= value.lastSeenAt) || typeof value.revision !== "string" || value.revision.length > 512) return null;
+    if (value.recordKey === null) {
+      if (value.recordSavedAt !== null || value.revision !== "") return null;
+    } else if (typeof value.recordKey !== "string" || !value.recordKey.startsWith("tierscope:tab:v2:" + value.room + ":") || !/^[a-z0-9-]{1,160}$/i.test(value.recordKey.slice(("tierscope:tab:v2:" + value.room + ":").length)) || !timestamp(value.recordSavedAt) || value.recordSavedAt > value.lastSeenAt || !value.revision) return null;
+    return {
+      version: 1,
+      id: value.id,
+      publisherId: value.publisherId,
+      room: value.room,
+      roomEpoch: value.roomEpoch,
+      sessionId: value.sessionId,
+      sessionStartedAt: value.sessionStartedAt,
+      status: value.status,
+      lastSeenAt: value.lastSeenAt,
+      sampleAt: value.sampleAt,
+      sampleCount: value.sampleCount,
+      revision: value.revision,
+      recordKey: value.recordKey,
+      recordSavedAt: value.recordSavedAt
+    };
+  }
+  function liveModelSourceStatus(source, at, epoch) {
+    if (source.roomEpoch !== epoch) return "reset";
+    if (at - source.lastSeenAt > LIVE_MODEL_STALE_MS) return "stale";
+    return source.status;
+  }
+  function decodeInMemoryLiveModelSource(value, at) {
+    if (!value || value.kind !== "background" || value.recordKey !== null || value.recordSavedAt !== null || typeof value.revision !== "string" || value.revision.length > 512) return null;
+    const source = decodeLiveModelSource(__spreadProps(__spreadValues({}, value), { revision: "" }), LIVE_MODEL_PREFIX + value.publisherId, at);
+    if (!source) return null;
+    return __spreadProps(__spreadValues({}, source), {
+      kind: "background",
+      revision: value.revision,
+      status: at - source.lastSeenAt > LIVE_MODEL_STALE_MS ? "stale" : source.status
+    });
+  }
+
+  // src/background-recording-storage.js
+  var BACKGROUND_RECORDING_PREFIX = "tierscope:background-recording:v1:";
+  var BACKGROUND_RECORDING_NOTICE = "tierscope:background-recording-notice:v1";
+  var BACKGROUND_RECORDING_TTL_MS = 3 * 60 * 60 * 1e3;
+  function recordingRoom(value) {
+    if (typeof value !== "string") throw new Error("Invalid background recording room.");
+    const room2 = value.toLowerCase();
+    if (value !== value.trim() || !/^[a-z0-9_-]{1,100}$/.test(room2) || !roomFromUrl("https://chaturbate.com/" + room2 + "/")) {
+      throw new Error("Invalid background recording room.");
+    }
+    return room2;
+  }
+  function createBackgroundRecordingStore(effects) {
+    const libraryCheckpoints = /* @__PURE__ */ new Map();
+    const keyFor = (room2) => BACKGROUND_RECORDING_PREFIX + recordingRoom(room2);
+    function clean(room2, input, savedAt) {
+      var _a, _b, _c, _d;
+      const archive = effects.validateArchive(input == null ? void 0 : input.archive), raw = input == null ? void 0 : input.source, state = input == null ? void 0 : input.state;
+      if (!isStorageTimestamp(savedAt) || savedAt > effects.now() + 5e3 || archive.room.toLowerCase() !== room2 || !raw || raw.kind !== "background" || raw.recordKey !== null || raw.recordSavedAt !== null || typeof raw.revision !== "string" || raw.revision.length > 512) throw new Error("Invalid background recording.");
+      const metadata = decodeLiveModelSource(__spreadProps(__spreadValues({}, raw), { revision: "" }), LIVE_MODEL_PREFIX + raw.publisherId, effects.now());
+      const history = archive.session.history, lastAt = history.timestamps.at(-1);
+      if (!metadata || metadata.room !== room2 || metadata.roomEpoch !== "background" || metadata.sessionStartedAt !== archive.session.sessionStartedAt || metadata.sampleCount !== history.timestamps.length || metadata.sampleAt !== lastAt || metadata.lastSeenAt > savedAt + 5e3 || lastAt > savedAt + 5e3) {
+        throw new Error("Background source and recording do not match.");
+      }
+      if (!state || state.room !== room2 || typeof state.active !== "boolean" || state.status !== metadata.status || typeof state.message !== "string" || state.message.length > 2e3 || state.sampleCount !== metadata.sampleCount || state.sampleAt !== metadata.sampleAt || !(state.nextAt === null || isStorageTimestamp(state.nextAt))) {
+        throw new Error("Invalid background recording status.");
+      }
+      const absentSince = (_a = state.absentSince) != null ? _a : null, absenceObservations = (_b = state.absenceObservations) != null ? _b : 0;
+      const absenceObservedAt = (_c = state.absenceObservedAt) != null ? _c : absentSince;
+      const absenceMs = absentSince === null ? 0 : Math.max(0, absenceObservedAt - absentSince);
+      const stoppedReason = (_d = state.stoppedReason) != null ? _d : null;
+      if (!(absentSince === null || isStorageTimestamp(absentSince) && absentSince <= savedAt + 5e3) || !Number.isSafeInteger(absenceObservations) || absenceObservations < 0 || !(absenceObservedAt === null || isStorageTimestamp(absenceObservedAt) && absenceObservedAt <= savedAt + 5e3) || absentSince === null && (absenceObservedAt !== null || absenceObservations !== 0) || absentSince !== null && (absenceObservedAt === null || absenceObservedAt < absentSince) || state.absenceMs !== void 0 && state.absenceMs !== absenceMs || !(stoppedReason === null || typeof stoppedReason === "string" && stoppedReason.length <= 100)) {
+        throw new Error("Invalid background absence status.");
+      }
+      return freezeRecordingData({
+        schemaVersion: 1,
+        room: room2,
+        savedAt,
+        archive,
+        source: __spreadProps(__spreadValues({}, metadata), { kind: "background", revision: raw.revision }),
+        state: {
+          room: room2,
+          active: state.active,
+          status: state.status,
+          message: state.message,
+          sampleCount: state.sampleCount,
+          sampleAt: state.sampleAt,
+          nextAt: state.nextAt,
+          absentSince,
+          absenceObservedAt,
+          absenceObservations,
+          absenceMs,
+          stoppedReason
+        }
+      });
+    }
+    function decode(room2, raw) {
+      const record = JSON.parse(raw);
+      if (!record || record.schemaVersion !== 1 || record.room !== room2) throw new Error("Unsupported background recording.");
+      return clean(room2, record, record.savedAt);
+    }
+    function read(room2) {
+      room2 = recordingRoom(room2);
+      const raw = effects.get(keyFor(room2), void 0);
+      if (raw === void 0) return null;
+      const record = decode(room2, raw);
+      return effects.now() - record.savedAt > BACKGROUND_RECORDING_TTL_MS ? null : record;
+    }
+    function readAll() {
+      const records = [];
+      for (const key of effects.list().filter((value) => value.startsWith(BACKGROUND_RECORDING_PREFIX))) {
+        try {
+          const room2 = key.slice(BACKGROUND_RECORDING_PREFIX.length);
+          if (keyFor(room2) !== key) continue;
+          const record = read(room2);
+          if (record) records.push(record);
+        } catch (_) {
+        }
+      }
+      return records;
+    }
+    function keepFavorite(record) {
+      const room2 = record.room, state = { saved: false, waiting: false, error: "" };
+      try {
+        const preference = effects.favorite(room2);
+        if (!preference.favorite || !preference.autoKeep) {
+          libraryCheckpoints.delete(room2);
+          return state;
+        }
+        const minimumMinutes = effects.minimumMinutes(), coveredMs = recordedCoverageMs(record.archive.session.history);
+        Object.assign(state, { minimumMinutes, coveredMs, waiting: coveredMs < minimumMinutes * 6e4 });
+        if (state.waiting) return state;
+        const signature = [
+          record.source.id,
+          record.source.revision,
+          record.state.active,
+          record.state.status,
+          record.state.stoppedReason
+        ].join(":");
+        if (libraryCheckpoints.get(room2) === signature) return __spreadProps(__spreadValues({}, state), { saved: true });
+        const result = effects.keep(record.archive);
+        libraryCheckpoints.set(room2, signature);
+        return __spreadValues(__spreadProps(__spreadValues({}, state), { saved: true }), result);
+      } catch (error) {
+        return __spreadProps(__spreadValues({}, state), { error: error.message || String(error) });
+      }
+    }
+    function save(room2, input) {
+      let record;
+      try {
+        room2 = recordingRoom(room2);
+        record = clean(room2, input, effects.now());
+      } catch (error2) {
+        return { saved: false, error: error2.message || String(error2), library: { saved: false, waiting: false, error: "" } };
+      }
+      const key = keyFor(room2), value = JSON.stringify(record);
+      let saved = false, error = "", before, attempted = false;
+      try {
+        before = effects.get(key, void 0);
+        if (before !== void 0) {
+          const previous = decode(room2, before), prior = previous.archive.session, next = record.archive.session;
+          if (prior.sessionStartedAt > next.sessionStartedAt || prior.sessionStartedAt === next.sessionStartedAt && (previous.source.sampleAt > record.source.sampleAt || previous.source.sampleCount > record.source.sampleCount)) {
+            throw new Error("A newer background recording already exists.");
+          }
+        }
+        if (effects.get(key, void 0) !== before) throw new Error("Background recording changed in another tab.");
+        attempted = true;
+        effects.set(key, value);
+        if (effects.get(key, void 0) !== value) throw new Error("Background recording save could not be verified.");
+        saved = true;
+      } catch (failure) {
+        error = failure.message || String(failure);
+        try {
+          if (attempted && effects.get(key, void 0) === value) {
+            if (before === void 0) effects.remove(key);
+            else effects.set(key, before);
+          }
+        } catch (_) {
+          error += " Recovery rollback could not be verified.";
+        }
+      }
+      const library = keepFavorite(record);
+      if (library.error) error = (error ? error + " " : "") + library.error;
+      if (saved && effects.notice) {
+        try {
+          effects.notice({ version: 1, room: room2, at: record.savedAt, revision: record.source.revision });
+        } catch (_) {
+        }
+      }
+      return { saved, error, library };
+    }
+    function retryFavorite(room2) {
+      try {
+        const record = read(room2);
+        if (!record) return { saved: false, waiting: false, error: "No recent background recovery recording is available." };
+        return keepFavorite(record);
+      } catch (error) {
+        return { saved: false, waiting: false, error: error.message || String(error) };
+      }
+    }
+    function cleanupExpired() {
+      const result = { cleared: 0, changed: 0, damaged: 0 };
+      for (const key of effects.list().filter((value) => value.startsWith(BACKGROUND_RECORDING_PREFIX))) {
+        try {
+          const room2 = key.slice(BACKGROUND_RECORDING_PREFIX.length);
+          if (keyFor(room2) !== key) throw new Error("Invalid background recording key.");
+          const before = effects.get(key, void 0), record = decode(room2, before);
+          if (effects.now() - record.savedAt <= BACKGROUND_RECORDING_TTL_MS) continue;
+          if (effects.get(key, void 0) !== before) {
+            result.changed++;
+            continue;
+          }
+          effects.remove(key);
+          if (effects.get(key, void 0) === void 0) result.cleared++;
+          else result.changed++;
+        } catch (_) {
+          result.damaged++;
+        }
+      }
+      return result;
+    }
+    return { read, readAll, save, retryFavorite, cleanupExpired };
+  }
+  var libraryReader = createLibraryReader();
+  var store = createBackgroundRecordingStore({
+    now: () => Date.now(),
+    get: (key, fallback) => GM_getValue(key, fallback),
+    set: (key, value) => GM_setValue(key, value),
+    remove: (key) => GM_deleteValue(key),
+    list: () => GM_listValues(),
+    notice: (notice) => GM_setValue(BACKGROUND_RECORDING_NOTICE, __spreadProps(__spreadValues({}, notice), { revision: makeStorageId() })),
+    validateArchive: validateSessionFile,
+    favorite: readModelFavorite,
+    minimumMinutes: readAutomaticKeepingMinutes,
+    keep: (archive) => keepSessionInLibrary(archive, "", libraryReader)
+  });
+  function readBackgroundRecording(room2) {
+    return store.read(room2);
+  }
+  function readAllBackgroundRecordings() {
+    return store.readAll();
+  }
+  function saveBackgroundRecording(room2, value) {
+    return store.save(room2, value);
+  }
+  function retryFavoriteBackgroundRecording(room2) {
+    return store.retryFavorite(room2);
+  }
+  function cleanupExpiredBackgroundRecordings() {
+    return store.cleanupExpired();
+  }
+
+  // src/background-tracking-preferences.js
+  var BACKGROUND_TRACKING_PREFIX = "tierscope:background-tracking:v1:";
+  var BACKGROUND_TRACKING_NOTICE = "tierscope:background-tracking:changed:v1";
+  function roomName(value) {
+    const room2 = typeof value === "string" ? value.trim().toLowerCase() : "";
+    if (!room2 || !/^[a-z0-9_-]{1,100}$/.test(room2) || !roomFromUrl("https://chaturbate.com/" + room2 + "/")) {
+      throw new Error("Enter a room username, without a URL or spaces.");
+    }
+    return room2;
+  }
+  function createBackgroundTrackingPreferences(effects) {
+    function decode(raw, room2) {
+      if (raw === void 0) return null;
+      const value = JSON.parse(raw);
+      if (!value || value.schemaVersion !== 1 || value.room !== room2 || typeof value.active !== "boolean" || typeof value.revision !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.revision) || !Number.isSafeInteger(value.changedAt) || value.changedAt < 0 || value.changedAt > 864e13) {
+        throw new Error("Background tracking settings for " + room2 + " are invalid.");
+      }
+      return Object.freeze({ room: room2, active: value.active, revision: value.revision, changedAt: value.changedAt });
+    }
+    function read(value) {
+      const room2 = roomName(value);
+      return decode(effects.get(BACKGROUND_TRACKING_PREFIX + room2, void 0), room2);
+    }
+    function list() {
+      const choices = /* @__PURE__ */ new Map(), errors = [];
+      for (const key of effects.list().filter((key2) => key2.startsWith(BACKGROUND_TRACKING_PREFIX))) {
+        const room2 = key.slice(BACKGROUND_TRACKING_PREFIX.length);
+        try {
+          if (roomName(room2) !== room2) throw new Error("Invalid background tracking key.");
+          const choice = read(room2);
+          if (choice) choices.set(room2, choice);
+        } catch (_) {
+          errors.push(room2);
+        }
+      }
+      return { choices, error: errors.length ? "Some background tracking settings are unavailable." : "" };
+    }
+    function set(value, active, expectedRevision) {
+      const room2 = roomName(value), key = BACKGROUND_TRACKING_PREFIX + room2;
+      if (typeof active !== "boolean") throw new Error("Invalid background tracking choice.");
+      const before = effects.get(key, void 0), previous = decode(before, room2);
+      if (expectedRevision !== void 0 && (previous == null ? void 0 : previous.revision) !== expectedRevision) return { changed: false, choice: previous };
+      if ((previous == null ? void 0 : previous.active) === active) return { changed: false, choice: previous };
+      const record = { schemaVersion: 1, room: room2, active, revision: effects.id(), changedAt: effects.now() };
+      const raw = JSON.stringify(record);
+      try {
+        if (effects.get(key, void 0) !== before) return { changed: false, choice: read(room2) };
+        effects.set(key, raw);
+        if (effects.get(key, void 0) !== raw) throw new Error("Background tracking choice could not be verified.");
+      } catch (error) {
+        try {
+          if (effects.get(key, void 0) === raw) {
+            if (before === void 0) effects.remove(key);
+            else effects.set(key, before);
+          }
+        } catch (_) {
+          throw new Error("Background tracking settings could not be saved or restored. Refresh before retrying.");
+        }
+        throw error;
+      }
+      try {
+        effects.notice({ version: 1, at: record.changedAt, revision: record.revision });
+      } catch (_) {
+      }
+      return { changed: true, choice: decode(raw, room2) };
+    }
+    return { read, list, set };
+  }
+  var preferences = createBackgroundTrackingPreferences({
+    get: (key, fallback) => GM_getValue(key, fallback),
+    set: (key, value) => GM_setValue(key, value),
+    remove: (key) => GM_deleteValue(key),
+    list: () => GM_listValues(),
+    now: () => Date.now(),
+    id: makeStorageId,
+    notice: (value) => GM_setValue(BACKGROUND_TRACKING_NOTICE, value)
+  });
+  function readBackgroundTrackingPreference(room2) {
+    return preferences.read(room2);
+  }
+  function readBackgroundTrackingPreferences() {
+    return preferences.list();
+  }
+  function setBackgroundTrackingPreference(room2, active, expectedRevision) {
+    return preferences.set(room2, active, expectedRevision);
+  }
+
+  // src/live-model-sources.js
+  function createLiveModelExchange(effects) {
+    const archives = /* @__PURE__ */ new Map();
+    let discoveryKeys = null, discoveryAt = -Infinity;
+    function invalidate() {
+      discoveryKeys = null;
+    }
+    function readSources(force = false) {
+      if (force) invalidate();
+      const sources = [], errors = [];
+      const at = effects.now();
+      try {
+        if (!discoveryKeys || at < discoveryAt || at - discoveryAt >= 1e4) {
+          discoveryKeys = effects.list().filter((key) => key.startsWith(LIVE_MODEL_PREFIX));
+          discoveryAt = at;
+        }
+      } catch (_) {
+        return { sources, error: "Live tab discovery is unavailable. Existing chart snapshots are retained." };
+      }
+      for (const key of discoveryKeys) {
+        try {
+          const source = decodeLiveModelSource(effects.get(key, null), key, at);
+          if (!source || at - source.lastSeenAt > 3 * 60 * 60 * 1e3) continue;
+          source.status = liveModelSourceStatus(source, at, effects.epoch(source.room));
+          sources.push(Object.freeze(source));
+        } catch (_) {
+          errors.push(key);
+        }
+      }
+      sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
+      const currentIds = new Set(sources.map((source) => source.id));
+      for (const id of archives.keys()) if (!currentIds.has(id)) archives.delete(id);
+      return { sources, error: errors.length ? "Some live tabs could not be read. Their previous snapshots are retained." : "" };
+    }
+    function readArchive(source) {
+      var _a;
+      const at = effects.now(), key = LIVE_MODEL_PREFIX + source.publisherId;
+      const current = decodeLiveModelSource(effects.get(key, null), key, at);
+      if (!current || current.id !== source.id || current.recordKey !== source.recordKey || current.revision !== source.revision || current.roomEpoch !== effects.epoch(current.room) || ["reset", "unavailable"].includes(current.status) || !current.recordKey) {
+        throw new Error("This live source changed or is unavailable. Its previous chart snapshot is retained.");
+      }
+      const cached = archives.get(current.id);
+      if ((cached == null ? void 0 : cached.revision) === current.revision) return cached.archive;
+      const raw = effects.get(current.recordKey, null);
+      if (typeof raw !== "string") throw new Error("The live session record is unavailable.");
+      const data = JSON.parse(raw), times = (_a = data == null ? void 0 : data.history) == null ? void 0 : _a.timestamps;
+      if (data.roomEpoch !== current.roomEpoch || data.sessionStartedAt !== current.sessionStartedAt || data.timestamp !== current.recordSavedAt || !Array.isArray(times) || times.length !== current.sampleCount || times.at(-1) !== current.sampleAt) {
+        throw new Error("The live session changed while reading. Waiting for its next announcement.");
+      }
+      const archive = freezeRecordingData(effects.archive(current.room, data));
+      if (effects.epoch(current.room) !== current.roomEpoch) throw new Error("This room was reset. Choose its new session.");
+      archives.set(current.id, { revision: current.revision, archive });
+      return archive;
+    }
+    function clear() {
+      archives.clear();
+      invalidate();
+    }
+    function retain(ids) {
+      const selected = ids instanceof Set ? ids : new Set(ids);
+      for (const id of archives.keys()) if (!selected.has(id)) archives.delete(id);
+    }
+    function cleanupExpired() {
+      if (!effects.remove) return;
+      try {
+        const at = effects.now();
+        for (const key of effects.list().filter((key2) => key2.startsWith(LIVE_MODEL_PREFIX))) {
+          const source = decodeLiveModelSource(effects.get(key, null), key, at);
+          if (!source || at - source.lastSeenAt <= 3 * 60 * 60 * 1e3) continue;
+          const current = decodeLiveModelSource(effects.get(key, null), key, at);
+          if ((current == null ? void 0 : current.id) === source.id && current.lastSeenAt === source.lastSeenAt && current.revision === source.revision) effects.remove(key);
+        }
+        invalidate();
+      } catch (_) {
+      }
+    }
+    return { readSources, readArchive, clear, retain, invalidate, cleanupExpired };
+  }
+  var exchange = createLiveModelExchange({
+    get: (key, fallback) => GM_getValue(key, fallback),
+    list: () => GM_listValues(),
+    remove: (key) => GM_deleteValue(key),
+    now: () => Date.now(),
+    epoch: (room2) => getRoomEpoch(getStorageKey(room2)),
+    archive: (room2, session) => validateSessionFile({
+      format: runtime.SESSION_FILE_FORMAT,
+      formatVersion: runtime.SESSION_FILE_VERSION,
+      producerVersion: session.producerVersion || runtime.TIERSCOPE_VERSION,
+      room: room2,
+      session
+    })
+  });
+  var publisherId = null, heartbeat = null, announced = false, started = false, cleanupInitialized = false, savedBinding = null;
+  var sourceProviders = /* @__PURE__ */ new Set(), sourceSubscribers = /* @__PURE__ */ new Set();
+  function registerLiveModelSourceProvider(provider) {
+    if (!provider || !["readSources", "readArchive", "subscribe"].every((key) => typeof provider[key] === "function")) {
+      throw new Error("Invalid comparison source provider.");
+    }
+    const entry = { provider, detach: null };
+    const changed = () => {
+      for (const notify of sourceSubscribers) notify();
+    };
+    entry.detach = provider.subscribe(changed);
+    sourceProviders.add(entry);
+    changed();
+    return () => {
+      if (!sourceProviders.delete(entry)) return;
+      if (typeof entry.detach === "function") entry.detach();
+      changed();
+    };
+  }
+  function providerSources(provider) {
+    const result = provider.readSources(), sources = [];
+    let error = (result == null ? void 0 : result.error) || "";
+    for (const value of (result == null ? void 0 : result.sources) || []) {
+      const source = decodeInMemoryLiveModelSource(value, Date.now());
+      if (source) sources.push(Object.freeze(source));
+      else error = "Some comparison-only sources could not be read.";
+    }
+    return { sources, error };
+  }
+  function notifyLiveModels() {
+    exchange.invalidate();
+    GM_setValue(LIVE_MODEL_NOTICE, { version: 1, at: Date.now(), token: makeStorageId() });
+  }
+  function retirePublisher() {
+    if (heartbeat !== null) clearInterval(heartbeat);
+    heartbeat = null;
+    const wasAnnounced = announced;
+    announced = false;
+    savedBinding = null;
+    if (!publisherId || !wasAnnounced) return;
+    try {
+      GM_deleteValue(LIVE_MODEL_PREFIX + publisherId);
+      notifyLiveModels();
+    } catch (_) {
+    }
+  }
+  function publishLiveModelSource(savedTimestamp = null) {
+    var _a, _b;
+    if (!started || !publisherId) return;
+    const room2 = (_a = roomFromUrl(location.href)) == null ? void 0 : _a.toLowerCase();
+    if (!room2 || runtime.lastUrl !== location.href || runtime.activeSessionStorageKey !== getStorageKey(room2)) {
+      retirePublisher();
+      return;
+    }
+    if (heartbeat === null) heartbeat = setInterval(publishLiveModelSource, LIVE_MODEL_HEARTBEAT_MS);
+    try {
+      const at = Date.now(), epoch = getRoomEpoch(getStorageKey(room2));
+      const sessionStartedAt = runtime.sessionStartedAt, roomEpoch = runtime.activeRoomEpoch;
+      if (typeof roomEpoch !== "string") {
+        retirePublisher();
+        return;
+      }
+      const history = runtime.history, sampleCount = history.timestamps.length, sampleAt = (_b = history.timestamps.at(-1)) != null ? _b : null;
+      const record = runtime.tabRecords.get(getStorageKey(room2));
+      const sessionId = roomEpoch + "@" + (sessionStartedAt === null ? "pending" : sessionStartedAt);
+      const candidateKey = record ? runtime.TAB_RECORD_PREFIX + room2 + ":" + record.id : null;
+      if (record && Number.isSafeInteger(savedTimestamp) && savedTimestamp >= 0) {
+        savedBinding = { recordKey: candidateKey, sessionId, timestamp: savedTimestamp, writtenAt: record.savedAt, sampleCount, sampleAt };
+      }
+      const saved = !getSessionSaveState(room2).error && record && sampleCount > 0 && savedBinding && savedBinding.recordKey === candidateKey && savedBinding.sessionId === sessionId && savedBinding.writtenAt === record.savedAt && savedBinding.sampleCount === sampleCount && savedBinding.sampleAt === sampleAt;
+      const recordKey = saved ? candidateKey : null;
+      const revision = saved ? [record.id, savedBinding.timestamp, record.savedAt, sampleCount, sampleAt].join(":") : "";
+      let status = runtime.isStopped ? "stopped" : runtime.isPaused || !runtime.isAutoRefreshOn ? "paused" : isBrowserOffline() ? "offline" : runtime.requestPolicyCache.blocked || runtime.requestPolicyCache.until > at ? "retry" : sampleCount === 0 ? "waiting" : saved ? "tracking" : "unavailable";
+      if (epoch !== roomEpoch) status = "reset";
+      const source = {
+        version: 1,
+        id: publisherId + ":" + room2 + ":" + sessionId,
+        publisherId,
+        room: room2,
+        roomEpoch,
+        sessionId,
+        sessionStartedAt,
+        status,
+        lastSeenAt: at,
+        sampleAt,
+        sampleCount,
+        revision,
+        recordKey,
+        recordSavedAt: saved ? savedBinding.timestamp : null
+      };
+      GM_setValue(LIVE_MODEL_PREFIX + publisherId, source);
+      announced = true;
+      notifyLiveModels();
+    } catch (_) {
+    }
+  }
+  function initializeLiveModelSources() {
+    if (heartbeat !== null) clearInterval(heartbeat);
+    heartbeat = null;
+    started = true;
+    if (!publisherId) publisherId = makeStorageId();
+    if (!cleanupInitialized) {
+      cleanupInitialized = true;
+      exchange.cleanupExpired();
+    }
+    publishLiveModelSource();
+  }
+  function stopLiveModelSources() {
+    started = false;
+    if (heartbeat !== null) clearInterval(heartbeat);
+    heartbeat = null;
+    retirePublisher();
+    exchange.clear();
+  }
+  function readLiveModelSources(force = false) {
+    const result = exchange.readSources(force), sources = result.sources.slice();
+    const ids = new Set(sources.map((source) => source.id)), errors = result.error ? [result.error] : [];
+    for (const { provider } of sourceProviders) {
+      try {
+        const extra = providerSources(provider);
+        if (extra.error) errors.push(extra.error);
+        for (const source of extra.sources) {
+          if (ids.has(source.id)) {
+            errors.push("A comparison-only source identity is duplicated.");
+            continue;
+          }
+          sources.push(source);
+          ids.add(source.id);
+        }
+      } catch (_) {
+        errors.push("Comparison-only sources are unavailable. Their previous snapshots are retained.");
+      }
+    }
+    sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
+    return { sources, error: errors.join(" ") };
+  }
+  function readLiveModelArchive(source) {
+    if (source.kind !== "background") return exchange.readArchive(source);
+    for (const { provider } of sourceProviders) {
+      const current = providerSources(provider).sources.find((value) => value.id === source.id);
+      if (!current) continue;
+      if (current.revision !== source.revision || current.room !== source.room || current.sessionId !== source.sessionId || current.sampleCount !== source.sampleCount || current.sampleAt !== source.sampleAt || !current.sampleCount || ["reset", "unavailable", "stale"].includes(current.status)) break;
+      const archive = freezeRecordingData(validateSessionFile(provider.readArchive(current))), session = archive.session;
+      if (archive.room.toLowerCase() !== current.room || session.sessionStartedAt !== current.sessionStartedAt || session.history.timestamps.length !== current.sampleCount || session.history.timestamps.at(-1) !== current.sampleAt) break;
+      const latest = providerSources(provider).sources.find((value) => value.id === current.id);
+      if (!latest || latest.revision !== current.revision) break;
+      return archive;
+    }
+    throw new Error("This comparison-only source changed or is unavailable. Its previous chart snapshot is retained.");
+  }
+  function retainLiveModelArchives(ids) {
+    exchange.retain(ids);
+  }
+  function subscribeLiveModelSources(changed) {
+    let disposed = false, pending = null, listener = null;
+    function schedule() {
+      if (disposed || pending !== null) return;
+      pending = setTimeout(() => {
+        pending = null;
+        if (!disposed) changed();
+      }, 80);
+    }
+    sourceSubscribers.add(schedule);
+    try {
+      if (typeof GM_addValueChangeListener === "function") listener = GM_addValueChangeListener(LIVE_MODEL_NOTICE, () => {
+        exchange.invalidate();
+        schedule();
+      });
+    } catch (_) {
+    }
+    const timer = setInterval(schedule, 5e3);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+      sourceSubscribers.delete(schedule);
+      if (pending !== null) clearTimeout(pending);
+      if (listener !== null) {
+        try {
+          if (typeof GM_removeValueChangeListener === "function") GM_removeValueChangeListener(listener);
+        } catch (_) {
+        }
+      }
+      exchange.clear();
+    };
+  }
+
+  // src/background-tracking-lifecycle.js
+  var LEASE_PREFIX = "tierscope:background-owner:v1:", LEASE_MS = 9e4, PULSE_MS = 2e4;
+  function createBackgroundTrackingLeases(effects) {
+    function read(room2) {
+      const raw = effects.get(LEASE_PREFIX + room2);
+      if (raw === null) return null;
+      const value = JSON.parse(raw);
+      if (!value || value.version !== 1 || value.room !== room2 || ![value.owner, value.token, value.revision].every((id) => typeof id === "string" && /^[a-z0-9-]{1,160}$/i.test(id)) || !Number.isSafeInteger(value.until) || value.until < 0 || value.until > 864e13) throw new Error("Invalid tracking lease.");
+      return value;
+    }
+    function owns(room2, token) {
+      try {
+        const value = read(room2);
+        return !!value && value.owner === effects.owner && value.token === token && value.until > effects.now();
+      } catch (_) {
+        return false;
+      }
+    }
+    async function claim(room2, revision, previousToken) {
+      const operation = () => {
+        try {
+          const before = read(room2), at = effects.now();
+          if (before && before.until > at && !(before.owner === effects.owner && before.token === previousToken && before.revision === revision)) return null;
+          const token = before && before.owner === effects.owner && before.token === previousToken && before.revision === revision ? previousToken : effects.id();
+          const value = { version: 1, room: room2, owner: effects.owner, revision, token, until: at + LEASE_MS };
+          effects.set(LEASE_PREFIX + room2, JSON.stringify(value));
+          const written = read(room2);
+          return (written == null ? void 0 : written.token) === token && written.owner === effects.owner && written.revision === revision ? token : null;
+        } catch (_) {
+          return null;
+        }
+      };
+      try {
+        return await effects.lock(LEASE_PREFIX + room2, operation);
+      } catch (_) {
+        return null;
+      }
+    }
+    function release(room2, token) {
+      try {
+        const value = read(room2);
+        if ((value == null ? void 0 : value.owner) === effects.owner && value.token === token) effects.remove(LEASE_PREFIX + room2);
+      } catch (_) {
+      }
+    }
+    return { claim, owns, release };
+  }
+  function createBackgroundTrackingLifecycle(effects) {
+    const owned = /* @__PURE__ */ new Map(), records = /* @__PURE__ */ new Map(), failures = /* @__PURE__ */ new Map(), libraryFailures = /* @__PURE__ */ new Map(), listeners = /* @__PURE__ */ new Set();
+    let choices = /* @__PURE__ */ new Map(), running = false, timer = null, pulse = null, generation = 0;
+    let unsubscribeManager = null, unsubscribeChoices = null, notice = "";
+    let cleanupAt = null;
+    function emit() {
+      for (const changed2 of listeners) {
+        try {
+          changed2();
+        } catch (_) {
+        }
+      }
+    }
+    function managerStates() {
+      return effects.manager.states();
+    }
+    function tokenFor(room2) {
+      const claim = owned.get(room2);
+      if (!running || !claim || !effects.leases.owns(room2, claim.token)) return null;
+      try {
+        const choice = effects.preferences.read(room2);
+        return (choice == null ? void 0 : choice.active) && choice.revision === claim.revision ? claim.token : null;
+      } catch (_) {
+        return null;
+      }
+    }
+    function checkpoint2(room2) {
+      var _a;
+      const claim = owned.get(room2);
+      if (!claim || !effects.leases.owns(room2, claim.token)) return;
+      const source = effects.manager.sources().sources.find((value) => value.room === room2);
+      const state = managerStates().find((value) => value.room === room2);
+      if (!(source == null ? void 0 : source.sampleCount) || !state) return;
+      const signature = [
+        source.id,
+        source.revision,
+        state.active,
+        state.status,
+        state.message,
+        state.nextAt,
+        state.stoppedReason,
+        state.absentSince,
+        state.absenceObservedAt,
+        state.absenceObservations,
+        state.absenceMs
+      ].join("|");
+      if (claim.savedSignature === signature) return;
+      try {
+        const archive2 = effects.manager.archive(source), result = effects.recordings.save(room2, { archive: archive2, source, state });
+        if (!result.saved) throw new Error(result.error || "Recovery checkpoint could not be saved.");
+        claim.savedSignature = signature;
+        records.set(room2, { room: room2, archive: archive2, source, state, savedAt: effects.now() });
+        const libraryError = (_a = result.library) == null ? void 0 : _a.error;
+        if (libraryError) libraryFailures.set(room2, "Favorite Library keep pending: " + libraryError);
+        else libraryFailures.delete(room2);
+        failures.delete(room2);
+      } catch (error) {
+        failures.set(room2, "Recovery save pending: " + error.message);
+      }
+    }
+    function changed() {
+      if (!running) return;
+      for (const state of managerStates()) {
+        if (!owned.has(state.room)) continue;
+        checkpoint2(state.room);
+        if (state.stoppedReason === "absence" && !state.active) {
+          const claim = owned.get(state.room);
+          try {
+            const result = effects.preferences.set(state.room, false, claim.revision);
+            if (result.choice) choices.set(state.room, result.choice);
+          } catch (error) {
+            failures.set(state.room, "Could not save automatic tracking stop: " + error.message);
+          }
+        }
+      }
+      emit();
+    }
+    function drop(room2, save = false) {
+      var _a;
+      const claim = owned.get(room2);
+      if (!claim) return;
+      if ((_a = managerStates().find((state) => state.room === room2)) == null ? void 0 : _a.active) effects.manager.stop(room2);
+      if (save) checkpoint2(room2);
+      effects.manager.stop(room2, { clear: true });
+      owned.delete(room2);
+      effects.leases.release(room2, claim.token);
+    }
+    function readStored() {
+      const at = effects.now();
+      if (effects.recordings.cleanup && (cleanupAt === null || at < cleanupAt || at - cleanupAt >= 3e5)) {
+        cleanupAt = at;
+        try {
+          effects.recordings.cleanup();
+        } catch (_) {
+        }
+      }
+      const result = effects.preferences.list();
+      choices = result.choices;
+      notice = result.error || "";
+      const stored = effects.recordings.list();
+      records.clear();
+      for (const record of stored) records.set(record.room, record);
+    }
+    async function reconcile() {
+      if (!running) return;
+      if (pulse) return pulse;
+      const token = generation;
+      const operation = Promise.resolve().then(async () => {
+        if (!running || generation !== token) return;
+        try {
+          readStored();
+          for (const [room2, claim] of owned) {
+            const choice = choices.get(room2);
+            if (!(choice == null ? void 0 : choice.active) || choice.revision !== claim.revision || !effects.leases.owns(room2, claim.token)) drop(room2, true);
+          }
+          for (const [room2, choice] of choices) {
+            if (!choice.active) continue;
+            let lease2 = null;
+            try {
+              const previous = owned.get(room2);
+              lease2 = await effects.leases.claim(room2, choice.revision, previous == null ? void 0 : previous.token);
+              if (!running || generation !== token) {
+                if (lease2) effects.leases.release(room2, lease2);
+                break;
+              }
+              const latest = effects.preferences.read(room2);
+              if (!(latest == null ? void 0 : latest.active) || latest.revision !== choice.revision) {
+                if (lease2) effects.leases.release(room2, lease2);
+                continue;
+              }
+              if (!lease2) {
+                if (previous) drop(room2, false);
+                continue;
+              }
+              if (!previous || previous.token !== lease2) {
+                if (previous) drop(room2, false);
+                owned.set(room2, { token: lease2, revision: choice.revision, savedSignature: "" });
+                let record = null;
+                try {
+                  record = effects.recordings.read(room2);
+                } catch (error) {
+                  failures.set(room2, "Previous recovery recording is unavailable: " + error.message);
+                }
+                if (record) effects.manager.restore(room2, record);
+                else effects.manager.start(room2);
+              }
+            } catch (error) {
+              if (owned.has(room2)) drop(room2, false);
+              else if (lease2) effects.leases.release(room2, lease2);
+              failures.set(room2, "This background room could not resume: " + error.message);
+            }
+          }
+          for (const room2 of owned.keys()) checkpoint2(room2);
+          if (effects.recordings.retryFavorite) for (const room2 of records.keys()) {
+            try {
+              const result = effects.recordings.retryFavorite(room2);
+              if (result.error) libraryFailures.set(room2, "Favorite Library keep pending: " + result.error);
+              else libraryFailures.delete(room2);
+            } catch (error) {
+              libraryFailures.set(room2, "Favorite Library keep pending: " + error.message);
+            }
+          }
+        } catch (error) {
+          notice = "Background tracking settings are unavailable: " + error.message;
+          for (const room2 of [...owned.keys()]) drop(room2, false);
+        } finally {
+          emit();
+        }
+      });
+      pulse = operation;
+      try {
+        await operation;
+      } finally {
+        if (pulse === operation) pulse = null;
+      }
+    }
+    function initialize() {
+      if (running) return;
+      running = true;
+      generation++;
+      cleanupAt = null;
+      effects.manager.ownership(tokenFor);
+      unsubscribeManager = effects.manager.subscribe(changed);
+      unsubscribeChoices = effects.subscribe(() => {
+        reconcile();
+      });
+      timer = effects.setInterval(() => {
+        reconcile();
+      }, PULSE_MS);
+      reconcile();
+    }
+    async function start(room2) {
+      initialize();
+      if (pulse) await pulse;
+      const result = effects.preferences.set(room2, true);
+      if (result.choice) choices.set(result.choice.room, result.choice);
+      await reconcile();
+      return states().find((value) => {
+        var _a;
+        return value.room === ((_a = result.choice) == null ? void 0 : _a.room);
+      }) || null;
+    }
+    function stop(room2, options = {}) {
+      var _a;
+      if (!room2) {
+        for (const state of states()) if (state.active) stop(state.room, options);
+        return states();
+      }
+      const result = effects.preferences.set(room2, false);
+      if (result.choice) choices.set(result.choice.room, result.choice);
+      const normalized = ((_a = result.choice) == null ? void 0 : _a.room) || room2;
+      drop(normalized, true);
+      emit();
+      return states().find((value) => value.room === normalized) || null;
+    }
+    function states() {
+      const local = new Map(managerStates().map((state) => [state.room, state])), result = [];
+      const rooms = /* @__PURE__ */ new Set([...choices.keys(), ...records.keys(), ...local.keys()]);
+      for (const room2 of rooms) {
+        const choice = choices.get(room2), record = records.get(room2), state = local.get(room2) || (record == null ? void 0 : record.state);
+        if (!(choice == null ? void 0 : choice.active) && !state && !record) continue;
+        const active = !!(choice == null ? void 0 : choice.active);
+        const value = state ? __spreadProps(__spreadValues({}, state), { active }) : { room: room2, active, status: "waiting", message: "Waiting for an available tracking tab.", sampleCount: 0, sampleAt: null, nextAt: null };
+        if (!active && (state == null ? void 0 : state.active)) {
+          value.status = "stopped";
+          value.message = "Comparison tracking stopped.";
+          value.nextAt = null;
+        }
+        const warning = [failures.get(room2), libraryFailures.get(room2), notice].filter((value2) => !!value2).join(" ");
+        if (warning) {
+          value.persistenceError = warning;
+          value.message += " " + warning;
+        }
+        result.push(Object.freeze(value));
+      }
+      return result.sort((a, b) => a.room.localeCompare(b.room));
+    }
+    function sources() {
+      var _a;
+      const local = new Map(effects.manager.sources().sources.map((source) => [source.room, source])), result = [];
+      for (const state of states()) {
+        let source = local.get(state.room) || ((_a = records.get(state.room)) == null ? void 0 : _a.source);
+        if (!source) continue;
+        source = __spreadValues({}, source);
+        if (!state.active) source.status = "stopped";
+        result.push(Object.freeze(source));
+      }
+      return { sources: result, error: notice };
+    }
+    function archive(source) {
+      const local = effects.manager.sources().sources.find((value) => value.id === source.id);
+      if (local && local.revision === source.revision) return effects.manager.archive(local);
+      const record = records.get(source.room);
+      if (!record || record.source.id !== source.id || record.source.revision !== source.revision) throw new Error("This background recording changed. Refresh the comparison.");
+      return record.archive;
+    }
+    async function refresh(room2) {
+      await reconcile();
+      await effects.manager.refresh(room2);
+      return states();
+    }
+    function shutdown() {
+      if (!running) return;
+      for (const room2 of [...owned.keys()]) drop(room2, true);
+      running = false;
+      generation++;
+      if (timer !== null) effects.clearInterval(timer);
+      timer = null;
+      if (unsubscribeManager) unsubscribeManager();
+      unsubscribeManager = null;
+      if (unsubscribeChoices) unsubscribeChoices();
+      unsubscribeChoices = null;
+      emit();
+    }
+    return {
+      initialize,
+      shutdown,
+      start,
+      stop,
+      states,
+      sources,
+      archive,
+      refresh,
+      reconcile,
+      subscribe(changed2) {
+        listeners.add(changed2);
+        return () => listeners.delete(changed2);
+      }
+    };
+  }
+  var owner = makeStorageId();
+  var leases = createBackgroundTrackingLeases({
+    owner,
+    now: () => Date.now(),
+    id: makeStorageId,
+    get: (key) => window.localStorage.getItem(key),
+    set: (key, value) => window.localStorage.setItem(key, value),
+    remove: (key) => window.localStorage.removeItem(key),
+    lock: (key, action) => {
+      var _a, _b;
+      return ((_b = (_a = window.navigator) == null ? void 0 : _a.locks) == null ? void 0 : _b.request) ? window.navigator.locks.request(key, action) : Promise.resolve(action());
+    }
+  });
+  var tracking = createBackgroundTrackingLifecycle({
+    now: () => Date.now(),
+    leases,
+    preferences: { read: readBackgroundTrackingPreference, list: readBackgroundTrackingPreferences, set: setBackgroundTrackingPreference },
+    recordings: {
+      read: readBackgroundRecording,
+      list: readAllBackgroundRecordings,
+      save: saveBackgroundRecording,
+      retryFavorite: retryFavoriteBackgroundRecording,
+      cleanup: cleanupExpiredBackgroundRecordings
+    },
+    manager: {
+      states: getBackgroundComparisonStates,
+      sources: readBackgroundComparisonSources,
+      archive: readBackgroundComparisonArchive,
+      start: startBackgroundComparison,
+      stop: stopBackgroundComparison,
+      restore: restoreBackgroundComparison,
+      refresh: refreshBackgroundComparison,
+      subscribe: subscribeBackgroundComparison,
+      ownership: setBackgroundComparisonOwnership
+    },
+    setInterval: (fn, ms) => setInterval(fn, ms),
+    clearInterval: (id) => clearInterval(id),
+    subscribe: (changed) => {
+      const listeners = [];
+      try {
+        if (typeof GM_addValueChangeListener === "function") for (const key of [BACKGROUND_TRACKING_NOTICE, BACKGROUND_RECORDING_NOTICE]) listeners.push(GM_addValueChangeListener(key, changed));
+      } catch (_) {
+      }
+      return () => {
+        try {
+          if (typeof GM_removeValueChangeListener === "function") for (const listener of listeners) GM_removeValueChangeListener(listener);
+        } catch (_) {
+        }
+      };
+    }
+  });
+  var providerCleanup = null, lifecycleInitialized = false;
+  function initializeBackgroundTracking() {
+    if (!lifecycleInitialized) {
+      lifecycleInitialized = true;
+      providerCleanup = registerLiveModelSourceProvider({ readSources: () => tracking.sources(), readArchive: (source) => tracking.archive(source), subscribe: (changed) => tracking.subscribe(changed) });
+      window.addEventListener("pagehide", shutdownBackgroundTracking);
+    }
+    tracking.initialize();
+  }
+  function shutdownBackgroundTracking() {
+    tracking.shutdown();
+    if (providerCleanup) {
+      providerCleanup();
+      providerCleanup = null;
+    }
+    lifecycleInitialized = false;
+    window.removeEventListener("pagehide", shutdownBackgroundTracking);
+  }
+  function tickBackgroundTracking() {
+    initializeBackgroundTracking();
+    return tracking.reconcile();
+  }
+  async function startPersistentBackgroundComparison(room2) {
+    initializeBackgroundTracking();
+    return tracking.start(room2);
+  }
+  function stopPersistentBackgroundComparison(room2, options) {
+    return tracking.stop(room2, options);
+  }
+  function getPersistentBackgroundComparisonStates() {
+    return tracking.states();
+  }
+  function getPersistentBackgroundComparisonState(room2) {
+    return tracking.states().find((state) => !room2 || state.room === room2) || { room: null, active: false, status: "stopped", message: "", sampleCount: 0, sampleAt: null, nextAt: null };
+  }
+  function readPersistentBackgroundComparisonSources() {
+    return tracking.sources();
+  }
+  function readPersistentBackgroundComparisonArchive(source) {
+    return tracking.archive(source);
+  }
+  function refreshPersistentBackgroundComparison(room2) {
+    initializeBackgroundTracking();
+    return tracking.refresh(room2);
+  }
+  function subscribePersistentBackgroundComparison(changed) {
+    return tracking.subscribe(changed);
   }
 
   // src/tools-view-helpers.js
@@ -6544,10 +7745,10 @@ underlying system, so should run in the browser, Node, or Plask.
     collapsedRows: "tierscope:ui:collapsedRows:v1",
     geometry: "tierscope:ui:geometry:v1"
   });
-  function validateBackupPreferences(preferences) {
-    if (!preferences || typeof preferences !== "object" || Array.isArray(preferences)) throw new Error("Invalid saved preferences.");
+  function validateBackupPreferences(preferences2) {
+    if (!preferences2 || typeof preferences2 !== "object" || Array.isArray(preferences2)) throw new Error("Invalid saved preferences.");
     const clean = {};
-    for (const [name, value] of Object.entries(preferences)) {
+    for (const [name, value] of Object.entries(preferences2)) {
       if (!Object.prototype.hasOwnProperty.call(preferenceKeys, name)) throw new Error("Unknown saved preference: " + name);
       const choices = {
         theme: ["dark", "bright"],
@@ -6615,17 +7816,17 @@ underlying system, so should run in the browser, Node, or Plask.
       if (state.error || state.skipped) throw new Error("Could not read all ATH records for " + room2 + ". Existing data was left intact.");
       return { room: room2, highs: state.highs };
     });
-    const preferences = {
+    const preferences2 = {
       theme: runtime.isDarkMode ? "dark" : "bright",
       highMode: runtime.highMode,
       miniMetric: runtime.miniMetric,
       chartWindow: runtime.chartWindowMode,
       collapsedRows: [...runtime.collapsedRows]
     };
-    if (runtime.panelGeometry) preferences.geometry = runtime.panelGeometry;
+    if (runtime.panelGeometry) preferences2.geometry = runtime.panelGeometry;
     for (const [name, key] of Object.entries(preferenceKeys)) {
       const saved = GM_getValue(key, null);
-      if (saved !== null) preferences[name] = name === "geometry" || name === "collapsedRows" ? JSON.parse(saved) : saved;
+      if (saved !== null) preferences2[name] = name === "geometry" || name === "collapsedRows" ? JSON.parse(saved) : saved;
     }
     const library = includeLibrary ? readSessionLibrary() : { entries: [], damaged: [] };
     if (library.damaged.length && !allowPartialLibrary) throw new Error("The library contains unreadable sessions. Choose the healthy-sessions option to make a partial backup, or export ATH/preferences separately.");
@@ -6637,7 +7838,7 @@ underlying system, so should run in the browser, Node, or Plask.
       formatVersion: 1,
       producerVersion: runtime.TIERSCOPE_VERSION,
       rooms: records,
-      preferences,
+      preferences: preferences2,
       library: library.entries.map((entry) => ({ title: entry.title, notes: entry.notes, archive: entry.archive })),
       favoriteModels: [...modelState.favorites]
     }, rawAnalysis === null ? {} : { analysisPreferences: validateAnalysisPreferences(JSON.parse(rawAnalysis)) }), library.damaged.length ? { recovery: { omittedLibraryKeys: library.damaged } } : {}));
@@ -7262,6 +8463,8 @@ underlying system, so should run in the browser, Node, or Plask.
 #tierscope-session-tools .tools-actions{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:8px 0}
 #tierscope-session-tools .tools-background-form input{flex:1 1 100px;width:100px}
 #tierscope-session-tools .tools-background-form button{flex:0 1 auto}
+#tierscope-session-tools .tools-background-row{display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--panel-divider)}
+#tierscope-session-tools .tools-background-row>[data-background-message]{flex:1;min-width:0;overflow-wrap:anywhere}
 #tierscope-session-tools .tools-muted{color:var(--panel-muted);font-size:.92em;line-height:1.45}
 #tierscope-session-tools .tools-comparison-mode{padding-bottom:7px;border-bottom:1px solid var(--panel-divider)}
 #tierscope-session-tools .tools-comparison-mode button{flex:1}
@@ -7928,329 +9131,6 @@ underlying system, so should run in the browser, Node, or Plask.
       return output;
     });
     return { series, labels: archives.map((archive) => archive.room), originAt, axisMs: Math.max(1e3, now - originAt), excludedSamples };
-  }
-
-  // src/live-model-data.js
-  var LIVE_MODEL_PREFIX = "tierscope:live:v1:source:";
-  var LIVE_MODEL_NOTICE = "tierscope:live:v1:changed";
-  var LIVE_MODEL_HEARTBEAT_MS = 3e4;
-  var LIVE_MODEL_STALE_MS = 18e4;
-  var statuses = /* @__PURE__ */ new Set(["tracking", "paused", "stopped", "waiting", "offline", "retry", "reset", "unavailable"]);
-  var timestamp = (value) => Number.isSafeInteger(value) && value >= 0 && value <= 864e13;
-  function decodeLiveModelSource(value, key, at) {
-    if (!value || value.version !== 1 || typeof value.publisherId !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.publisherId) || key !== LIVE_MODEL_PREFIX + value.publisherId || typeof value.room !== "string" || !/^[a-z0-9_-]{1,100}$/.test(value.room) || typeof value.roomEpoch !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.roomEpoch) || !(value.sessionStartedAt === null || timestamp(value.sessionStartedAt)) || value.sessionId !== value.roomEpoch + "@" + (value.sessionStartedAt === null ? "pending" : value.sessionStartedAt) || value.id !== value.publisherId + ":" + value.room + ":" + value.sessionId || !statuses.has(value.status) || !timestamp(value.lastSeenAt) || value.lastSeenAt > at + 5e3 || !Number.isSafeInteger(value.sampleCount) || value.sampleCount < 0 || value.sampleCount > 1e6 || !(value.sampleCount === 0 ? value.sampleAt === null : timestamp(value.sampleAt) && value.sampleAt <= value.lastSeenAt) || !(value.sessionStartedAt === null || value.sessionStartedAt <= value.lastSeenAt) || typeof value.revision !== "string" || value.revision.length > 512) return null;
-    if (value.recordKey === null) {
-      if (value.recordSavedAt !== null || value.revision !== "") return null;
-    } else if (typeof value.recordKey !== "string" || !value.recordKey.startsWith("tierscope:tab:v2:" + value.room + ":") || !/^[a-z0-9-]{1,160}$/i.test(value.recordKey.slice(("tierscope:tab:v2:" + value.room + ":").length)) || !timestamp(value.recordSavedAt) || value.recordSavedAt > value.lastSeenAt || !value.revision) return null;
-    return {
-      version: 1,
-      id: value.id,
-      publisherId: value.publisherId,
-      room: value.room,
-      roomEpoch: value.roomEpoch,
-      sessionId: value.sessionId,
-      sessionStartedAt: value.sessionStartedAt,
-      status: value.status,
-      lastSeenAt: value.lastSeenAt,
-      sampleAt: value.sampleAt,
-      sampleCount: value.sampleCount,
-      revision: value.revision,
-      recordKey: value.recordKey,
-      recordSavedAt: value.recordSavedAt
-    };
-  }
-  function liveModelSourceStatus(source, at, epoch) {
-    if (source.roomEpoch !== epoch) return "reset";
-    if (at - source.lastSeenAt > LIVE_MODEL_STALE_MS) return "stale";
-    return source.status;
-  }
-  function decodeInMemoryLiveModelSource(value, at) {
-    if (!value || value.kind !== "background" || value.recordKey !== null || value.recordSavedAt !== null || typeof value.revision !== "string" || value.revision.length > 512) return null;
-    const source = decodeLiveModelSource(__spreadProps(__spreadValues({}, value), { revision: "" }), LIVE_MODEL_PREFIX + value.publisherId, at);
-    if (!source) return null;
-    return __spreadProps(__spreadValues({}, source), {
-      kind: "background",
-      revision: value.revision,
-      status: at - source.lastSeenAt > LIVE_MODEL_STALE_MS ? "stale" : source.status
-    });
-  }
-
-  // src/live-model-sources.js
-  function createLiveModelExchange(effects) {
-    const archives = /* @__PURE__ */ new Map();
-    let discoveryKeys = null, discoveryAt = -Infinity;
-    function invalidate() {
-      discoveryKeys = null;
-    }
-    function readSources(force = false) {
-      if (force) invalidate();
-      const sources = [], errors = [];
-      const at = effects.now();
-      try {
-        if (!discoveryKeys || at < discoveryAt || at - discoveryAt >= 1e4) {
-          discoveryKeys = effects.list().filter((key) => key.startsWith(LIVE_MODEL_PREFIX));
-          discoveryAt = at;
-        }
-      } catch (_) {
-        return { sources, error: "Live tab discovery is unavailable. Existing chart snapshots are retained." };
-      }
-      for (const key of discoveryKeys) {
-        try {
-          const source = decodeLiveModelSource(effects.get(key, null), key, at);
-          if (!source || at - source.lastSeenAt > 3 * 60 * 60 * 1e3) continue;
-          source.status = liveModelSourceStatus(source, at, effects.epoch(source.room));
-          sources.push(Object.freeze(source));
-        } catch (_) {
-          errors.push(key);
-        }
-      }
-      sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
-      const currentIds = new Set(sources.map((source) => source.id));
-      for (const id of archives.keys()) if (!currentIds.has(id)) archives.delete(id);
-      return { sources, error: errors.length ? "Some live tabs could not be read. Their previous snapshots are retained." : "" };
-    }
-    function readArchive(source) {
-      var _a;
-      const at = effects.now(), key = LIVE_MODEL_PREFIX + source.publisherId;
-      const current = decodeLiveModelSource(effects.get(key, null), key, at);
-      if (!current || current.id !== source.id || current.recordKey !== source.recordKey || current.revision !== source.revision || current.roomEpoch !== effects.epoch(current.room) || ["reset", "unavailable"].includes(current.status) || !current.recordKey) {
-        throw new Error("This live source changed or is unavailable. Its previous chart snapshot is retained.");
-      }
-      const cached = archives.get(current.id);
-      if ((cached == null ? void 0 : cached.revision) === current.revision) return cached.archive;
-      const raw = effects.get(current.recordKey, null);
-      if (typeof raw !== "string") throw new Error("The live session record is unavailable.");
-      const data = JSON.parse(raw), times = (_a = data == null ? void 0 : data.history) == null ? void 0 : _a.timestamps;
-      if (data.roomEpoch !== current.roomEpoch || data.sessionStartedAt !== current.sessionStartedAt || data.timestamp !== current.recordSavedAt || !Array.isArray(times) || times.length !== current.sampleCount || times.at(-1) !== current.sampleAt) {
-        throw new Error("The live session changed while reading. Waiting for its next announcement.");
-      }
-      const archive = freezeRecordingData(effects.archive(current.room, data));
-      if (effects.epoch(current.room) !== current.roomEpoch) throw new Error("This room was reset. Choose its new session.");
-      archives.set(current.id, { revision: current.revision, archive });
-      return archive;
-    }
-    function clear() {
-      archives.clear();
-      invalidate();
-    }
-    function retain(ids) {
-      const selected = ids instanceof Set ? ids : new Set(ids);
-      for (const id of archives.keys()) if (!selected.has(id)) archives.delete(id);
-    }
-    function cleanupExpired() {
-      if (!effects.remove) return;
-      try {
-        const at = effects.now();
-        for (const key of effects.list().filter((key2) => key2.startsWith(LIVE_MODEL_PREFIX))) {
-          const source = decodeLiveModelSource(effects.get(key, null), key, at);
-          if (!source || at - source.lastSeenAt <= 3 * 60 * 60 * 1e3) continue;
-          const current = decodeLiveModelSource(effects.get(key, null), key, at);
-          if ((current == null ? void 0 : current.id) === source.id && current.lastSeenAt === source.lastSeenAt && current.revision === source.revision) effects.remove(key);
-        }
-        invalidate();
-      } catch (_) {
-      }
-    }
-    return { readSources, readArchive, clear, retain, invalidate, cleanupExpired };
-  }
-  var exchange = createLiveModelExchange({
-    get: (key, fallback) => GM_getValue(key, fallback),
-    list: () => GM_listValues(),
-    remove: (key) => GM_deleteValue(key),
-    now: () => Date.now(),
-    epoch: (room2) => getRoomEpoch(getStorageKey(room2)),
-    archive: (room2, session) => validateSessionFile({
-      format: runtime.SESSION_FILE_FORMAT,
-      formatVersion: runtime.SESSION_FILE_VERSION,
-      producerVersion: session.producerVersion || runtime.TIERSCOPE_VERSION,
-      room: room2,
-      session
-    })
-  });
-  var publisherId = null, heartbeat = null, announced = false, started = false, cleanupInitialized = false, savedBinding = null;
-  var sourceProviders = /* @__PURE__ */ new Set(), sourceSubscribers = /* @__PURE__ */ new Set();
-  function registerLiveModelSourceProvider(provider) {
-    if (!provider || !["readSources", "readArchive", "subscribe"].every((key) => typeof provider[key] === "function")) {
-      throw new Error("Invalid comparison source provider.");
-    }
-    const entry = { provider, detach: null };
-    const changed = () => {
-      for (const notify of sourceSubscribers) notify();
-    };
-    entry.detach = provider.subscribe(changed);
-    sourceProviders.add(entry);
-    changed();
-    return () => {
-      if (!sourceProviders.delete(entry)) return;
-      if (typeof entry.detach === "function") entry.detach();
-      changed();
-    };
-  }
-  function providerSources(provider) {
-    const result = provider.readSources(), sources = [];
-    let error = (result == null ? void 0 : result.error) || "";
-    for (const value of (result == null ? void 0 : result.sources) || []) {
-      const source = decodeInMemoryLiveModelSource(value, Date.now());
-      if (source) sources.push(Object.freeze(source));
-      else error = "Some comparison-only sources could not be read.";
-    }
-    return { sources, error };
-  }
-  function notifyLiveModels() {
-    exchange.invalidate();
-    GM_setValue(LIVE_MODEL_NOTICE, { version: 1, at: Date.now(), token: makeStorageId() });
-  }
-  function retirePublisher() {
-    if (heartbeat !== null) clearInterval(heartbeat);
-    heartbeat = null;
-    const wasAnnounced = announced;
-    announced = false;
-    savedBinding = null;
-    if (!publisherId || !wasAnnounced) return;
-    try {
-      GM_deleteValue(LIVE_MODEL_PREFIX + publisherId);
-      notifyLiveModels();
-    } catch (_) {
-    }
-  }
-  function publishLiveModelSource(savedTimestamp = null) {
-    var _a, _b;
-    if (!started || !publisherId) return;
-    const room2 = (_a = roomFromUrl(location.href)) == null ? void 0 : _a.toLowerCase();
-    if (!room2 || runtime.lastUrl !== location.href || runtime.activeSessionStorageKey !== getStorageKey(room2)) {
-      retirePublisher();
-      return;
-    }
-    if (heartbeat === null) heartbeat = setInterval(publishLiveModelSource, LIVE_MODEL_HEARTBEAT_MS);
-    try {
-      const at = Date.now(), epoch = getRoomEpoch(getStorageKey(room2));
-      const sessionStartedAt = runtime.sessionStartedAt, roomEpoch = runtime.activeRoomEpoch;
-      if (typeof roomEpoch !== "string") {
-        retirePublisher();
-        return;
-      }
-      const history = runtime.history, sampleCount = history.timestamps.length, sampleAt = (_b = history.timestamps.at(-1)) != null ? _b : null;
-      const record = runtime.tabRecords.get(getStorageKey(room2));
-      const sessionId = roomEpoch + "@" + (sessionStartedAt === null ? "pending" : sessionStartedAt);
-      const candidateKey = record ? runtime.TAB_RECORD_PREFIX + room2 + ":" + record.id : null;
-      if (record && Number.isSafeInteger(savedTimestamp) && savedTimestamp >= 0) {
-        savedBinding = { recordKey: candidateKey, sessionId, timestamp: savedTimestamp, writtenAt: record.savedAt, sampleCount, sampleAt };
-      }
-      const saved = !getSessionSaveState(room2).error && record && sampleCount > 0 && savedBinding && savedBinding.recordKey === candidateKey && savedBinding.sessionId === sessionId && savedBinding.writtenAt === record.savedAt && savedBinding.sampleCount === sampleCount && savedBinding.sampleAt === sampleAt;
-      const recordKey = saved ? candidateKey : null;
-      const revision = saved ? [record.id, savedBinding.timestamp, record.savedAt, sampleCount, sampleAt].join(":") : "";
-      let status = runtime.isStopped ? "stopped" : runtime.isPaused || !runtime.isAutoRefreshOn ? "paused" : isBrowserOffline() ? "offline" : runtime.requestPolicyCache.blocked || runtime.requestPolicyCache.until > at ? "retry" : sampleCount === 0 ? "waiting" : saved ? "tracking" : "unavailable";
-      if (epoch !== roomEpoch) status = "reset";
-      const source = {
-        version: 1,
-        id: publisherId + ":" + room2 + ":" + sessionId,
-        publisherId,
-        room: room2,
-        roomEpoch,
-        sessionId,
-        sessionStartedAt,
-        status,
-        lastSeenAt: at,
-        sampleAt,
-        sampleCount,
-        revision,
-        recordKey,
-        recordSavedAt: saved ? savedBinding.timestamp : null
-      };
-      GM_setValue(LIVE_MODEL_PREFIX + publisherId, source);
-      announced = true;
-      notifyLiveModels();
-    } catch (_) {
-    }
-  }
-  function initializeLiveModelSources() {
-    if (heartbeat !== null) clearInterval(heartbeat);
-    heartbeat = null;
-    started = true;
-    if (!publisherId) publisherId = makeStorageId();
-    if (!cleanupInitialized) {
-      cleanupInitialized = true;
-      exchange.cleanupExpired();
-    }
-    publishLiveModelSource();
-  }
-  function stopLiveModelSources() {
-    started = false;
-    if (heartbeat !== null) clearInterval(heartbeat);
-    heartbeat = null;
-    retirePublisher();
-    exchange.clear();
-  }
-  function readLiveModelSources(force = false) {
-    const result = exchange.readSources(force), sources = result.sources.slice();
-    const ids = new Set(sources.map((source) => source.id)), errors = result.error ? [result.error] : [];
-    for (const { provider } of sourceProviders) {
-      try {
-        const extra = providerSources(provider);
-        if (extra.error) errors.push(extra.error);
-        for (const source of extra.sources) {
-          if (ids.has(source.id)) {
-            errors.push("A comparison-only source identity is duplicated.");
-            continue;
-          }
-          sources.push(source);
-          ids.add(source.id);
-        }
-      } catch (_) {
-        errors.push("Comparison-only sources are unavailable. Their previous snapshots are retained.");
-      }
-    }
-    sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
-    return { sources, error: errors.join(" ") };
-  }
-  function readLiveModelArchive(source) {
-    if (source.kind !== "background") return exchange.readArchive(source);
-    for (const { provider } of sourceProviders) {
-      const current = providerSources(provider).sources.find((value) => value.id === source.id);
-      if (!current) continue;
-      if (current.revision !== source.revision || current.room !== source.room || current.sessionId !== source.sessionId || current.sampleCount !== source.sampleCount || current.sampleAt !== source.sampleAt || !current.sampleCount || ["reset", "unavailable", "stale"].includes(current.status)) break;
-      const archive = freezeRecordingData(validateSessionFile(provider.readArchive(current))), session = archive.session;
-      if (archive.room.toLowerCase() !== current.room || session.sessionStartedAt !== current.sessionStartedAt || session.history.timestamps.length !== current.sampleCount || session.history.timestamps.at(-1) !== current.sampleAt) break;
-      const latest = providerSources(provider).sources.find((value) => value.id === current.id);
-      if (!latest || latest.revision !== current.revision) break;
-      return archive;
-    }
-    throw new Error("This comparison-only source changed or is unavailable. Its previous chart snapshot is retained.");
-  }
-  function retainLiveModelArchives(ids) {
-    exchange.retain(ids);
-  }
-  function subscribeLiveModelSources(changed) {
-    let disposed = false, pending = null, listener = null;
-    function schedule() {
-      if (disposed || pending !== null) return;
-      pending = setTimeout(() => {
-        pending = null;
-        if (!disposed) changed();
-      }, 80);
-    }
-    sourceSubscribers.add(schedule);
-    try {
-      if (typeof GM_addValueChangeListener === "function") listener = GM_addValueChangeListener(LIVE_MODEL_NOTICE, () => {
-        exchange.invalidate();
-        schedule();
-      });
-    } catch (_) {
-    }
-    const timer = setInterval(schedule, 5e3);
-    return () => {
-      disposed = true;
-      clearInterval(timer);
-      sourceSubscribers.delete(schedule);
-      if (pending !== null) clearTimeout(pending);
-      if (listener !== null) {
-        try {
-          if (typeof GM_removeValueChangeListener === "function") GM_removeValueChangeListener(listener);
-        } catch (_) {
-        }
-      }
-      exchange.clear();
-    };
   }
 
   // src/live-model-comparison.js
@@ -10060,6 +10940,7 @@ underlying system, so should run in the browser, Node, or Plask.
   }
   function openSessionTools(focusTarget) {
     if (closeSessionTools) closeSessionTools();
+    initializeBackgroundTracking();
     const origin = location.href, generation = runtime.initGuard, focusBefore = focusTarget || document.getElementById("btn-control-library") || document.activeElement;
     const dialog = document.createElement("dialog");
     dialog.id = "tierscope-session-tools";
@@ -10068,7 +10949,7 @@ underlying system, so should run in the browser, Node, or Plask.
     dialog.innerHTML = libraryShell();
     document.body.appendChild(dialog);
     let currentArchive = null, liveComparisonArchive = null, library = null, tab = "library", fileRequest = 0, chartObserver = null;
-    const libraryReader = createLibraryReader();
+    const libraryReader2 = createLibraryReader();
     const modelHistoryReader = createModelHistoryReader();
     const modelCardReader = createModelCardReader();
     let historyLimit = Infinity, historySelected = "", compareAxis = "elapsed";
@@ -10092,7 +10973,8 @@ underlying system, so should run in the browser, Node, or Plask.
     let compareMode = "saved", liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
     const recentState = createRecentComparisonState();
-    let backgroundRoomDraft = "", detachBackgroundStatus = null, detachBackgroundProvider = null;
+    let backgroundRoomDraft = "", detachBackgroundStatus = null;
+    const pendingBackgroundSelection = /* @__PURE__ */ new Set();
     const followers = { summary: createAnalysisFollower(), compare: createAnalysisFollower(), history: createAnalysisFollower() };
     try {
       currentArchive = captureSessionFile();
@@ -10178,7 +11060,7 @@ underlying system, so should run in the browser, Node, or Plask.
       input.click();
     }
     function readLibrary() {
-      library = libraryReader.read();
+      library = libraryReader2.read();
       options = [];
       optionsLibrary = null;
       optionsArchive = null;
@@ -10234,7 +11116,7 @@ underlying system, so should run in the browser, Node, or Plask.
       saveNote: action((entry) => {
         const draft = noteDrafts.read(entry);
         if (!draft.dirty) return;
-        const fresh = libraryReader.read();
+        const fresh = libraryReader2.read();
         const latest = fresh.entries.find((item) => item.id === draft.id || draft.lineage && item.lineage === draft.lineage || item.records.some((record) => record.key === LIBRARY_PREFIX + draft.id));
         if (!latest) throw new Error("This session changed or is unavailable. Your draft is kept in Review unsaved notes.");
         if ((latest.notes || "") !== draft.base && latest.notes !== draft.value && !confirm("Saved notes for this session changed in another tab. Replace them with your draft?")) return;
@@ -10406,7 +11288,7 @@ underlying system, so should run in the browser, Node, or Plask.
       if (refreshCapacity && capacityCheckpoint !== checkpointSignature) {
         capacityCheckpoint = checkpointSignature;
         try {
-          refreshCapacity(libraryReader.read(), readLibraryLimits(), "");
+          refreshCapacity(libraryReader2.read(), readLibraryLimits(), "");
         } catch (error) {
           refreshCapacity(library, null, error.message);
         }
@@ -10612,54 +11494,85 @@ underlying system, so should run in the browser, Node, or Plask.
         const start = node(form, "button", "Compare without watching");
         start.type = "submit";
         start.id = "tools-compare-background";
-        form.onsubmit = (event) => {
+        form.onsubmit = async (event) => {
           event.preventDefault();
           try {
             if (input.value.trim().toLowerCase() === getModelName().toLowerCase()) throw new Error("This room is already being tracked. Enter another room name.");
-            startBackgroundComparison(input.value);
-            backgroundRoomDraft = getBackgroundComparisonState().room;
-            liveModelsState.selected.clear();
-            liveModelsState.choices.clear();
+            input.disabled = true;
+            start.disabled = true;
+            const state = await startPersistentBackgroundComparison(input.value);
+            if (!current()) return;
+            backgroundRoomDraft = state.room;
+            const firstSelection = !liveModelsState.autoPicked;
             liveModelsState.autoPicked = true;
             liveModelsState.frozen = false;
             liveModelsState.chartState = null;
-            selectBackgroundComparison(backgroundRoomDraft);
+            if (firstSelection) {
+              if (getModelName() !== "unknown") pendingBackgroundSelection.add(getModelName().toLowerCase());
+              for (const tracked of getPersistentBackgroundComparisonStates()) if (tracked.active) pendingBackgroundSelection.add(tracked.room);
+            } else pendingBackgroundSelection.add(state.room);
+            selectBackgroundComparisons();
             compareMode = "live";
             render("compare");
           } catch (error) {
-            input.setCustomValidity(error.message);
-            input.reportValidity();
+            if (input.isConnected) {
+              input.setCustomValidity(error.message);
+              input.reportValidity();
+            }
+          } finally {
+            input.disabled = false;
+            start.disabled = false;
           }
         };
-        node(section, "p", "Compare one room without opening its video. Refreshes about once a minute while Library is open; not saved automatically.", "tools-muted");
+        node(section, "p", "Add rooms without opening their videos. Tracking continues while Chaturbate is open. Stops after more than 15 minutes of confirmed broadcaster absence, or when you press Stop.", "tools-muted");
       }
-      const status = node(section, "p", "", "tools-muted");
+      const status = node(section, "div", void 0, "tools-background-status");
       status.id = "tools-background-status";
-      status.setAttribute("role", "status");
-      button(section, "Stop tracking this room", () => {
-        stopBackgroundComparison();
-        refreshBackgroundControls();
-      }, "tools-background-stop");
       refreshBackgroundControls();
     }
     function refreshBackgroundControls() {
-      const state = getBackgroundComparisonState(), status = dialog.querySelector("#tools-background-status");
+      const states = getPersistentBackgroundComparisonStates(), status = dialog.querySelector("#tools-background-status");
       if (!status) return;
-      status.hidden = !state.room;
-      status.textContent = state.room ? "Compare without watching · " + state.room + " · " + state.message : "";
-      status.style.color = ["retry", "unavailable", "offline"].includes(state.status) ? "var(--panel-warning)" : "var(--panel-muted)";
-      const stop = dialog.querySelector("#tools-background-stop");
-      if (stop) stop.hidden = !state.active;
+      status.hidden = !states.length;
+      const visible = new Set(states.map((state) => state.room));
+      for (const row of Array.from(status.children)) if (!visible.has(row.dataset.backgroundRoom)) row.remove();
+      for (const state of states) {
+        let row = Array.from(status.children).find((item) => item.dataset.backgroundRoom === state.room);
+        if (!row) {
+          row = node(status, "div", void 0, "tools-background-row");
+          row.dataset.backgroundRoom = state.room;
+          const text2 = node(row, "span", "", "tools-muted");
+          text2.setAttribute("role", "status");
+          text2.dataset.backgroundMessage = "";
+          const stop = button(row, "Stop", () => {
+            try {
+              stopPersistentBackgroundComparison(state.room);
+              pendingBackgroundSelection.delete(state.room);
+              refreshBackgroundControls();
+            } catch (error) {
+              tell(error.message, true);
+            }
+          });
+          stop.dataset.backgroundStop = "";
+          stop.setAttribute("aria-label", "Stop tracking " + state.room);
+        }
+        const text = row.querySelector("[data-background-message]");
+        const message2 = state.room + " · " + state.message;
+        if (text.textContent !== message2) text.textContent = message2;
+        text.style.color = ["retry", "unavailable", "offline"].includes(state.status) ? "var(--panel-warning)" : "var(--panel-muted)";
+        row.querySelector("[data-background-stop]").hidden = !state.active;
+      }
     }
-    function selectBackgroundComparison(targetRoom) {
+    function selectBackgroundComparisons() {
       const { sources } = readLiveModelSources(true);
-      for (const room2 of [getModelName().toLowerCase(), targetRoom]) {
+      for (const room2 of pendingBackgroundSelection) {
         const candidates = sources.filter((source) => source.room === room2 && !["reset", "unavailable", "stale"].includes(source.status));
         candidates.sort((a, b) => b.sampleCount - a.sampleCount || (b.sampleAt || 0) - (a.sampleAt || 0) || a.id.localeCompare(b.id));
         const chosen = candidates[0];
         if (chosen) {
           liveModelsState.selected.add(chosen.id);
           liveModelsState.choices.set(room2, chosen.id);
+          pendingBackgroundSelection.delete(room2);
         }
       }
     }
@@ -11348,7 +12261,7 @@ underlying system, so should run in the browser, Node, or Plask.
           return;
         }
         if (compareMode === "live") {
-          if (getBackgroundComparisonState().room) backgroundComparisonControls(content, false);
+          if (getPersistentBackgroundComparisonStates().length) backgroundComparisonControls(content, false);
           liveModelsView = renderLiveModelsComparison(content, {
             state: liveModelsState,
             currentRoom: getModelName(),
@@ -11465,11 +12378,11 @@ underlying system, so should run in the browser, Node, or Plask.
         node(content, "p", pendingBackup.rooms.length + " rooms · " + (Object.keys(pendingBackup.preferences).length + (pendingBackup.analysisPreferences ? 1 : 0)) + " saved preferences · " + pendingBackup.library.length + " sessions", "tools-muted");
         node(content, "p", pendingBackup.favoriteModels.length + " favorite models. Restoring Library adds these where no local model choice exists.", "tools-muted");
         const choices = node(content, "div", void 0, "tools-actions");
-        const highs = checkbox(choices, "tools-restore-highs", "Merge ATH"), preferences = checkbox(choices, "tools-restore-preferences", "Restore preferences"), recordings = checkbox(choices, "tools-restore-library", "Add sessions and favorite models");
+        const highs = checkbox(choices, "tools-restore-highs", "Merge ATH"), preferences2 = checkbox(choices, "tools-restore-preferences", "Restore preferences"), recordings = checkbox(choices, "tools-restore-library", "Add sessions and favorite models");
         button(content, "Restore selected data", () => {
-          if (!highs.checked && !preferences.checked && !recordings.checked) throw new Error("Choose at least one kind of data to restore.");
+          if (!highs.checked && !preferences2.checked && !recordings.checked) throw new Error("Choose at least one kind of data to restore.");
           if (!confirm("Restore the selected backup data?\n\nATH will be merged, library sessions added or updated with fuller versions, and selected saved preferences replaced. Your live session is not replaced." + (pendingBackup.recovery ? "\n\nThis partial backup excludes " + pendingBackup.recovery.omittedLibraryKeys.length + " unreadable library entries." : ""))) return;
-          const result = restoreTierScopeBackup(pendingBackup, { highs: highs.checked, preferences: preferences.checked, library: recordings.checked });
+          const result = restoreTierScopeBackup(pendingBackup, { highs: highs.checked, preferences: preferences2.checked, library: recordings.checked });
           library = null;
           if (runtime.playback) setPlaybackAllTimeState(runtime.playback, readAllTimeHighs(displayedHighRoom()));
           repaintHighMode();
@@ -11554,11 +12467,6 @@ underlying system, so should run in the browser, Node, or Plask.
         liveModelsView.dispose();
         liveModelsView = null;
       }
-      stopBackgroundComparison({ clear: true });
-      if (detachBackgroundProvider) {
-        detachBackgroundProvider();
-        detachBackgroundProvider = null;
-      }
       fileRequest++;
       refreshSessionTools = null;
       refreshCapacity = null;
@@ -11575,7 +12483,7 @@ underlying system, so should run in the browser, Node, or Plask.
       analysisSources = null;
       analysisOutput = null;
       analysisReports = null;
-      libraryReader.clear();
+      libraryReader2.clear();
       modelHistoryReader.clear();
       options = [];
       optionsLibrary = null;
@@ -11664,13 +12572,9 @@ underlying system, so should run in the browser, Node, or Plask.
       modeChanged: (enabled) => detachDock.setChartOnly(enabled),
       redraw: () => detachDock.redraw()
     });
-    detachBackgroundProvider = registerLiveModelSourceProvider({
-      readSources: readBackgroundComparisonSources,
-      readArchive: readBackgroundComparisonArchive,
-      subscribe: subscribeBackgroundComparison
-    });
-    detachBackgroundStatus = subscribeBackgroundComparison(() => {
+    detachBackgroundStatus = subscribePersistentBackgroundComparison(() => {
       if (!current()) return;
+      selectBackgroundComparisons();
       refreshBackgroundControls();
       if (liveModelsView) liveModelsView.refresh();
     });
@@ -13110,6 +14014,11 @@ underlying system, so should run in the browser, Node, or Plask.
   }
   function init() {
     try {
+      initializeBackgroundTracking();
+    } catch (error) {
+      log("Comparison tracking recovery unavailable: " + error.message);
+    }
+    try {
       initializeAthGrace();
     } catch (error) {
       log("ATH grace initialization unavailable: " + error.message);
@@ -13295,7 +14204,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.32.0-beta.1";
+    runtime.TIERSCOPE_VERSION = "3.32.0-beta.2";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

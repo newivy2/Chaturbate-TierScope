@@ -5,6 +5,7 @@ const source = instrument(prepareSource(fs.readFileSync(path.join(__dirname, '..
     .replaceAll('scheduleInit(2000);', '')
     .replace('downloadTrackingReport: downloadTrackingReport,', `__liveTest:{
         setup(values=[10,20,30],offset=0){
+            initializeBackgroundTracking(); // Match normal startup before measuring Library-only listeners.
             const model=getModelName();
             if(model!=='unknown'){
                 loadSession(model);
