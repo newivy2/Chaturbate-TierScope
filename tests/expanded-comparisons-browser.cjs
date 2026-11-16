@@ -381,6 +381,9 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.waitForFunction(()=>{
    const canvas=document.getElementById('tools-analysis-chart');return canvas!==window.compactCanvas&&canvas?.hasAttribute('data-compact-path');
   });
+  // Path markers are set in a MutationObserver; scroll restoration follows in
+  // requestAnimationFrame. Observe the completed layout, as with resizing below.
+  await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
   assert.equal(await library.getAttribute('data-chart-only'),'true','a new eligible saved session preserves compact presentation during chart rebuild');
   assert(await page.locator('#tools-analysis-chart').isVisible());assert(!(await page.locator('.tools-chart-legend').isVisible()));
   const topologyAfter=await captureChart();
