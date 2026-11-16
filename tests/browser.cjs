@@ -112,11 +112,15 @@ const injected=source.replaceAll('scheduleInit(2000);','/* test controls initial
  await page.mouse.move(h.x+40,h.y+5);await page.mouse.down();await page.mouse.move(320,140,{steps:5});await page.mouse.up();
  const moved=await page.locator('#tracker-container').boundingBox();assert(moved.x<500);
  const resize=await page.locator('#resize-handle').boundingBox();
- await page.mouse.move(resize.x+3,resize.y+3);await page.mouse.down();await page.mouse.move(resize.x-70,resize.y+3,{steps:5});await page.mouse.up();
+ await page.mouse.move(resize.x+3,resize.y+3);await page.mouse.down();await page.mouse.move(resize.x-70,resize.y+3,{steps:5});
+ const resizingScale=(await page.evaluate(()=>ViewerTracker.__test.extra())).scale;
+ assert.equal(await page.locator('#btn-standard-size').textContent(),Math.round(resizingScale*100)+'%','Scope percentage updates before releasing the resize grip');
+ await page.mouse.up();
  const scale=(await page.evaluate(()=>ViewerTracker.__test.extra())).scale;assert(scale>1.2);
  const saved=await page.evaluate(()=>JSON.parse(GM_getValue('tierscope:ui:geometry:v1')));
  await page.reload();await page.addScriptTag({content:instrument(injected)});await page.evaluate(()=>ViewerTracker.__test.init());await page.waitForTimeout(400);
  assert.equal((await page.evaluate(()=>ViewerTracker.__test.extra())).scale,scale);
+ assert.equal(await page.locator('#btn-standard-size').textContent(),Math.round(scale*100)+'%','restored scale is shown after reload');
  const restored=await page.locator('#tracker-container').boundingBox();assert(Math.abs(restored.x-saved.left)<1);assert(Math.abs(restored.y-saved.top)<1);
  await page.click('#btn-toggle');
  await page.reload();await page.addScriptTag({content:instrument(injected)});await page.evaluate(()=>ViewerTracker.__test.init());await page.waitForTimeout(400);
@@ -125,6 +129,7 @@ const injected=source.replaceAll('scheduleInit(2000);','/* test controls initial
  assert(Math.abs((await page.locator('#tracker-container').boundingBox()).width-restored.width)<1);
  console.log('PASS broadcast room reopens expanded at the saved non-default scale');
  await page.click('#btn-standard-size');assert.equal((await page.evaluate(()=>ViewerTracker.__test.extra())).scale,1);
+ assert.equal(await page.locator('#btn-standard-size').textContent(),'100%');
  assert.equal((await page.locator('#tracker-container').boundingBox()).width,initial.width);
  assert.equal(await page.evaluate(()=>JSON.parse(GM_getValue('tierscope:ui:geometry:v1')).scale),1);
  await page.click('#btn-toggle');assert.match(await page.locator('#mini-metric').textContent(),/💎/);await page.click('#btn-expand');

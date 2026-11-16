@@ -1,4 +1,4 @@
-import { DEFAULT_LIBRARY_LIMITS, validateLibraryLimits } from './library-capacity-data.js';
+import { DEFAULT_AUTOMATIC_KEEPING_MINUTES, DEFAULT_LIBRARY_LIMITS, validateLibraryLimits } from './library-capacity-data.js';
 
 export const LIBRARY_LIMITS_KEY = 'tierscope:library-limits:v1';
 
@@ -37,7 +37,7 @@ export const AUTOMATIC_KEEPING_KEY = 'tierscope:automatic-keeping:v1';
 export function readAutomaticKeepingMinutes() {
     try {
         const raw = GM_getValue(AUTOMATIC_KEEPING_KEY, undefined);
-        if (raw === undefined) return 5;
+        if (raw === undefined) return DEFAULT_AUTOMATIC_KEEPING_MINUTES;
         const record = JSON.parse(raw);
         if (record.schemaVersion !== 1) throw new Error('Unsupported automatic keeping settings.');
         return validateAutomaticKeepingMinutes(record.minimumMinutes);

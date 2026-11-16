@@ -225,10 +225,11 @@ export function openSessionTools(focusTarget) {
         const wrapper = node(parent, 'label', label), select = node(wrapper, 'select'); select.id = id;
         const matches = filteredSources || sourceOptions(), choices = matches.slice();
         const retained = sourceOptions().find(item => item.id === selected);
+        if (!selected) {const option = node(select, 'option', 'Choose a session…'); option.value = '';}
         if (retained && !choices.some(item => item.id === selected)) choices.unshift({...retained, title: retained.title + ' (selected; outside filters)'});
         if (selected && selected !== 'current' && selected !== 'live' && !retained) choices.unshift({id: selected, title: 'Session changed or removed — choose another'});
         for (const item of choices) { const option = node(select, 'option', item.title); option.value = item.id; }
-        if (choices.some(item => item.id === selected)) select.value = selected;
+        if (!selected || choices.some(item => item.id === selected)) select.value = selected || '';
         select.onchange = () => changed(select.value); return select.value;
     }
     function archiveName(archive) {
@@ -493,6 +494,28 @@ export function openSessionTools(focusTarget) {
         pickerOpen.compare = false; compareMode = 'saved'; render('compare');
         (dialog.querySelector('#tools-analysis-chart') || dialog.querySelector('#tools-session-picker > summary'))?.focus();
     }
+    function openSavedComparison() {
+        const state = readLibrary(), pageRoom = getModelName();
+        let snapshot = null, id = '';
+        try {snapshot = captureLiveSessionFile(); id = 'live';} catch (_) { /* A directory or first sample can use saved history instead. */ }
+        if (!snapshot && pageRoom === 'unknown' && isPlaybackCurrent(runtime.playback)) {
+            snapshot = runtime.playback.archive; currentArchive = snapshot; id = 'current';
+        }
+        if (!snapshot) {
+            const room = pageRoom !== 'unknown' ? pageRoom : libraryRoom && libraryRoom !== '*' ? libraryRoom : analysisFilters.room;
+            const latest = room ? latestModelSessionIds(state.entries, room)[0] : null;
+            const entry = state.entries.find(item => item.id === latest);
+            if (entry) {snapshot = entry.archive; id = entry.id;}
+        }
+        const ids = snapshot ? previousModelSessionIds(state.entries, snapshot) : [];
+        liveComparisonArchive = id === 'live' ? snapshot : null;
+        followers.compare.reset(); selectionPage = reportPage = 0;
+        selectedA = id; selectedB = ids[0] || ''; selectedExtra = ids.slice(1);
+        Object.assign(analysisFilters, {room: snapshot?.room.toLowerCase() || (pageRoom === 'unknown' ? '' : pageRoom.toLowerCase()), query: '', from: '', to: ''});
+        pickerOpen.compare = !ids.length; compareMode = 'saved'; render('compare');
+        if (!snapshot) tell('Choose a model or session first. Saved sessions compares that model with its earlier saved sessions.');
+        else if (!ids.length) tell('No earlier saved sessions for ' + snapshot.room + '. Keep an earlier session for this model to compare with.');
+    }
     function openLiveComparison() {
         compareMode = 'live'; render('compare');
         dialog.querySelector('#tools-live-models')?.scrollIntoView({block: 'nearest'});
@@ -677,7 +700,10 @@ export function openSessionTools(focusTarget) {
                 followers.compare.reset(); selectionPage = reportPage = 0; pickerOpen.compare = false; render('compare');
             }, 'tools-compare-all-matching');
             all.disabled = matchingSaved.length < 2;
-            if (!selectedB) selectedB = (sourceOptions().find(item => item.id !== selectedA) || sourceOptions()[0]).id;
+            if (!selectedB) {
+                const anchor = sourceOptions().find(item => item.id === selectedA);
+                selectedB = anchor ? previousModelSessionIds(library.entries, anchor.archive)[0] || '' : '';
+            }
             selectedB = selectSource(sourceControls, 'B ', 'tools-source-b', selectedB, value => { selectedB = value; selectNewFollowSource(); render(tab); });
             selectionPage = Math.min(selectionPage, Math.max(0, Math.ceil(selectedExtra.length / 25) - 1));
             const visibleExtra = selectedExtra.length > 28 ? selectedExtra.slice(selectionPage * 25, (selectionPage + 1) * 25) : selectedExtra;
@@ -702,7 +728,7 @@ export function openSessionTools(focusTarget) {
                 const next = button(pages, 'Next selected ›', () => {selectionPage++; render(tab);}, 'tools-selection-next'); next.disabled = (selectionPage + 1) * 25 >= selectedExtra.length;
             }
             const used = new Set([selectedA, selectedB, ...selectedExtra]);
-            const count = 2 + selectedExtra.length;
+            const count = [selectedA, selectedB, ...selectedExtra].filter(id => !!id).length;
             const next = filteredSources.find(item => !used.has(item.id));
             const add = button(sourceControls, 'Add session', () => { if (next) { selectedExtra.push(next.id); render(tab); } }, 'tools-compare-add');
             add.disabled = !next;
@@ -848,7 +874,9 @@ export function openSessionTools(focusTarget) {
             const mode = node(content, 'div', undefined, 'tools-actions tools-comparison-mode');
             mode.setAttribute('role', 'group'); mode.setAttribute('aria-label', 'Comparison source');
             for (const [value, title] of [['saved', 'Saved sessions'], ['live', 'Live models'], ['recent', 'Last 24h']]) {
-                const control = button(mode, title, () => {compareMode = value; render('compare');}, 'tools-compare-' + value);
+                const control = button(mode, title, () => {
+                    if (value === 'saved') openSavedComparison(); else {compareMode = value; render('compare');}
+                }, 'tools-compare-' + value);
                 control.className = compareMode === value ? 'tools-primary' : '';
                 control.setAttribute('aria-pressed', String(compareMode === value));
             }

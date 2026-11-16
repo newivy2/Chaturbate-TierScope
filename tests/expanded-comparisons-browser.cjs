@@ -101,7 +101,7 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   const picker=async()=>page.locator('#tools-recording-picker').evaluate(element=>element.open=true);
   const screenshot=async kind=>{await page.locator('#tools-content').evaluate(element=>element.scrollTop=0);
    await page.screenshot({path:'/tmp/expanded-comparisons-'+kind+'.png'});};
-  await picker();await page.fill('#tools-analysis-search','Bulk session');await page.click('#tools-compare-all-matching');await picker();
+  await picker();await page.click('#tools-analysis-clear');await picker();await page.fill('#tools-analysis-search','Bulk session');await page.click('#tools-compare-all-matching');await picker();
   assert.equal(await page.locator('#tools-compare-slots').textContent(),'60 sessions selected');
   assert.equal(await page.locator('[id^=tools-source-]').count(),2,'large comparisons avoid quadratic source dropdowns');
   const ids=await page.locator('[id^=tools-source-]').evaluateAll(elements=>elements.map(element=>element.value));
@@ -332,17 +332,20 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.selectOption('#tools-compare-axis','elapsed');assert(await page.locator('#tools-shared-length').isEnabled());
   assert.match(await page.locator('#tools-analysis-chart').getAttribute('aria-label'),/real elapsed time/);
   await toggleCompact(false);assert.equal(await page.locator('#tools-compare-axis').inputValue(),'elapsed');
-  const savedBeforeModeSwitch=await captureChart();await toggleCompact(true);await assertDefaultPlot('Saved comparison opens again');
+  await toggleCompact(true);await assertDefaultPlot('Saved comparison opens again');
   for(const mode of ['live','recent','saved']){
    await page.click('#tools-compare-'+mode);
    await page.waitForFunction(mode=>document.getElementById('tierscope-session-tools').dataset.chartOnly==='true'&&
     document.getElementById('tools-compare-'+mode)?.getAttribute('aria-pressed')==='true',mode);
    await assertDefaultPlot('Compact '+mode+' shortcut');
   }
-  assert.deepEqual(await captureChart(),savedBeforeModeSwitch,'compact mode shortcuts restore the saved comparison choices');
+  assert.equal(await page.locator('#tools-source-a').inputValue(),'live');
+  assert.equal(await page.locator('#tools-source-b').inputValue(),'current_historical','Saved shortcut selects the current room’s earlier session instead of the mixed-model selection');
+  assert.equal(await page.locator('#tools-analysis-model').inputValue(),'comparison_room');
+  const rebuiltSaved=await captureChart();
   await page.locator('#tools-content').evaluate(async element=>{element.scrollTop=0;await new Promise(requestAnimationFrame);});
   await page.click('#tools-compare-saved');await assertDefaultPlot('The current Saved shortcut returns to its plot');
-  assert.deepEqual(await captureChart(),savedBeforeModeSwitch,'reselecting the current compact mode preserves its comparison choices');
+  assert.deepEqual(await captureChart(),rebuiltSaved,'reselecting Saved keeps its rebuilt same-model comparison');
   await toggleCompact(false);
 
   await page.click('#tools-compare-recent');await page.click('#tools-recent-metric-total');
@@ -378,6 +381,9 @@ const source=instrument(prepareSource(fs.readFileSync(path.join(__dirname,'../ti
   await page.waitForFunction(()=>{
    const canvas=document.getElementById('tools-analysis-chart');return canvas!==window.compactCanvas&&canvas?.hasAttribute('data-compact-path');
   });
+  // Path markers are set in a MutationObserver; scroll restoration follows in
+  // requestAnimationFrame. Observe the completed layout, as with resizing below.
+  await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
   assert.equal(await library.getAttribute('data-chart-only'),'true','a new eligible saved session preserves compact presentation during chart rebuild');
   assert(await page.locator('#tools-analysis-chart').isVisible());assert(!(await page.locator('.tools-chart-legend').isVisible()));
   const topologyAfter=await captureChart();
