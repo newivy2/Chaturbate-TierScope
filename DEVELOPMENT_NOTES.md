@@ -1,12 +1,12 @@
 # TierScope — Usage and development notes
 
-Detailed reference for **3.31.0**. [Connection recovery guide](docs/connection-recovery.md). [Comparison fading and history guide](docs/comparison-history-shadows.md). [24h comparison guide](docs/clock-comparison.md). [Library chart controls guide](docs/library-chart-controls.md). [Follow live guide](docs/follow-live.md). [Audience trends and ratio guide](docs/audience-trends.md). [Sessions Book guide](docs/sessions-book.md). [ATH cleanup guide](docs/ath-retention.md). The simplified Current Live Session card provides Keep in Library, Auto, Compare with previous, Live sessions, Last 24h sessions, and History. File controls are below the session list, and exports remain on stored-session menus and the separate replay card. Development uses modular sources and a single installable script; see [BUILDING.md](BUILDING.md). For installation instructions, see the [README](readme.md).
+Detailed reference for **3.31.1**. [Connection recovery guide](docs/connection-recovery.md). [Comparison fading and history guide](docs/comparison-history-shadows.md). [24h comparison guide](docs/clock-comparison.md). [Library chart controls guide](docs/library-chart-controls.md). [Follow live guide](docs/follow-live.md). [Audience trends and ratio guide](docs/audience-trends.md). [Sessions Book guide](docs/sessions-book.md). [ATH cleanup guide](docs/ath-retention.md). The simplified Current Live Session card provides Keep in Library, Auto, Compare with previous, Live sessions, Last 24h sessions, and History. File controls are below the session list, and exports remain on stored-session menus and the separate replay card. Development uses modular sources and a single installable script; see [BUILDING.md](BUILDING.md). For installation instructions, see the [README](readme.md).
 
 [Expanded comparisons and Last 24h](docs/expanded-comparisons.md) are available in **3.30.0**.
 
 [Independent Library appearance and chart-only comparisons](docs/library-appearance.md) are available in **3.31.0**.
 
-**3.31.1-beta.2 preview:** [Saved sessions shortcut behavior](docs/saved-session-shortcuts.md), a [three-minute automatic keeping default](docs/automatic-keeping.md), and matching panel resize cursors with a live percentage/reset button on Scope. Previously saved minimum-duration choices are preserved.
+**Available in 3.31.1:** [Saved sessions shortcut behavior](docs/saved-session-shortcuts.md), a [three-minute automatic keeping default](docs/automatic-keeping.md), and matching panel resize cursors with a live percentage/reset button on Scope. Previously saved minimum-duration choices are preserved.
 
 ## Contents
 
@@ -563,6 +563,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.31.1** | Release same-model Saved sessions shortcuts in full and chart-only views, a three-minute automatic keeping default that preserves saved choices, matching resize cursors and Scope’s live percentage/reset display. |
 | **3.31.1-beta.2** | Match Library’s resize cursor to Scope’s. Show Scope’s current scale on its reset button during resizing and after reload; clicking restores 100%. Keep Scope, full Library and chart-only Library sizes independent. |
 | **3.31.1-beta.1** | Make Saved sessions shortcuts rebuild the current model’s comparison with earlier saved sessions, clear stale selections/filters, and handle missing samples/history without choosing other models. Default automatic keeping to three minutes while preserving saved custom settings. |
 | **3.31.0** | Release independent Library scaling and transparency, plus chart-only Saved / Live / Last 24h comparisons with separate compact appearance. Prioritize a viewport-sized chart, keep controls reachable by scrolling, and preserve comparison state and user scroll through updates. |

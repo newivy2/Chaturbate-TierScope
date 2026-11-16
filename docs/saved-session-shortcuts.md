@@ -1,4 +1,4 @@
-# Saved sessions shortcuts — 3.31.1 beta
+# Saved sessions shortcuts — 3.31.1
 
 **Saved sessions** in full and chart-only comparisons starts a fresh comparison of this room's current tracked session with all earlier saved sessions from the same model. It clears filters and selections left over from another model or comparison mode. A Library copy of the current session is excluded, using the session's original start time.
 

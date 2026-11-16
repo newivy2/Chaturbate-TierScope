@@ -8,7 +8,7 @@ Install the [official userscript](https://raw.githubusercontent.com/newivy2/Tier
 
 Library remembers its own scale and opacity across reopenings, rooms and page reloads. The initial settings are 100% scale and 95% background opacity. Dark/bright mode remains shared with Scope. If saving fails, Library explains that the temporary appearance applies while it is open; adjusting again retries the save.
 
-**3.31.1-beta.2 preview:** Library’s grip uses the same resize cursor as Scope’s grip. Scope’s percentage button now shows its current scale while dragging and after reload, just like Library’s. Click either panel’s percentage to restore that panel to 100%; their size settings remain independent.
+**Since 3.31.1:** Library’s grip uses the same resize cursor as Scope’s grip. Scope’s percentage button now shows its current scale while dragging and after reload, just like Library’s. Click either panel’s percentage to restore that panel to 100%; their size settings remain independent.
 
 Narrow windows temporarily fit Library to the available space without overwriting the preferred scale. Widening the window restores that scale. Existing docking, sheet layout and Scope’s priority above an overlapping Library remain in place. Appearance changes preserve live tracking, replay, chart selections and recordings.
 
