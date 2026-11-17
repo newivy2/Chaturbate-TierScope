@@ -112,23 +112,26 @@ test('Stop during an in-flight scan cannot append into live history or an import
 });
 
 test('chart windows retain all stored samples and use only samples through the Replay frame',()=>{
- const h=fresh(),times=Array.from({length:361},(_,i)=>i*60000),values=times.map((_,i)=>i);values[0]=900;
- const full=h.t.buildChartPlot(values,times,[],100);assert.equal(full.max,900);assert.equal(full.start,0);
- for(const [mode,minutes]of [['fourHours',240],['twoHours',120],['hour',60],['halfHour',30],['quarter',15]]){
+ const h=fresh(),times=Array.from({length:1501},(_,i)=>i*60000),values=times.map((_,i)=>i);values[0]=9000;
+ const full=h.t.buildChartPlot(values,times,[],100);assert.equal(full.max,9000);assert.equal(full.start,0);
+ for(const [mode,minutes]of [['quarter',15],['hour',60],['fourHours',240],['twelveHours',720],['day',1440]]){
   const duration=h.api.__files.windows[mode];assert.equal(duration,minutes*60000);
-  const plot=h.t.buildChartPlot(values,times,[],100,undefined,duration);assert.equal(plot.start,360-minutes);assert.equal(plot.min,360-minutes);assert.equal(plot.max,360);assert.equal(plot.points[0].x,0);
-  const replay=h.t.buildChartPlot(values,times,[],100,300,duration);assert.equal(replay.start,300-minutes);assert.equal(replay.end,300);assert.equal(replay.max,300);
+  const plot=h.t.buildChartPlot(values,times,[],100,undefined,duration);assert.equal(plot.start,1500-minutes);assert.equal(plot.min,1500-minutes);assert.equal(plot.max,1500);assert.equal(plot.points[0].x,0);
+  const replay=h.t.buildChartPlot(values,times,[],100,1460,duration);assert.equal(replay.start,1460-minutes);assert.equal(replay.end,1460);assert.equal(replay.max,1460);
  }
  const replay=h.t.buildChartPlot(values,times,[],100,80,15*60000);assert.equal(replay.start,65);assert.equal(replay.end,80);assert.equal(replay.max,80);
  const gap=h.t.buildChartPlot([3,10],[0,60*60000],[false,true],100,1,15*60000);
  assert.equal(gap.start,1);assert(gap.points[0].x<0);assert.equal(gap.points[1].move,true);assert.equal(gap.points[1].x,100);
- assert.equal(times.length,361);assert.equal(values[0],900);
+ assert.equal(times.length,1501);assert.equal(values[0],9000);
 });
 
-test('full history defaults, window preferences survive reload and Reset, invalid preferences fall back safely',()=>{
+test('full range defaults, window preferences survive reload and Reset, old preferences migrate and invalid choices fall back safely',()=>{
  const h=populated(),f=h.api.__files;assert.equal(f.state().window,'full');f.setChartWindow('quarter');
  const restored=fresh(h.storage);assert.equal(restored.api.__files.state().window,'quarter');restored.t.resetAllTracking();assert.equal(restored.api.__files.state().window,'quarter');
- for(const mode of ['fourHours','twoHours','halfHour']){restored.api.__files.setChartWindow(mode);assert.equal(fresh(h.storage).api.__files.state().window,mode);}
+ for(const mode of ['quarter','hour','fourHours','twelveHours','day','full']){restored.api.__files.setChartWindow(mode);assert.equal(fresh(h.storage).api.__files.state().window,mode);}
+ for(const [old,next] of [['halfHour','hour'],['twoHours','fourHours']]){
+  h.storage.set('tierscope:ui:chartWindow:v1',old);assert.equal(fresh(h.storage).api.__files.state().window,next);
+ }
  f.setChartWindow('invalid');assert.equal(f.state().window,'quarter');
  h.storage.set('tierscope:ui:chartWindow:v1','invalid');assert.equal(fresh(h.storage).api.__files.state().window,'full');
 });

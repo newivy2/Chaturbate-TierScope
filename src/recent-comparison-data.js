@@ -36,7 +36,7 @@ export function buildRecentComparisonStyles(entries, sources, currentRoom = '') 
 // The caller supplies the complete validated Library, independent of filters.
 export function selectRecentComparisonEntries(entries, now, windowMs = RECENT_COMPARISON_MS) {
     if (!Array.isArray(entries) || !timestamp(now)) throw new Error('Invalid recent comparison input.');
-    const rangeMs = Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
+    const rangeMs = windowMs === Infinity || Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
     const cutoffAt = Math.max(0, now - rangeMs), selected = [];
     for (const [index, entry] of entries.entries()) {
         const archive = entry?.archive, session = archive?.session, times = session?.history?.timestamps;

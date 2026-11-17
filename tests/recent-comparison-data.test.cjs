@@ -74,9 +74,9 @@ test('selected long sessions project onto one actual-date window without future 
     assert.equal(alice.times.at(-1), day - 1000, 'the line ends at a real accepted sample');
 });
 
-test('rolling hour, four-hour, twelve-hour and day windows include both exact boundaries', async () => {
+test('rolling quarter-hour, hour, four-hour, twelve-hour and day windows include both exact boundaries', async () => {
     const {selectRecentComparisonEntries} = await import('../src/recent-comparison-data.js');
-    for (const windowMs of [3600000, 4 * 3600000, 12 * 3600000, day]) {
+    for (const windowMs of [900000, 3600000, 4 * 3600000, 12 * 3600000, day]) {
         const cutoff = now - windowMs;
         const entries = [entry('before', 'alice', [cutoff - 1]), entry('cutoff', 'brenda', [cutoff]),
             entry('now', 'carol', [now]), entry('after', 'diana', [now + 1])];
@@ -108,13 +108,27 @@ test('invalid or oversized rolling ranges fall back to the unchanged day selecti
     const entries = [entry('yesterday', 'alice', [now - day]), entry('earlier', 'brenda', [now - 8 * 3600000]),
         entry('current', 'carol', [now]), entry('old', 'diana', [now - day - 1])];
     const expected = selectRecentComparisonEntries(entries, now);
-    for (const invalid of [undefined, null, false, true, '', '3600000', NaN, Infinity, -Infinity, 0, -1, 1.5,
+    for (const invalid of [undefined, null, false, true, '', '3600000', NaN, -Infinity, 0, -1, 1.5,
         day + 1, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1, {}, []]) {
         assert.deepEqual(selectRecentComparisonEntries(entries, now, invalid), expected);
     }
     const narrow = selectRecentComparisonEntries([entry('cutoff', 'alice', [now - 1]),
         entry('too-old', 'brenda', [now - 2]), entry('now', 'carol', [now])], now, 1);
     assert.deepEqual(narrow.entries.map(item => item.id), ['now', 'cutoff'], 'any positive safe integer within the day bound is accepted');
+});
+
+test('Full range selects saved samples of any age and projects accepted endpoints without an idle tail', async () => {
+    const {selectRecentComparisonEntries} = await import('../src/recent-comparison-data.js');
+    const {buildLiveModelSeries} = await import('../src/live-model-chart-data.js');
+    const entries = [entry('old', 'alice', [now - 7 * day, now - 6 * day]),
+        entry('recent', 'brenda', [now - 3600000, now - 60000]),
+        entry('future', 'carol', [now + 1]), entry('empty', 'diana', [])];
+    const before = JSON.stringify(entries), chosen = selectRecentComparisonEntries(entries, now, Infinity);
+    assert.deepEqual(chosen.entries.map(item => item.id), ['recent', 'old']);
+    assert.equal(chosen.cutoffAt, 0); assert.equal(chosen.sampleCount, 4); assert.equal(chosen.roomCount, 2);
+    const plot = buildLiveModelSeries(chosen.entries.map(item => item.archive), 'room', {now, windowMs: Infinity});
+    assert.equal(plot.originAt, now - 7 * day); assert.equal(plot.originAt + plot.axisMs, now - 60000);
+    assert.equal(JSON.stringify(entries), before);
 });
 
 test('rolling cutoff is clamped at the timestamp origin', async () => {

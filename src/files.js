@@ -1,4 +1,5 @@
 import { addFileToAllTimeHighs, clearAllTimeHighs, clearInactiveAllTimeHighs, toggleHighMode, updateHighControls } from './highs.js';
+import { CHART_RANGES } from './chart-ranges.js';
 import { redrawPanelCharts } from './layout.js';
 import { selectChartWindow } from './panel-preferences.js';
 import { isPlaybackCurrent } from './playback-data.js';
@@ -36,8 +37,9 @@ export function updatePanelOptions() {
     var button = document.getElementById('btn-panel-options');
     if (button) {
         button.style.display = runtime.isMinimized ? 'none' : '';
-        button.textContent = ({ full: 'Full', fourHours: '4h', twoHours: '2h', hour: '1h', halfHour: '30m', quarter: '15m' })[runtime.chartWindowMode] + ' ▾';
-        button.title = 'Chart window and highs. Showing ' + ({ full: 'full history', fourHours: 'the last 4 hours', twoHours: 'the last 2 hours', hour: 'the last hour', halfHour: 'the last 30 minutes', quarter: 'the last 15 minutes' })[runtime.chartWindowMode] + '.';
+        var range = CHART_RANGES.find(range => range.key === runtime.chartWindowMode);
+        button.textContent = range.shortLabel + ' ▾';
+        button.title = 'Chart window and highs. Showing ' + (range.key === 'full' ? 'the full range' : 'the last ' + range.label) + '.';
     }
     var select = document.getElementById('chart-window-select');
     if (select) select.value = runtime.chartWindowMode;

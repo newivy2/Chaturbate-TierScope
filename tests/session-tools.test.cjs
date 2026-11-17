@@ -57,6 +57,16 @@ test('backup validates all records before writing and rejects foreign formats, f
  const hostile=JSON.parse(JSON.stringify(backup));Object.defineProperty(hostile.preferences,'__proto__',{enumerable:true,value:{bad:true}});
  assert.throws(()=>d.restoreTierScopeBackup(hostile),/Unknown/);assert.equal(snapshot(h),before);
 });
+test('chart windows round trip through backup and legacy windows migrate before restoring preferences',()=>{
+ const h=fresh(),d=h.api.__data,backup=clean(d.createTierScopeBackup(false));
+ for(const [saved,restored] of [['quarter','quarter'],['hour','hour'],['fourHours','fourHours'],['twelveHours','twelveHours'],['day','day'],['full','full'],['halfHour','hour'],['twoHours','fourHours']]){
+  backup.preferences.chartWindow=saved;d.restoreTierScopeBackup(backup);
+  assert.equal(h.storage.get('tierscope:ui:chartWindow:v1'),restored);
+  assert.equal(d.createTierScopeBackup(false).preferences.chartWindow,restored);
+ }
+ const before=snapshot(h);backup.preferences.chartWindow='invalid';
+ assert.throws(()=>d.restoreTierScopeBackup(backup),/Invalid preference: chartWindow/);assert.equal(snapshot(h),before);
+});
 test('a failed restore rolls back its own writes at every write boundary, including a write that throws after persisting',()=>{
  const source=fresh();peak(source,'room_a',12);peak(source,'room_b',24);source.api.__data.keepSessionInLibrary(archive(source));
  const backup=clean(source.api.__data.createTierScopeBackup());

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.32.0-beta.4
+// @version      3.32.0-beta.5
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -1057,6 +1057,21 @@ underlying system, so should run in the browser, Node, or Plask.
     acquisitionState.requestPolicyCache = emptyRequestPolicy();
     acquisitionState.requestPolicyUnsaved = false;
     return true;
+  }
+
+  // src/chart-ranges.js
+  var CHART_RANGES = Object.freeze([
+    { key: "quarter", ms: 15 * 6e4, label: "15 minutes", shortLabel: "15m" },
+    { key: "hour", ms: 60 * 6e4, label: "1 hour", shortLabel: "1h" },
+    { key: "fourHours", ms: 4 * 60 * 6e4, label: "4 hours", shortLabel: "4h" },
+    { key: "twelveHours", ms: 12 * 60 * 6e4, label: "12 hours", shortLabel: "12h" },
+    { key: "day", ms: 24 * 60 * 6e4, label: "24 hours", shortLabel: "24h" },
+    { key: "full", ms: Infinity, label: "Full range", shortLabel: "Full" }
+  ].map((range) => Object.freeze(range)));
+  function normalizeChartRangeKey(value) {
+    if (value === "halfHour") return "hour";
+    if (value === "twoHours") return "fourHours";
+    return CHART_RANGES.some((range) => range.key === value) ? value : null;
   }
 
   // src/highs-store.js
@@ -7948,18 +7963,17 @@ underlying system, so should run in the browser, Node, or Plask.
     const clean = {};
     for (const [name, value] of Object.entries(preferences2)) {
       if (!Object.prototype.hasOwnProperty.call(preferenceKeys, name)) throw new Error("Unknown saved preference: " + name);
-      const choices = {
-        theme: ["dark", "bright"],
-        highMode: ["sh", "ath"],
-        miniMetric: ["room", "withTokens", "total"],
-        chartWindow: ["full", "fourHours", "twoHours", "hour", "halfHour", "quarter"]
-      };
+      const choices = { theme: ["dark", "bright"], highMode: ["sh", "ath"], miniMetric: ["room", "withTokens", "total"] };
       if (name === "geometry") {
         if (!value || !Number.isFinite(value.left) || !Number.isFinite(value.top) || !Number.isFinite(value.scale) || value.scale < 0.5 || value.scale > 3) throw new Error("Invalid panel geometry.");
         clean[name] = { left: value.left, top: value.top, scale: value.scale };
       } else if (name === "collapsedRows") {
         if (!Array.isArray(value) || value.length > runtime.PANEL_ROWS.length || value.some((key) => !runtime.PANEL_ROWS.some((row) => row.key === key))) throw new Error("Invalid collapsed rows.");
         clean[name] = [...new Set(value)];
+      } else if (name === "chartWindow") {
+        const range = normalizeChartRangeKey(value);
+        if (!range) throw new Error("Invalid preference: " + name);
+        clean[name] = range;
       } else {
         if (!choices[name].includes(value)) throw new Error("Invalid preference: " + name);
         clean[name] = value;
@@ -9418,9 +9432,9 @@ underlying system, so should run in the browser, Node, or Plask.
     clearInactive.title = "Hide stopped, stale and closed comparison entries. Saved recordings and active tracking are preserved.";
     const rangeLabel = toolNode(controls, "label", "Show "), windowSelect = toolNode(rangeLabel, "select");
     windowSelect.id = "tools-live-window";
-    for (const [value, label] of [[9e5, "Last 15 minutes"], [36e5, "Last hour"], [144e5, "Last 4 hours"], [864e5, "Last 24 hours"], [Infinity, "Full sessions"]]) {
+    for (const { ms, label } of CHART_RANGES) {
       const option = toolNode(windowSelect, "option", label);
-      option.value = String(value);
+      option.value = String(ms);
     }
     windowSelect.value = String(state.windowMs);
     windowSelect.onchange = () => {
@@ -9862,7 +9876,7 @@ underlying system, so should run in the browser, Node, or Plask.
   function selectRecentComparisonEntries(entries, now, windowMs = RECENT_COMPARISON_MS) {
     var _a;
     if (!Array.isArray(entries) || !timestamp2(now)) throw new Error("Invalid recent comparison input.");
-    const rangeMs = Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
+    const rangeMs = windowMs === Infinity || Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
     const cutoffAt = Math.max(0, now - rangeMs), selected = [];
     for (const [index, entry] of entries.entries()) {
       const archive = entry == null ? void 0 : entry.archive, session = archive == null ? void 0 : archive.session, times = (_a = session == null ? void 0 : session.history) == null ? void 0 : _a.timestamps;
@@ -9952,7 +9966,7 @@ underlying system, so should run in the browser, Node, or Plask.
   function renderRecentComparison(parent, { readEntries, getMetric, metricControl, currentRoom = "", readSources = readLiveModelSources, state = createRecentComparisonState() }) {
     const root = toolNode(parent, "section");
     root.id = "tools-recent-comparison";
-    toolNode(root, "h3", "Last 24 hours · all models");
+    toolNode(root, "h3", "Saved comparison · all models");
     toolNode(root, "p", "All saved models with samples in the selected range. Library filters do not apply.", "tools-muted");
     const controls = toolNode(root, "div", void 0, "tools-actions");
     const freeze = toolButton(controls, "", () => {
@@ -9965,9 +9979,9 @@ underlying system, so should run in the browser, Node, or Plask.
     const refreshButton = toolButton(controls, "Refresh", () => refresh(true), "tools-recent-refresh");
     const rangeLabel = toolNode(controls, "label", "Range "), range = toolNode(rangeLabel, "select");
     range.id = "tools-recent-range";
-    for (const [value, label] of [[36e5, "Last hour"], [144e5, "Last 4 hours"], [432e5, "Last 12 hours"], [RECENT_COMPARISON_MS, "Last 24 hours"]]) {
+    for (const { ms, label } of CHART_RANGES) {
       const option = toolNode(range, "option", label);
-      option.value = String(value);
+      option.value = String(ms);
     }
     range.value = String(state.windowMs);
     range.onchange = () => {
@@ -10088,16 +10102,18 @@ underlying system, so should run in the browser, Node, or Plask.
       const nextPaintSignature = [state.revision, state.liveRevision, at, metric, state.windowMs, state.frozen, state.loaded, state.notice, state.liveNotice].join("|");
       if (!force && nextPaintSignature === paintSignature) return;
       rememberChart();
-      if (state.chartWindowMs !== state.windowMs) {
+      const resetRange = state.chartWindowMs !== state.windowMs;
+      if (resetRange) {
         clearChart();
-        const axisMs = Math.max(1e3, Math.min(at, state.windowMs));
+        const axisMs = Number.isFinite(state.windowMs) ? Math.max(1e3, Math.min(at, state.windowMs)) : 1e3;
         if (state.chartState) state.chartState = __spreadProps(__spreadValues({}, state.chartState), {
           start: 0,
           end: axisMs,
           axisMs,
-          originAt: Math.max(0, at - state.windowMs),
+          originAt: Number.isFinite(state.windowMs) ? Math.max(0, at - state.windowMs) : at,
           cursor: 0,
-          pinned: false
+          pinned: false,
+          followingFull: true
         });
         state.chartWindowMs = state.windowMs;
       }
@@ -10121,6 +10137,7 @@ underlying system, so should run in the browser, Node, or Plask.
           sourceIds: ids,
           rankTimes: selection.metadata.map((item) => item.startAt),
           allowAllHidden: true,
+          fitVisibleRange: state.windowMs === Infinity,
           seriesStyles: buildRecentComparisonStyles(selection.entries, state.liveSources, currentRoom)
         };
         state.liveSignature = JSON.stringify(config.seriesStyles);
@@ -10128,6 +10145,15 @@ underlying system, so should run in the browser, Node, or Plask.
           clearChart();
           state.chartState = retainedChartState(ids);
         }
+        if (resetRange && state.chartState) state.chartState = __spreadProps(__spreadValues({}, state.chartState), {
+          start: 0,
+          end: data.axisMs,
+          axisMs: data.axisMs,
+          originAt: data.originAt,
+          cursor: 0,
+          pinned: false,
+          followingFull: true
+        });
         if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[metric], "timeline", config);
         else {
           const labels = selection.metadata.map((item) => item.room + " · " + new Date(item.startAt).toLocaleString());
@@ -10137,6 +10163,7 @@ underlying system, so should run in the browser, Node, or Plask.
             observer.observe(view.canvas);
           }
         }
+        if (resetRange) view.resetRange();
         state.chartSources = selection.entries.map((entry, index) => ({ id: ids[index], entry }));
       } else if (!ids.length) {
         clearChart();
@@ -10151,7 +10178,7 @@ underlying system, so should run in the browser, Node, or Plask.
       refreshButton.disabled = state.frozen;
       refreshButton.title = state.frozen ? "Resume comparison to read the latest saved Library sessions." : "Read all saved Library sessions again.";
       status.textContent = (state.frozen ? "Frozen" : "Following saved Library updates") + " · " + ids.length.toLocaleString() + " sessions · " + selection.roomCount.toLocaleString() + " models · " + selection.sampleCount.toLocaleString() + " accepted samples in window." + (state.notice ? " " + state.notice : "") + (state.liveNotice ? " " + state.liveNotice : "");
-      windowLabel.textContent = "Window: " + new Date(selection.cutoffAt).toLocaleString() + " — " + new Date(selection.now).toLocaleString();
+      windowLabel.textContent = state.windowMs === Infinity ? "Full range · saved recordings through " + new Date(selection.now).toLocaleString() : "Window: " + new Date(selection.cutoffAt).toLocaleString() + " — " + new Date(selection.now).toLocaleString();
       windowLabel.title = "Both endpoints are included. A recording qualifies by actual samples, including sessions that started earlier. Future samples, empty recordings and gaps without a sample in this window are excluded. No additional API requests or automatic saves.";
       empty.hidden = !!ids.length;
       empty.textContent = state.loaded ? "No saved Library session has an accepted sample in this date window." : "Saved Library sessions could not be read.";
@@ -10199,7 +10226,7 @@ underlying system, so should run in the browser, Node, or Plask.
             const inputSources = new Map(incoming.map((entry, index) => [String(entry.id || entry.lineage || index), sourceToken(entry)]));
             const changed = !state.loaded || inputSources.size !== state.inputSources.size || [...inputSources].some(([id, source]) => !sameSource(state.inputSources.get(id), source));
             if (changed || windowChanged) {
-              const result = selectRecentComparisonEntries(incoming, at), snapshots = /* @__PURE__ */ new Map();
+              const result = selectRecentComparisonEntries(incoming, at, Infinity), snapshots = /* @__PURE__ */ new Map();
               state.entries = result.entries.map((entry, index) => {
                 const id = result.metadata[index].sourceId, previous2 = state.snapshots.get(id);
                 const source = inputSources.get(id) || sourceToken(entry);
@@ -12937,8 +12964,9 @@ underlying system, so should run in the browser, Node, or Plask.
     var button = document.getElementById("btn-panel-options");
     if (button) {
       button.style.display = runtime.isMinimized ? "none" : "";
-      button.textContent = { full: "Full", fourHours: "4h", twoHours: "2h", hour: "1h", halfHour: "30m", quarter: "15m" }[runtime.chartWindowMode] + " ▾";
-      button.title = "Chart window and highs. Showing " + { full: "full history", fourHours: "the last 4 hours", twoHours: "the last 2 hours", hour: "the last hour", halfHour: "the last 30 minutes", quarter: "the last 15 minutes" }[runtime.chartWindowMode] + ".";
+      var range = CHART_RANGES.find((range2) => range2.key === runtime.chartWindowMode);
+      button.textContent = range.shortLabel + " ▾";
+      button.title = "Chart window and highs. Showing " + (range.key === "full" ? "the full range" : "the last " + range.label) + ".";
     }
     var select = document.getElementById("chart-window-select");
     if (select) select.value = runtime.chartWindowMode;
@@ -14159,7 +14187,7 @@ underlying system, so should run in the browser, Node, or Plask.
     if (existing) existing.remove();
     var div = document.createElement("div");
     div.id = "cb-tier-tracker";
-    var html = '<div id="tracker-container" style="position:fixed;top:80px;right:20px;background:rgba(20,20,30,0.95);color:var(--panel-text);padding:5px;border-radius:6px;font-family:Arial,sans-serif;font-size:9px;z-index:999999;width:' + runtime.BASE_WIDTH_MINI + 'px;border:1px solid #ff69b4;transition:width 0.3s ease;cursor:default;user-select:none;"><div id="drag-handle" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;border-bottom:1px solid #ff69b4;padding-bottom:3px;cursor:move;"><div id="header-model" style="display:flex;flex:1;min-width:0;align-items:center;gap:3px;margin-left:14px;margin-right:4px;"><span id="header-text" style="flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:bold;color:var(--panel-accent);font-size:13px;line-height:18px;">TierScope</span><button type="button" id="btn-model-favorite" aria-label="Favorite model" style="flex:0 0 18px;padding:0;border:0;background:transparent;color:var(--panel-muted);font-size:14px;line-height:18px;cursor:pointer;">☆</button></div><div style="display:flex;align-items:center;gap:3px;flex-shrink:0;"><button type="button" id="btn-high-mode" aria-pressed="false" aria-label="Session highs. Switch to all-time highs" style="display:none;min-width:29px;background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;">SH</button><button type="button" id="btn-panel-options" aria-label="Chart window and highs" aria-expanded="false" aria-controls="panel-options" style="display:none;background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;white-space:nowrap;">Full ▾</button><button type="button" id="btn-standard-size" title="Restore standard panel size (100%)" aria-label="Restore standard panel size" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;">100%</button><button id="btn-toggle" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:9px;padding:1px 4px;flex-shrink:0;">+</button></div></div><div id="panel-options" role="group" aria-label="Chart and high options" style="display:none;position:absolute;right:5px;top:29px;width:190px;max-width:calc(100% - 10px);box-sizing:border-box;z-index:5;padding:8px;background:var(--panel-solid);color:var(--panel-text);border:1px solid #ff69b4;border-radius:4px;font-size:11px;box-shadow:0 3px 12px #0008;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;"><strong>Charts &amp; highs</strong><button type="button" id="panel-options-close" aria-label="Close chart and high options" style="background:var(--panel-button);color:var(--panel-text);border:0;border-radius:3px;cursor:pointer;">×</button></div><label for="chart-window-select">Chart window</label><select id="chart-window-select" style="display:block;width:100%;margin:4px 0 6px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);font-size:11px;"><option value="full">Full history</option><option value="fourHours">Last 4 hours</option><option value="twoHours">Last 2 hours</option><option value="hour">Last hour</option><option value="halfHour">Last 30 minutes</option><option value="quarter">Last 15 minutes</option></select><div style="font-size:10px;color:var(--panel-muted);line-height:1.4;margin-bottom:8px;">Charts only. Downloads keep the full retained history.</div><input type="file" id="session-file-input" accept=".json,application/json" style="display:none;"><div id="session-file-info" style="display:none;margin-top:7px;font-size:10px;line-height:1.4;white-space:pre-line;overflow-wrap:anywhere;color:var(--panel-secondary);"></div><div style="border-top:1px solid var(--panel-divider);margin-top:8px;padding-top:6px;"><strong>All-time highs</strong><div id="all-time-info" style="font-size:10px;line-height:1.4;margin:4px 0;color:var(--panel-secondary);"></div><button type="button" id="btn-add-all-time" style="display:none;width:100%;margin:4px 0;padding:4px;background:#4169E1;color:#fff;border:0;border-radius:3px;cursor:pointer;">Add to all-time highs</button><button type="button" id="btn-clear-all-time" style="display:block;width:100%;margin:4px 0;padding:4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;">Clear Room ATH…</button><button type="button" id="btn-clear-inactive-ath" style="display:block;width:100%;margin:4px 0;padding:4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;" title="Preview and clear ATH for rooms not visited in over 90 days">Clear inactive ATH (90 days)…</button><div id="all-time-action-status" role="status" style="font-size:10px;line-height:1.4;overflow-wrap:anywhere;color:var(--panel-secondary);"></div></div></div><div id="minimized-view" style="display:block;position:relative;"><div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><strong id="mini-room-count" style="color:var(--panel-accent);font-size:13px;">0</strong><span style="color:var(--panel-muted);font-size:8px;">in room</span><span id="mini-room-change" style="margin-left:auto;font-size:8px;"></span></div><div style="display:flex;align-items:center;justify-content:space-between;gap:3px;"><button type="button" id="mini-metric" style="background:transparent;border:0;color:var(--panel-secondary);font:inherit;cursor:pointer;padding:2px 0;" aria-label="Cycle chart metric">Room total ▾</button><button type="button" id="mini-high" style="background:transparent;border:0;padding:0;color:var(--panel-subtle);font-size:8px;cursor:pointer;"></button></div><canvas id="mini-chart" width="140" height="36" style="display:block;width:100%;height:36px;" role="img" aria-label="Recent audience history"></canvas><div style="display:flex;justify-content:space-between;gap:4px;margin:3px 0;"><span title="With Tokens">💎 <span id="mini-withtokens" style="color:var(--panel-warning);">0</span> <span id="mini-withtokens-change"></span></span><span title="Registered">📊 <span id="mini-total">0</span> <span id="mini-total-change"></span></span></div><div style="display:flex;align-items:center;gap:3px;"><span id="mini-freshness" style="flex:1;min-width:0;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">No sample</span><button type="button" id="btn-auto" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;cursor:pointer;" title="Pause or resume scans">⏸</button><button type="button" id="mini-settings-toggle" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;cursor:pointer;" aria-label="Scan interval settings" title="Scan interval settings — adjust how often TierScope scans" aria-expanded="false" aria-controls="mini-settings">◷</button><button type="button" id="btn-expand" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;font-size:9px;cursor:pointer;" title="Expand panel" aria-label="Expand panel">↗</button></div><div id="mini-settings" style="display:none;position:absolute;left:0;right:0;top:17px;background:var(--panel-settings);border:1px solid #ff69b4;border-radius:4px;padding:5px;z-index:2;" role="group" aria-label="Scan interval"><div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--panel-secondary);">Scan interval <button type="button" id="mini-settings-close" aria-label="Close scan interval settings" title="Close (Escape)" style="background:var(--panel-button);color:var(--panel-text);border:0;border-radius:3px;cursor:pointer;padding:1px 5px;font-size:13px;">×</button></div><div style="display:flex;align-items:center;justify-content:center;gap:3px;margin:3px 0;padding:2px;background:rgba(var(--panel-row-rgb),0.05);border-radius:3px;"><button id="btn-timer-down" style="background:var(--panel-button-strong);border:none;color:var(--panel-text);border-radius:2px;cursor:pointer;font-size:9px;padding:1px 4px;font-weight:bold;">−</button><span id="timer-display" style="font-size:11px;color:var(--panel-warning);font-weight:bold;min-width:28px;">60s</span><button id="btn-timer-up" style="background:var(--panel-button-strong);border:none;color:var(--panel-text);border-radius:2px;cursor:pointer;font-size:9px;padding:1px 4px;font-weight:bold;">+</button></div><div style="display:flex;gap:2px;justify-content:center;margin-top:3px;"><button class="timer-preset" data-time="30" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">30s</button><button class="timer-preset" data-time="60" style="background:#ff69b4;border:1px solid #ff69b4;color:#fff;border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">60s</button><button class="timer-preset" data-time="120" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">2m</button><button class="timer-preset" data-time="300" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">5m</button></div><div id="auto-status" style="margin-top:3px;font-size:8px;color:var(--panel-muted);">Starting...</div></div></div><div id="full-view" style="display:none;"><div id="tier-chart-region" style="display:flow-root;">' + collapsedTrayHtml();
+    var html = '<div id="tracker-container" style="position:fixed;top:80px;right:20px;background:rgba(20,20,30,0.95);color:var(--panel-text);padding:5px;border-radius:6px;font-family:Arial,sans-serif;font-size:9px;z-index:999999;width:' + runtime.BASE_WIDTH_MINI + 'px;border:1px solid #ff69b4;transition:width 0.3s ease;cursor:default;user-select:none;"><div id="drag-handle" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;border-bottom:1px solid #ff69b4;padding-bottom:3px;cursor:move;"><div id="header-model" style="display:flex;flex:1;min-width:0;align-items:center;gap:3px;margin-left:14px;margin-right:4px;"><span id="header-text" style="flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:bold;color:var(--panel-accent);font-size:13px;line-height:18px;">TierScope</span><button type="button" id="btn-model-favorite" aria-label="Favorite model" style="flex:0 0 18px;padding:0;border:0;background:transparent;color:var(--panel-muted);font-size:14px;line-height:18px;cursor:pointer;">☆</button></div><div style="display:flex;align-items:center;gap:3px;flex-shrink:0;"><button type="button" id="btn-high-mode" aria-pressed="false" aria-label="Session highs. Switch to all-time highs" style="display:none;min-width:29px;background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;">SH</button><button type="button" id="btn-panel-options" aria-label="Chart window and highs" aria-expanded="false" aria-controls="panel-options" style="display:none;background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;white-space:nowrap;">Full ▾</button><button type="button" id="btn-standard-size" title="Restore standard panel size (100%)" aria-label="Restore standard panel size" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;">100%</button><button id="btn-toggle" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:9px;padding:1px 4px;flex-shrink:0;">+</button></div></div><div id="panel-options" role="group" aria-label="Chart and high options" style="display:none;position:absolute;right:5px;top:29px;width:190px;max-width:calc(100% - 10px);box-sizing:border-box;z-index:5;padding:8px;background:var(--panel-solid);color:var(--panel-text);border:1px solid #ff69b4;border-radius:4px;font-size:11px;box-shadow:0 3px 12px #0008;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;"><strong>Charts &amp; highs</strong><button type="button" id="panel-options-close" aria-label="Close chart and high options" style="background:var(--panel-button);color:var(--panel-text);border:0;border-radius:3px;cursor:pointer;">×</button></div><label for="chart-window-select">Chart window</label><select id="chart-window-select" style="display:block;width:100%;margin:4px 0 6px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);font-size:11px;">' + CHART_RANGES.map((range) => '<option value="' + range.key + '">' + range.label + "</option>").join("") + '</select><div style="font-size:10px;color:var(--panel-muted);line-height:1.4;margin-bottom:8px;">Charts only. Downloads keep the full retained history.</div><input type="file" id="session-file-input" accept=".json,application/json" style="display:none;"><div id="session-file-info" style="display:none;margin-top:7px;font-size:10px;line-height:1.4;white-space:pre-line;overflow-wrap:anywhere;color:var(--panel-secondary);"></div><div style="border-top:1px solid var(--panel-divider);margin-top:8px;padding-top:6px;"><strong>All-time highs</strong><div id="all-time-info" style="font-size:10px;line-height:1.4;margin:4px 0;color:var(--panel-secondary);"></div><button type="button" id="btn-add-all-time" style="display:none;width:100%;margin:4px 0;padding:4px;background:#4169E1;color:#fff;border:0;border-radius:3px;cursor:pointer;">Add to all-time highs</button><button type="button" id="btn-clear-all-time" style="display:block;width:100%;margin:4px 0;padding:4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;">Clear Room ATH…</button><button type="button" id="btn-clear-inactive-ath" style="display:block;width:100%;margin:4px 0;padding:4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;" title="Preview and clear ATH for rooms not visited in over 90 days">Clear inactive ATH (90 days)…</button><div id="all-time-action-status" role="status" style="font-size:10px;line-height:1.4;overflow-wrap:anywhere;color:var(--panel-secondary);"></div></div></div><div id="minimized-view" style="display:block;position:relative;"><div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><strong id="mini-room-count" style="color:var(--panel-accent);font-size:13px;">0</strong><span style="color:var(--panel-muted);font-size:8px;">in room</span><span id="mini-room-change" style="margin-left:auto;font-size:8px;"></span></div><div style="display:flex;align-items:center;justify-content:space-between;gap:3px;"><button type="button" id="mini-metric" style="background:transparent;border:0;color:var(--panel-secondary);font:inherit;cursor:pointer;padding:2px 0;" aria-label="Cycle chart metric">Room total ▾</button><button type="button" id="mini-high" style="background:transparent;border:0;padding:0;color:var(--panel-subtle);font-size:8px;cursor:pointer;"></button></div><canvas id="mini-chart" width="140" height="36" style="display:block;width:100%;height:36px;" role="img" aria-label="Recent audience history"></canvas><div style="display:flex;justify-content:space-between;gap:4px;margin:3px 0;"><span title="With Tokens">💎 <span id="mini-withtokens" style="color:var(--panel-warning);">0</span> <span id="mini-withtokens-change"></span></span><span title="Registered">📊 <span id="mini-total">0</span> <span id="mini-total-change"></span></span></div><div style="display:flex;align-items:center;gap:3px;"><span id="mini-freshness" style="flex:1;min-width:0;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">No sample</span><button type="button" id="btn-auto" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;cursor:pointer;" title="Pause or resume scans">⏸</button><button type="button" id="mini-settings-toggle" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;cursor:pointer;" aria-label="Scan interval settings" title="Scan interval settings — adjust how often TierScope scans" aria-expanded="false" aria-controls="mini-settings">◷</button><button type="button" id="btn-expand" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;font-size:9px;cursor:pointer;" title="Expand panel" aria-label="Expand panel">↗</button></div><div id="mini-settings" style="display:none;position:absolute;left:0;right:0;top:17px;background:var(--panel-settings);border:1px solid #ff69b4;border-radius:4px;padding:5px;z-index:2;" role="group" aria-label="Scan interval"><div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--panel-secondary);">Scan interval <button type="button" id="mini-settings-close" aria-label="Close scan interval settings" title="Close (Escape)" style="background:var(--panel-button);color:var(--panel-text);border:0;border-radius:3px;cursor:pointer;padding:1px 5px;font-size:13px;">×</button></div><div style="display:flex;align-items:center;justify-content:center;gap:3px;margin:3px 0;padding:2px;background:rgba(var(--panel-row-rgb),0.05);border-radius:3px;"><button id="btn-timer-down" style="background:var(--panel-button-strong);border:none;color:var(--panel-text);border-radius:2px;cursor:pointer;font-size:9px;padding:1px 4px;font-weight:bold;">−</button><span id="timer-display" style="font-size:11px;color:var(--panel-warning);font-weight:bold;min-width:28px;">60s</span><button id="btn-timer-up" style="background:var(--panel-button-strong);border:none;color:var(--panel-text);border-radius:2px;cursor:pointer;font-size:9px;padding:1px 4px;font-weight:bold;">+</button></div><div style="display:flex;gap:2px;justify-content:center;margin-top:3px;"><button class="timer-preset" data-time="30" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">30s</button><button class="timer-preset" data-time="60" style="background:#ff69b4;border:1px solid #ff69b4;color:#fff;border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">60s</button><button class="timer-preset" data-time="120" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">2m</button><button class="timer-preset" data-time="300" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">5m</button></div><div id="auto-status" style="margin-top:3px;font-size:8px;color:var(--panel-muted);">Starting...</div></div></div><div id="full-view" style="display:none;"><div id="tier-chart-region" style="display:flow-root;">' + collapsedTrayHtml();
     Object.keys(runtime.TIERS).forEach(function(key) {
       var t = runtime.TIERS[key];
       html += '<div id="tier-row-' + key + '" data-tier="' + key + '" style="display:flex;align-items:center;padding:1px 3px;margin:1px 0;background:rgba(var(--panel-row-rgb),calc(0.05 * var(--tier-background-scale, 1)));border-radius:3px;border-left:3px solid ' + t.color + ';"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml(key) + '</div><canvas id="spark-' + key + '" width="105" height="28" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="count-' + key + '" style="font-weight:bold;color:' + t.color + ';font-size:14px;">0</span><div id="high-' + key + '" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div>';
@@ -14520,7 +14548,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.32.0-beta.4";
+    runtime.TIERSCOPE_VERSION = "3.32.0-beta.5";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;
@@ -14800,10 +14828,10 @@ underlying system, so should run in the browser, Node, or Plask.
     runtime.SESSION_FILE_VERSION = 1;
     runtime.SESSION_FILE_MAX_BYTES = 8 * 1024 * 1024;
     runtime.CHART_WINDOW_KEY = "tierscope:ui:chartWindow:v1";
-    runtime.CHART_WINDOWS = { full: 0, fourHours: 240 * 6e4, twoHours: 120 * 6e4, hour: 60 * 6e4, halfHour: 30 * 6e4, quarter: 15 * 6e4 };
+    runtime.CHART_WINDOWS = Object.fromEntries(CHART_RANGES.map((range) => [range.key, range.ms === Infinity ? 0 : range.ms]));
     runtime.chartWindowMode = "full";
     try {
-      runtime.savedWindow = GM_getValue(runtime.CHART_WINDOW_KEY, "full");
+      runtime.savedWindow = normalizeChartRangeKey(GM_getValue(runtime.CHART_WINDOW_KEY, "full"));
       if (typeof runtime.savedWindow === "string" && hasStorageField(runtime.CHART_WINDOWS, runtime.savedWindow)) runtime.chartWindowMode = runtime.savedWindow;
     } catch (error) {
     }

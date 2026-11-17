@@ -16,6 +16,10 @@ This is an experimental API-only feature. Chaturbate may refuse a room's data wh
 
 Current Live Session shortcuts now read **Compare with previous**, **Compare all live sessions**, **Compare last 24h sessions**, and **Compare without watching**. Other comparison navigation labels remain unchanged.
 
-**3.32.0-beta.3 chart ranges:** In Live comparison, **Full sessions** fits the first and last accepted samples of visible, selected recordings. Hidden lines do not reserve empty space, and paused or stopped sessions do not add an empty tail to the current time. Adding/removing selections or hiding/showing a line refits this full view. Range presets preserve the model selections and hidden lines. Ordinary sample updates preserve manual zoom; **Full range** restores the fitted view.
+**3.32.0-beta.5 chart ranges:** The main panel, Live comparison and saved-model comparison share **15 minutes**, **1 hour**, **4 hours**, **12 hours**, **24 hours** and **Full range**, in that order. Existing 30-minute and 2-hour panel preferences or backups migrate to 1 hour and 4 hours respectively.
+
+In Live comparison, **Full range** fits the first and last accepted samples of visible, selected recordings. Hidden lines do not reserve empty space, and paused or stopped sessions do not add an empty tail to the current time. Adding/removing selections or hiding/showing a line refits this full view. Range presets preserve the model selections and hidden lines. Ordinary sample updates preserve manual zoom; **Full range** restores the fitted view.
+
+In saved-model comparison, Full range includes saved recordings older than 24 hours and fits visible sample endpoints. Frozen views can expand to any preset without rereading the Library. Hidden sessions stay hidden when omitted by a short preset and restored by a wider one.
 
 **3.32.0-beta.4 cleanup:** Use **Clear stopped/stale** below the background-tracking list or in Live comparison to hide old entries. Live comparison also clears retained traces from closed source tabs. The choice survives Library reopening and page reloads; heartbeats alone do not restore a dismissed session. A fresh accepted sample or explicitly adding the room again returns it to view. Cleanup does not delete Library recordings or three-hour recovery data, and it does not stop active tracking or clear paused rooms.

@@ -1,4 +1,5 @@
 import { allTimeRoom, emptyAllTimeHighs, mergeAllTimeHighs, readAllTimeHighs, validateAllTimeRecord } from './highs-store.js';
+import { normalizeChartRangeKey } from './chart-ranges.js';
 import { makeStorageId } from './record-validation.js';
 import { runtime } from './runtime.js';
 import { ANALYSIS_PREFERENCE_KEY, validateAnalysisPreferences } from './analysis-preference-data.js';
@@ -17,8 +18,7 @@ export function validateBackupPreferences(preferences) {
     const clean = {};
     for (const [name, value] of Object.entries(preferences)) {
         if (!Object.prototype.hasOwnProperty.call(preferenceKeys, name)) throw new Error('Unknown saved preference: ' + name);
-        const choices = { theme: ['dark', 'bright'], highMode: ['sh', 'ath'], miniMetric: ['room', 'withTokens', 'total'],
-            chartWindow: ['full', 'fourHours', 'twoHours', 'hour', 'halfHour', 'quarter'] };
+        const choices = { theme: ['dark', 'bright'], highMode: ['sh', 'ath'], miniMetric: ['room', 'withTokens', 'total'] };
         if (name === 'geometry') {
             if (!value || !Number.isFinite(value.left) || !Number.isFinite(value.top) ||
                 !Number.isFinite(value.scale) || value.scale < 0.5 || value.scale > 3) throw new Error('Invalid panel geometry.');
@@ -27,6 +27,10 @@ export function validateBackupPreferences(preferences) {
             if (!Array.isArray(value) || value.length > runtime.PANEL_ROWS.length ||
                 value.some(key => !runtime.PANEL_ROWS.some(row => row.key === key))) throw new Error('Invalid collapsed rows.');
             clean[name] = [...new Set(value)];
+        } else if (name === 'chartWindow') {
+            const range = normalizeChartRangeKey(value);
+            if (!range) throw new Error('Invalid preference: ' + name);
+            clean[name] = range;
         } else {
             if (!choices[name].includes(value)) throw new Error('Invalid preference: ' + name);
             clean[name] = value;

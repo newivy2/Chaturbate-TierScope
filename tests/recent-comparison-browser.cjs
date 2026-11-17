@@ -56,7 +56,7 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         const count = room => report(room).locator('td').nth(2).textContent();
         assert.match(await page.locator('#tools-recent-status').textContent(), /62 sessions · 62 models/);
         assert.equal(await page.locator('#tools-recent-samples tbody tr').count(), 25);
-        assert.equal(await page.evaluate(() => recentState.entries.length), 62, 'all eligible saved sessions are selected without a cap');
+        assert.equal(await page.evaluate(() => recentState.entries.length), 64, 'all saved snapshots are retained for Full range without a cap');
         assert.equal(await page.evaluate(() => JSON.stringify(savedEntries) === sourcesBefore), true);
         assert.equal(await page.evaluate(() => Object.isFrozen(savedEntries[0].archive.session.history.total)), false, 'view never freezes source recordings');
         assert.equal(await page.evaluate(() => Object.isFrozen(recentState.entries[0].archive.session.history.total)), true, 'displayed snapshots are immutable');
@@ -106,7 +106,7 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         assert.match(await page.locator('#tools-recent-status').textContent(), /62 sessions · 62 models/);
         assert.equal(await count('model_59'), '900');
         assert(await page.evaluate(() => recentState.entries.some(entry => entry.archive.room === 'new_model')));
-        assert(!(await page.evaluate(() => recentState.entries.some(entry => entry.archive.room === 'boundary_model'))), 'Resume applies the new rolling cutoff');
+        assert(!(await page.evaluate(() => recentState.chartIds.includes('boundary'))), 'Resume applies the new rolling cutoff');
 
         await page.evaluate(() => {failRead = true;}); await page.click('#tools-recent-refresh');
         assert.match(await page.locator('#tools-recent-status').textContent(), /previous snapshots are retained.*test read failure/);
@@ -266,7 +266,9 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         });
         assert.equal(await page.locator('#tools-recent-range').inputValue(), '86400000', 'saved-session comparison starts at 24 hours');
         assert.deepEqual(await page.locator('#tools-recent-range option').evaluateAll(options => options.map(option => option.value)),
-            ['3600000', '14400000', '43200000', '86400000']);
+            ['900000', '3600000', '14400000', '43200000', '86400000', 'Infinity']);
+        assert.deepEqual(await page.locator('#tools-recent-range option').allTextContents(),
+            ['15 minutes', '1 hour', '4 hours', '12 hours', '24 hours', 'Full range']);
         const hourIds = ['preset_hour', 'preset_long', 'preset_exact_hour'], fourIds = [...hourIds, 'preset_four'];
         const twelveIds = [...fourIds, 'preset_twelve']; let dayId = 'preset_day', dayIds = [...twelveIds, dayId];
         const presetReads = await page.evaluate(() => readCount);
@@ -275,7 +277,13 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
             assert.deepEqual(new Set(await page.evaluate(() => recentState.chartIds)), new Set(ids), 'preset eligibility uses actual in-range samples');
             const full = await page.evaluate(ms => {
                 const at = recentState.frozen ? recentState.frozenAt : recentState.displayAt;
-                return 'Chart window ' + new Date(at - ms).toLocaleString() + ' – ' + new Date(at).toLocaleString();
+                let start = at - ms, end = at;
+                if (ms === Infinity) {
+                    const times = recentState.entries.filter(entry => recentState.chartIds.includes(entry.id) && !recentState.hiddenSources.has(entry.id))
+                        .flatMap(entry => entry.archive.session.history.timestamps).filter(time => time <= at);
+                    start = Math.min(...times); end = Math.max(...times);
+                }
+                return 'Chart window ' + new Date(start).toLocaleString() + ' – ' + new Date(end).toLocaleString();
             }, windowMs);
             assert.equal(await page.locator('#tools-chart-range').textContent(), full, 'intentional preset selection resets zoom to its full time window');
         }
@@ -285,7 +293,11 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         assert(!(await (await line('preset_hour')).isChecked()), 'an intentional preset change preserves hidden session choices');
         await page.click('#tools-recent-metric-total'); assert.equal(await page.locator('#tools-recent-range').inputValue(), '14400000');
         await page.click('#tools-recent-refresh'); assert.equal(await page.locator('#tools-recent-range').inputValue(), '14400000');
-        await preset(43200000, twelveIds); await preset(3600000, hourIds);
+        await preset(43200000, twelveIds); await preset(900000, ['preset_hour']);
+        assert(!(await (await line('preset_hour')).isChecked()), 'the 15-minute window preserves an entirely hidden chart');
+        await preset(Infinity, [...dayIds, 'preset_old']);
+        await (await line('preset_old')).uncheck();
+        await preset(3600000, hourIds);
         await page.evaluate(() => {
             const index = savedEntries.findIndex(entry => entry.id === 'preset_day'), previous = savedEntries[index], session = previous.archive.session;
             const replacement = makeRecentEntry('preset_day_auto', previous.archive.room, [...session.history.timestamps, testNow - 15 * 3600000],
@@ -299,13 +311,16 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         await preset(3600000, hourIds);
         await page.click('#tools-recent-freeze');
         const frozenPresetReads = await page.evaluate(() => readCount);
-        assert.equal(await page.evaluate(() => recentState.entries.length), 6, 'the frozen snapshot retains all eligible 24-hour recordings');
+        assert.equal(await page.evaluate(() => recentState.entries.length), 7, 'the frozen snapshot retains all saved recordings with accepted samples');
         await page.evaluate(() => {
             const entry = savedEntries.find(entry => entry.id === 'preset_hour'); entry.archive.session.history.total[1] = 999; tokenRecentEntry(entry);
             savedEntries.push(tokenRecentEntry(makeRecentEntry('preset_added', 'preset_added_model', [testNow - 300000], [200])));
             tickRecent(60000);
         });
-        await preset(14400000, fourIds); await preset(43200000, twelveIds); await preset(86400000, dayIds);
+        await preset(900000, ['preset_hour']); await preset(14400000, fourIds); await preset(43200000, twelveIds); await preset(86400000, dayIds);
+        await preset(Infinity, [...dayIds, 'preset_old']);
+        assert(!(await (await line('preset_old')).isChecked()), 'Full range restores an old hidden recording beyond the day window');
+        assert.match(await page.locator('#tools-recent-window').textContent(), /Full range/);
         assert(!(await (await line(dayId)).isChecked()), 'widening a frozen preset restores the earlier hidden choice');
         assert.equal(await count('preset_hour_model'), '20', 'changing frozen presets does not reread updated source values');
         assert.equal(await page.evaluate(() => readCount), frozenPresetReads, 'frozen preset changes perform no Library reads');
@@ -322,6 +337,42 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         await preset(86400000, [...dayIds, 'preset_added']);
         assert(!(await (await line(dayId)).isChecked()));
         assert(await page.evaluate(() => readCount) >= presetReads);
+        await recentViewDispose();
+
+        // Full range fits visible sample endpoints, while old hidden choices
+        // survive every preset and an entirely hidden chart stays hidden.
+        await page.evaluate(() => {
+            document.getElementById('view').replaceChildren(); metric = 'room';
+            savedEntries = [
+                tokenRecentEntry(makeRecentEntry('full_old', 'full_old_model', [testNow - 7 * 86400000, testNow - 6 * 86400000], [10, 20])),
+                tokenRecentEntry(makeRecentEntry('full_current', 'full_current_model', [testNow - 600000, testNow - 120000], [30, 40]))
+            ];
+            recentState = recentFixture.createRecentComparisonState(); recentView = renderRecentFixture(recentState);
+        });
+        await page.selectOption('#tools-recent-range', 'Infinity');
+        const endpointText = (start, end) => page.evaluate(([start, end]) =>
+            'Chart window ' + new Date(testNow + start).toLocaleString() + ' – ' + new Date(testNow + end).toLocaleString(), [start, end]);
+        assert.equal(await page.locator('#tools-chart-range').textContent(), await endpointText(-7 * 86400000, -120000));
+        await (await line('full_old')).uncheck();
+        assert.equal(await page.locator('#tools-chart-range').textContent(), await endpointText(-600000, -120000),
+            'a hidden old recording and an idle tail do not stretch Full range');
+        await (await line('full_current')).uncheck();
+        for (const range of ['900000', '3600000', '14400000', '43200000', '86400000', 'Infinity']) {
+            await page.selectOption('#tools-recent-range', range);
+            assert(!(await (await line('full_current')).isChecked()), 'every preset preserves an explicitly hidden session');
+            if (range === 'Infinity') assert(!(await (await line('full_old')).isChecked()), 'widening restores the hidden old session');
+            assert.equal(await page.locator('#tools-chart-inspection tbody tr:visible').count(), 0, 'all sessions stay hidden across range changes');
+        }
+        await (await line('full_current')).check();
+        assert.equal(await page.locator('#tools-chart-range').textContent(), await endpointText(-600000, -120000));
+        await page.click('#tools-chart-zoom-in');
+        const fullZoom = await page.locator('#tools-chart-range').textContent();
+        await page.click('#tools-recent-refresh');
+        assert.equal(await page.locator('#tools-chart-range').textContent(), fullZoom, 'ordinary Full range refresh retains manual zoom');
+        await page.evaluate(() => {recentView.dispose(); document.getElementById('view').replaceChildren(); recentView = renderRecentFixture(recentState);});
+        assert.equal(await page.locator('#tools-recent-range').inputValue(), 'Infinity');
+        assert(!(await (await line('full_old')).isChecked()), 'reopening Full range retains the hidden recording');
+        assert(await (await line('full_current')).isChecked(), 'reopening Full range retains the visible recording');
         await recentViewDispose();
 
         // An intentionally empty preset still resets the old viewport, while

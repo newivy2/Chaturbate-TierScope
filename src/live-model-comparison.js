@@ -1,4 +1,5 @@
 import { renderAnalysisChart } from './analysis-chart-view.js';
+import { CHART_RANGES } from './chart-ranges.js';
 import { allocateLiveModelColors, buildLiveModelSeries } from './live-model-chart-data.js';
 import { readLiveModelArchive, readLiveModelSources, retainLiveModelArchives, subscribeLiveModelSources } from './live-model-sources.js';
 import { ANALYSIS_METRICS } from './session-analysis.js';
@@ -42,8 +43,8 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
     }, 'tools-live-clear-inactive');
     clearInactive.title = 'Hide stopped, stale and closed comparison entries. Saved recordings and active tracking are preserved.';
     const rangeLabel = node(controls, 'label', 'Show '), windowSelect = node(rangeLabel, 'select'); windowSelect.id = 'tools-live-window';
-    for (const [value, label] of [[900000, 'Last 15 minutes'], [3600000, 'Last hour'], [14400000, 'Last 4 hours'], [86400000, 'Last 24 hours'], [Infinity, 'Full sessions']]) {
-        const option = node(windowSelect, 'option', label); option.value = String(value);
+    for (const {ms, label} of CHART_RANGES) {
+        const option = node(windowSelect, 'option', label); option.value = String(ms);
     }
     windowSelect.value = String(state.windowMs);
     windowSelect.onchange = () => {state.windowMs = Number(windowSelect.value); resetRange = true; plotSignature = ''; refresh();};

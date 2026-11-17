@@ -75,26 +75,31 @@ const source = instrument(injected);
             assert.equal(captured.originAt+captured.start,start,reason+' — first visible sample');
             assert.equal(captured.originAt+captured.end,end,reason+' — last visible sample');
         }
+        const presets = [['900000','15 minutes'],['3600000','1 hour'],['14400000','4 hours'],
+            ['43200000','12 hours'],['86400000','24 hours'],['Infinity','Full range']];
+        assert.deepEqual(await page.locator('#tools-live-window option').evaluateAll(options=>options.map(option=>[option.value,option.textContent])),
+            presets,'Live exposes the standard chart ranges in the same order');
         await page.selectOption('#tools-live-window','Infinity');
-        await bounds(now-10800000,now-120000,'Full sessions includes all initially selected recordings');
+        await bounds(now-10800000,now-120000,'Full range includes all initially selected recordings');
         await showChooser();await sourceCheck('long_model').uncheck();
-        await bounds(now-3600000,now-120000,'Removing the longest source contracts Full sessions');
+        await bounds(now-3600000,now-120000,'Removing the longest source contracts Full range');
         await lineCheck('medium_model').uncheck();
-        await bounds(now-1200000,now-120000,'Hiding the remaining older line contracts Full sessions');
+        await bounds(now-1200000,now-120000,'Hiding the remaining older line contracts Full range');
         const chosen = await selected();
-        await page.selectOption('#tools-live-window','900000');
-        assert.deepEqual(await selected(),chosen,'changing the preset keeps the chosen sources');
-        assert.equal(await lineCheck('medium_model').isChecked(),false,'changing the preset keeps a hidden line hidden');
-        await bounds(now-900000,now,'finite presets retain their wall-clock anchor');
-        await page.selectOption('#tools-live-window','Infinity');
-        assert.deepEqual(await selected(),chosen);assert.equal(await lineCheck('medium_model').isChecked(),false);
-        await bounds(now-1200000,now-120000,'returning to Full sessions uses the visible recording');
+        for(const [value,label]of presets){
+            await page.selectOption('#tools-live-window',value);
+            assert.deepEqual(await selected(),chosen,label+' keeps selected and deselected sources');
+            assert.equal(await lineCheck('medium_model').isChecked(),false,label+' keeps a hidden line hidden');
+            assert.equal(await lineCheck('recent_model').isChecked(),true,label+' keeps a visible line selected');
+            if(value==='Infinity') await bounds(now-1200000,now-120000,'Full range uses the visible recording');
+            else await bounds(now-Number(value),now,label+' retains its wall-clock anchor');
+        }
 
         // Inserting a source before a hidden line changes its chart index. Its
         // stable source identity must keep that same model hidden.
         await sourceCheck('long_model').check();
         assert.equal(await lineCheck('medium_model').isChecked(),false,'adding another source retains hidden choices by identity');
-        await bounds(now-10800000,now-120000,'adding the older visible source expands Full sessions');
+        await bounds(now-10800000,now-120000,'adding the older visible source expands Full range');
         await sourceCheck('long_model').uncheck();
         assert.equal(await lineCheck('medium_model').isChecked(),false,'removing another source retains hidden choices by identity');
         await bounds(now-1200000,now-120000,'removing the older source restores the shorter visible range');
@@ -102,7 +107,7 @@ const source = instrument(injected);
         assert.equal(await lineCheck('medium_model').isChecked(),false,'changing metrics retains hidden lines');
         await bounds(now-1200000,now-120000,'metric changes preserve the selected time extent');
         await lineCheck('medium_model').check();
-        await bounds(now-3600000,now-120000,'showing the line again expands Full sessions');
+        await bounds(now-3600000,now-120000,'showing the line again expands Full range');
         await lineCheck('medium_model').uncheck();
         await page.click('[data-tools-tab=library]');await page.click('#tools-compare-live');
         assert.deepEqual(await selected(),chosen,'switching away and back preserves source selection');
@@ -114,18 +119,22 @@ const source = instrument(injected);
         await sourceCheck('long_model').uncheck();
         assert.equal(await lineCheck('medium_model').isChecked(),false);
         assert.equal(await lineCheck('recent_model').isChecked(),false,'removing the sole visible source does not silently show another line');
-        await page.selectOption('#tools-live-window','900000');await page.selectOption('#tools-live-window','Infinity');
-        assert.equal(await lineCheck('medium_model').isChecked(),false);
-        assert.equal(await lineCheck('recent_model').isChecked(),false,'range changes preserve a fully hidden chart');
+        for(const [value,label]of presets){
+            await page.selectOption('#tools-live-window',value);
+            assert.deepEqual(await selected(),chosen,label+' retains source choices while all lines are hidden');
+            assert.equal(await lineCheck('medium_model').isChecked(),false);
+            assert.equal(await lineCheck('recent_model').isChecked(),false,label+' preserves a fully hidden chart');
+        }
         await lineCheck('recent_model').check();
         await bounds(now-1200000,now-120000,'explicitly restoring one line fits its full recording');
 
         await showChooser();await page.click('#tools-live-clear');
         assert.equal(await page.locator('#tools-analysis-chart').count(),0);
-        await page.selectOption('#tools-live-window','900000');
-        assert((await selected()).every(([,checked])=>!checked),'range changes preserve an explicitly empty selection');
-        await page.selectOption('#tools-live-window','Infinity');
-        assert((await selected()).every(([,checked])=>!checked));
+        for(const [value,label]of presets){
+            await page.selectOption('#tools-live-window',value);
+            assert((await selected()).every(([,checked])=>!checked),label+' preserves an explicitly empty selection');
+            assert.equal(await page.locator('#tools-analysis-chart').count(),0,label+' does not create an unselected chart');
+        }
         await sourceCheck('recent_model').check();
         await bounds(now-1200000,now-120000,'a single reselected recording determines its full range');
         await page.selectOption('#tools-live-window','3600000');
@@ -141,6 +150,6 @@ const source = instrument(injected);
         assert.deepEqual(await page.evaluate(()=>ViewerTracker.__rangeTest.state()),original,'chart customization leaves the live owner unchanged');
         assert.deepEqual(errors,[]);await page.evaluate(()=>ViewerTracker.__rangeTest.cleanup());
         await context.close();
-        console.log(engine+': Full sessions follows selected visible recordings; presets retain source/line choices, stable identities and empty selections without scans or session changes');
+        console.log(engine+': Full range follows selected visible recordings; presets retain source/line choices, stable identities and empty selections without scans or session changes');
     } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
