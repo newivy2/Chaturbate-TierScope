@@ -43,19 +43,23 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
     const legend = node(parent, 'div', undefined, 'tools-chart-legend');
     // Original session dates own saved-session styling even when a rolling
     // window clips earlier samples. Live models use their stable color slots.
-    let newestFirst, ranks, colorIndices, opacities, newest, styledTimeline, primarySeries, trackedSeries, backgroundSeries, solidSeries;
+    let newestFirst, colorIndices, opacities, newest, primarySeries, trackedSeries, backgroundSeries;
     function refreshSeriesStyling() {
-        ({newestFirst, ranks} = axisMode === 'live' ? {newestFirst: series.map((_, index) => index), ranks: series.map((_, index) => index)} :
-            comparisonSeriesOrder(series, config.rankTimes));
-        styledTimeline = axisMode === 'timeline' && Array.isArray(config.seriesStyles);
-        primarySeries = series.map((_, index) => styledTimeline && config.seriesStyles[index]?.primary === true);
-        trackedSeries = series.map((_, index) => primarySeries[index] || styledTimeline && config.seriesStyles[index]?.live === true);
-        backgroundSeries = ranks.map((rank, index) => axisMode !== 'live' && !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
+        const order = comparisonSeriesOrder(series, config.rankTimes);
+        newestFirst = order.newestFirst;
+        const {ranks} = order;
+        primarySeries = series.map((_, index) => config.seriesStyles?.[index]?.primary === true);
+        const useLiveDefaults = axisMode === 'live' && !config.seriesStyles;
+        trackedSeries = series.map((_, index) => useLiveDefaults || primarySeries[index] || config.seriesStyles?.[index]?.live === true);
+        backgroundSeries = ranks.map((rank, index) => !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
         newest = newestFirst[0];
-        solidSeries = series.map((_, index) => axisMode === 'live' || (styledTimeline ? trackedSeries[index] : index === newest));
-        colorIndices = ranks.map((rank, i) => axisMode === 'live' ? (config.colorIndices?.[i] ?? i) : styledTimeline ?
-            (primarySeries[i] ? 0 : Math.max(1, config.colorIndices?.[i] ?? 1 + rank)) : rank < 6 ? rank : 1 + (rank - 6) % 5);
-        opacities = ranks.map((rank, index) => axisMode === 'live' || trackedSeries[index] ? 1 : comparisonOpacity(rank));
+        const reservePink = primarySeries.includes(true) || axisMode === 'timeline' && !!config.seriesStyles;
+        colorIndices = ranks.map((rank, index) => {
+            if (primarySeries[index]) return 0;
+            if (axisMode === 'live') return config.colorIndices?.[index] ?? index;
+            return rank + Number(reservePink);
+        });
+        opacities = ranks.map((rank, index) => trackedSeries[index] ? 1 : comparisonOpacity(rank));
     }
     refreshSeriesStyling();
     const legendLabels = new Map(), rows = new Map();
@@ -98,16 +102,14 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
             const label = labels[i], background = backgroundSeries[i];
             item.control.style.color = background ? legendBackground : comparisonLineColor(colorIndices[i], legendDark);
             item.check.checked = !hidden.has(i); item.check.disabled = !config.allowAllHidden && hidden.size === series.length - 1 && !hidden.has(i);
-            item.swatch.style.borderTopStyle = solidSeries[i] ? 'solid' : 'dashed';
+            item.swatch.style.borderTopStyle = trackedSeries[i] ? 'solid' : 'dashed';
             item.swatch.style.opacity = String(opacities[i]);
-            const marker = styledTimeline ? (primarySeries[i] ? ' · Current' : trackedSeries[i] ? ' · Tracked' : '') :
-                (series.length > 1 && i === newest ? ' · Latest' : '');
+            const marker = primarySeries[i] ? ' · Current' : trackedSeries[i] ? ' · Tracked' :
+                (axisMode !== 'timeline' && series.length > 1 && i === newest ? ' · Latest' : '');
             item.text.textContent = axisMode === 'live' ? label : comparisonLabel(i) + marker + ' · ' + label;
-            item.control.title = styledTimeline ? (primarySeries[i] ? 'Current tracked session — solid pink: ' : trackedSeries[i] ?
-                'Currently tracked session — solid, 100% opacity: ' : 'Historical session — dashed, ' + Math.round(opacities[i] * 100) + '% opacity: ') + label :
-                axisMode === 'live' ? label + ' · live model · solid line' :
-                (series.length > 1 ? (i === newest ? 'Latest session — solid pink: ' : (background ? 'Background session — dashed' : 'Earlier session — dashed') +
-                    ', ' + Math.round(opacities[i] * 100) + '% opacity' + ': ') : '') + label;
+            item.control.title = (primarySeries[i] ? 'Current tracked session — solid pink: ' : trackedSeries[i] ?
+                'Currently tracked session — solid, 100% opacity: ' : (background ? 'Background session' : 'Historical session') +
+                ' — dashed, ' + Math.round(opacities[i] * 100) + '% opacity: ') + label;
         }
     }
     function renderLinePage() {
@@ -211,7 +213,7 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         const backgroundColor = style.getPropertyValue('--panel-muted').trim();
         function paintSeries(target, j, color) {
             target.strokeStyle = target.fillStyle = color; target.lineWidth = backgroundSeries[j] ? 1.2 : 1.8; target.lineCap = 'butt';
-            target.setLineDash(solidSeries[j] ? [] : [6,4]); target.beginPath();
+            target.setLineDash(trackedSeries[j] ? [] : [6,4]); target.beginPath();
             let previousY = 0;
             const dots = [], points = plots[j].points;
             points.forEach((point, i) => {
@@ -234,20 +236,13 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         }
         function paintForeground(j) {
             if (hidden.has(j) || backgroundSeries[j]) return;
-            const colorIndex = axisMode === 'live' ? (config.colorIndices?.[j] ?? colorIndices[j]) : colorIndices[j];
-            const color = comparisonLineColor(colorIndex, isDark);
+            const color = comparisonLineColor(colorIndices[j], isDark);
             ctx.globalAlpha = opacities[j]; paintSeries(ctx, j, color);
         }
-        if (styledTimeline) {
-            // Tracked sessions sit above history; the current room stays pink
-            // and on top even when its recording started before the others.
-            for (let layer = 0; layer < 3; layer++) for (let position = newestFirst.length - 1; position >= 0; position--) {
-                const j = newestFirst[position], seriesLayer = primarySeries[j] ? 2 : trackedSeries[j] ? 1 : 0;
-                if (seriesLayer === layer) paintForeground(j);
-            }
-        } else {
-            // Ordinary saved comparisons keep the newest recording on top.
-            for (let position = newestFirst.length - 1; position >= 0; position--) paintForeground(newestFirst[position]);
+        // Paint older history first, followed by tracked sessions and the current room.
+        for (let layer = 0; layer < 3; layer++) for (let position = newestFirst.length - 1; position >= 0; position--) {
+            const j = newestFirst[position], seriesLayer = primarySeries[j] ? 2 : trackedSeries[j] ? 1 : 0;
+            if (seriesLayer === layer) paintForeground(j);
         }
         ctx.globalAlpha = 1;
         range.textContent = 'Chart window ' + (datedAxis() ? liveDate(start).toLocaleString() + ' – ' + liveDate(end).toLocaleString() :
@@ -258,8 +253,8 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
             'Aligned by local time of day. Midnight crossings continue at the start of the chart. Clock changes are separate segments; repeated clock times can show multiple dated values. Statistics use full sessions.' :
             'Aligned from each session’s first retained sample, using real elapsed time. Hidden lines and zoom do not change summary totals or the shared comparison length.') +
             ' Move to inspect; click to pin, drag to zoom, or use the buttons and arrow keys. Gaps have no assumed samples.' +
-            (styledTimeline ? ' Solid pink marks the current room’s tracked session. Other tracked sessions are solid; historical sessions are dashed, with older history in faint gray.' :
-                axisMode === 'live' ? ' Each model has a solid, opaque line and can be hidden independently.' : series.length > COMPARISON_FOREGROUND_COUNT ? ' The newest twelve lines fade progressively; older sessions form a faint background. Each session remains inspectable and can be hidden.' : ' The newest line is opaque; earlier sessions fade progressively.');
+            (series.length > 1 || datedAxis() ? ' Ongoing sessions use solid lines. Dashed lines fade with age and turn gray after the newest ' +
+                COMPARISON_FOREGROUND_COUNT + ' sessions.' : '');
         zoomIn.disabled = end-start <= Math.min(1000,axisMs); zoomOut.disabled = end-start >= axisMs;
         panLeft.disabled = start <= 0; panRight.disabled = end >= axisMs; paintLegend(); inspect();
     }

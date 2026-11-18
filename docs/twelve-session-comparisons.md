@@ -1,6 +1,6 @@
 # Twelve-session comparisons — 3.25.0
 
-This guide describes 3.25.0. For the current limits and line styles, see the [3.26.0 comparison guide](comparison-history-shadows.md).
+This guide describes 3.25.0. For the current limits and the beta’s 30 colored comparison lines, see the [current comparison guide](expanded-comparisons.md).
 
 Compare up to **12 sessions** in Library, including through **Compare with previous** on the live card or Model History. These shortcuts choose the selected/current session and up to eleven earlier sessions from the same model. Each model card also has **Compare**, which selects that model’s newest twelve stored sessions independently of browse filters and opens the chart immediately. It is disabled with an explanation when fewer than two stored sessions exist. Manual comparisons can mix models.
 

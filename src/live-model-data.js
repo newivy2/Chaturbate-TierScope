@@ -3,7 +3,10 @@ export const LIVE_MODEL_NOTICE = 'tierscope:live:v1:changed';
 export const LIVE_MODEL_HEARTBEAT_MS = 30000;
 export const LIVE_MODEL_STALE_MS = 180000;
 const statuses = new Set(['tracking', 'paused', 'stopped', 'waiting', 'offline', 'retry', 'reset', 'unavailable']);
+const ongoingStatuses = new Set(['tracking', 'paused', 'retry', 'offline']);
 const timestamp = value => Number.isSafeInteger(value) && value >= 0 && value <= 8640000000000000;
+
+export function isOngoingLiveModelStatus(status) { return ongoingStatuses.has(status); }
 
 // Metadata is an announcement, never proof that its referenced history is valid.
 // Discovery only reads these small records; selected histories are checked later.

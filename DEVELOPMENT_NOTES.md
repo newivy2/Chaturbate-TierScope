@@ -10,7 +10,7 @@ Detailed reference for **3.31.1**. [Connection recovery guide](docs/connection-r
 
 ## Contents
 
-**3.32.0-beta.5 preview:** [Compare without watching](docs/compare-without-watching.md) tracks multiple selected rooms across Library closing, navigation and reloads, with per-room Stop, confirmed-absence stopping, three-hour recovery and normal favorite-model keeping. Main remains on 3.31.1 during beta review.
+**3.32.0-beta.6 preview:** [Compare without watching](docs/compare-without-watching.md) tracks multiple selected rooms across Library closing, navigation and reloads, with per-room Stop, confirmed-absence stopping, three-hour recovery and normal favorite-model keeping. Main remains on 3.31.1 during beta review.
 
 [Live models comparison across tabs](docs/live-models-comparison.md) is available in **3.30.0**.
 
@@ -354,7 +354,7 @@ Summary defaults to the displayed metric’s time-weighted session average **−
 
 Time calculations use original timestamps, not evenly paced Replay time. Each sample's count is held until the next sample; marked gaps and zero-duration intervals contribute no weight. The last sample adds no assumed duration. With no covered interval, averages, proportions and threshold durations are shown as unavailable. A measured zero remains zero. Audience proportions divide the relevant viewer-time totals; a crowded interval contributes more than a quiet interval of the same length. They are not averages of per-sample percentages. A zero denominator is shown as unavailable.
 
-Compare any number of distinct saved sessions across models, on the same elapsed-time axis starting from each session's first retained sample. Slots are labeled A–Z, then AA, AB and onward. The newest selected session by first retained date is solid pink at full opacity. The next eleven use dashed colors at 95%, 90%, 85%, 80%, 75%, 70%, 65%, 60%, 55%, 50% and 45% opacity. Sessions after the newest twelve form a thin neutral background, composited together at 12% opacity so overlaps do not build into an opaque band. The legend marks the latest session and matches its line style without fading labels. Dates determine styles even after reordering or hiding lines; equal dates use the first tied slot.
+Compare any number of distinct saved sessions across models, on the same elapsed-time axis starting from each session's first retained sample. Slots are labeled A–Z, then AA, AB and onward. The newest 30 sessions keep individual colors. Historical lines are dashed and fade by session start time from 100% to 45% opacity. Older history forms a faint gray layer composited at 12% opacity. Ongoing sessions stay solid and opaque at any age, with the current room shown in pink. The legend matches the line styles. Reordering or hiding lines preserves their age rank, except that equal dates use slot order.
 
 Use **Add session**, **Compare all matching saved sessions**, or select sessions in Library and choose **Compare**. Each model card’s **Compare** shortcut opens all its stored sessions independently of browse filters. Duplicate slots must be corrected. Large selections page controls, inspection and statistics while every selected trace remains plotted. **Live models** compares open tracking tabs; **Last 24h** compares all saved models with samples in the selected rolling range. See the [expanded comparison guide](docs/expanded-comparisons.md) for presets, current-session styling and Freeze/Resume.
 
@@ -565,6 +565,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.32.0-beta.6** | Compare the newest 30 sessions in color, with progressively faded historical lines and faint gray from session 31. Ongoing tracking stays solid and opaque. Saved, stopped and stale sessions use dashed lines. |
 | **3.32.0-beta.5** | Standardize panel, Live and saved-model range menus to 15 minutes, 1 hour, 4 hours, 12 hours, 24 hours and Full range. Preserve selected/deselected sessions and hidden lines through preset changes; allow frozen saved comparisons to expand beyond 24 hours. |
 | **3.32.0-beta.4** | Add Clear stopped/stale in background tracking and Live comparison. Dismiss old entries and their traces across Library reopenings without deleting saved/recovery data or stopping active rooms; fresh samples and explicit restarts return them to view. |
 | **3.32.0-beta.3** | Fit Full sessions to visible selected sample bounds, excluding hidden recordings and idle tails. Preserve model and line visibility across range changes and source selection changes; keep manual zoom during ordinary updates. |

@@ -364,6 +364,7 @@ export function openSessionTools(focusTarget) {
         }
         refreshCards();
         if ((replaced || firstCapture) && (tab === 'summary' && selectedA === 'current' || tab === 'compare' && [selectedA, selectedB, ...selectedExtra].includes('current'))) render(tab);
+        else if (analysisView && analysisSources.liveIndex !== currentAnalysisIndex(analysisSources.archives, analysisSources.ids)) refreshAnalysis();
     }
     function favoriteAction(room, enableOnly = false) {
         if (!changeModelFavorite(room, enableOnly)) return;
@@ -780,7 +781,7 @@ export function openSessionTools(focusTarget) {
         try { filteredSources = filterLibraryEntries(sourceOptions(), analysisFilters); }
         catch (error) { filteredSources = []; tell(error.message, true); }
         node(picker, 'p', filteredSources.length + ' matching sessions. Existing selections stay available when outside the filters.', 'tools-muted');
-        if (comparing) node(picker, 'p', 'Compare any number of saved sessions. The newest twelve remain distinct; older sessions form a faint gray background.', 'tools-muted');
+        if (comparing) node(picker, 'p', 'Compare any number of saved sessions. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray background. Ongoing tracking stays solid and opaque.', 'tools-muted');
         const sourceControls = node(picker, 'div', undefined, 'tools-actions');
         if (liveComparisonArchive) button(sourceControls, 'Refresh live snapshot', () => { liveComparisonArchive = captureLiveSessionFile(); selectNewFollowSource(); render(tab); }, 'tools-refresh-live-snapshot');
         if (currentArchive) button(sourceControls, 'Refresh current / replayed snapshot', () => { currentArchive = captureSessionFile(); currentArchiveIsReplay = isPlaybackCurrent(runtime.playback); selectNewFollowSource(); render(tab); }, 'tools-refresh-snapshot');
@@ -943,21 +944,35 @@ export function openSessionTools(focusTarget) {
         }
         node(parent, 'p', 'The full-session high can predate retained history and is not limited by “Match shared length.” Token-holder share is weighted by recorded registered-viewer time.', 'tools-muted');
     }
+    function currentAnalysisIndex(archives, ids) {
+        const room = getModelName();
+        if (runtime.isStopped || location.href !== runtime.lastUrl || runtime.activeSessionStorageKey !== getStorageKey(room)) return -1;
+        return archives.findIndex((archive, index) => {
+            if (archive.room !== room || archive.session.isStopped || archive.session.sessionStartedAt !== runtime.sessionStartedAt) return false;
+            const id = ids[index];
+            if (id === 'current') return !currentArchiveIsReplay;
+            return id === 'live' || followers[tab]?.get(id)?.archive === archive;
+        });
+    }
     function chart(archives, labels, endMs, ids) {
         const axisMode = tab === 'compare' ? compareAxis : 'elapsed';
         const series = archives.map(archive => {
             const source = {...analysisSeries(archive, metric), timestamps: archive.session.history.timestamps};
             return axisMode === 'clock' ? {...source, clock: projectClockSeries(source)} : source;
         });
-        if (analysisView) { analysisSources = {archives, ids}; analysisView.update(series, endMs, ANALYSIS_METRICS[metric], axisMode); return; }
+        const liveIndex = currentAnalysisIndex(archives, ids);
+        const config = {rankTimes: archives.map(archive => archive.session.sessionStartedAt),
+            seriesStyles: archives.map((_, index) => index === liveIndex ? {live: true, primary: true} : {})};
+        analysisSources = {archives, ids, liveIndex};
+        if (analysisView) { analysisView.update(series, endMs, ANALYSIS_METRICS[metric], axisMode, config); return; }
         const saved = analysisStates.get(tab);
         const same = saved && (saved.state.axisMode || 'elapsed') === axisMode && saved.ids.length === ids.length && ids.every((id, index) => saved.archives[saved.ids.indexOf(id)] === archives[index]);
         const restored = same ? {...saved.state, hidden: saved.state.hidden.map(index => ids.indexOf(saved.ids[index]))} : null;
-        const view = renderAnalysisChart(content, series, labels, endMs, ANALYSIS_METRICS[metric], restored, axisMode);
+        const view = renderAnalysisChart(content, series, labels, endMs, ANALYSIS_METRICS[metric], restored, axisMode, config);
         const range = dialog.querySelector('#tools-comparison-range');
         if (range) view.settings.appendChild(range);
         content.appendChild(analysisOutput);
-        analysisView = view; analysisSources = {archives, ids};
+        analysisView = view;
         chartDraw = view.draw; chartDispose = view.dispose;
         if (window.ResizeObserver) { chartObserver = new window.ResizeObserver(view.draw); chartObserver.observe(view.canvas); }
     }

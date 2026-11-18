@@ -402,7 +402,7 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         // saved recording or thawing frozen samples and the selected window.
         await page.evaluate(() => {
             document.getElementById('view').replaceChildren(); metric = 'room'; currentRoom = 'current_model';
-            savedEntries = Array.from({length: 16}, (_, index) => tokenRecentEntry(makeRecentEntry('style_history_' + index, 'style_history_model_' + index,
+            savedEntries = Array.from({length: 34}, (_, index) => tokenRecentEntry(makeRecentEntry('style_history_' + index, 'style_history_model_' + index,
                 [testNow - 7200000 + index * 1000, testNow - 3600000], [10 + index, 20 + index])));
             savedEntries.push(
                 tokenRecentEntry(makeRecentEntry('style_current', 'current_model', [testNow - 10 * 3600000, testNow - 3600000], [50, 70])),
@@ -427,7 +427,7 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
                 dash: label.querySelector('.tools-series-swatch').style.borderTopStyle,
                 opacity: Number(label.querySelector('.tools-series-swatch').style.opacity), color: label.style.color}));
         }
-        assert(await page.evaluate(() => recentState.chartIds.indexOf('style_current') >= 12), 'the current session is older than the foreground twelve');
+        assert(await page.evaluate(() => recentState.chartIds.indexOf('style_current') >= 30), 'the current session is older than the newest thirty');
         let currentStyle = await lineStyle('style_current');
         assert.equal(currentStyle.dash, 'solid'); assert.equal(currentStyle.opacity, 1); assert.equal(currentStyle.color, 'rgb(255, 105, 180)');
         assert.equal((await lineStyle('style_other')).dash, 'solid'); assert.equal((await lineStyle('style_other')).opacity, 1);
@@ -447,7 +447,9 @@ window.recentFixture = {renderRecentComparison, createRecentComparisonState, ren
         }
         for (const status of ['stopped', 'waiting', 'reset', 'unavailable', 'stale']) {
             await page.evaluate(status => {liveSources[0].status = status; tickRecent(10000);}, status);
-            assert.equal((await lineStyle('style_current')).dash, 'dashed', status + ' is never presented as live');
+            currentStyle = await lineStyle('style_current');
+            assert.equal(currentStyle.dash, 'dashed', status + ' is never presented as live');
+            assert.equal(currentStyle.opacity, .12, status + ' returns an older session to gray');
         }
         await page.evaluate(() => {liveSources[0].status = 'tracking'; failLiveSources = true; tickRecent(10000);});
         assert.equal((await lineStyle('style_current')).dash, 'dashed'); assert.equal((await lineStyle('style_other')).dash, 'dashed');

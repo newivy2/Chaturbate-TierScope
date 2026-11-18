@@ -68,7 +68,7 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
     const previous = button(pagination, 'Previous', () => {state.page--; paintReports();}, 'tools-recent-previous');
     const pageLabel = node(pagination, 'span', '', 'tools-muted'); pageLabel.setAttribute('aria-live', 'polite');
     const next = button(pagination, 'Next', () => {state.page++; paintReports();}, 'tools-recent-next');
-    node(root, 'p', 'Solid lines mark ongoing TierScope tracking, including paused tabs. Pink marks this room’s current session; history uses dashed lines. Gaps stay blank, lines end at their last accepted sample, and older history stays faint gray.', 'tools-muted');
+    node(root, 'p', 'Pink marks this room’s ongoing session. Paused sessions and temporary connection or retry waits still count as ongoing tracking.', 'tools-muted');
     let disposed = false, refreshing = false, view = null, observer = null, plotSignature = '', paintSignature = '', selectionSignature = '', selection = null;
     let projection = null, projectionSignature = '';
 

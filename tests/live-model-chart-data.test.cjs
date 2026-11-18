@@ -27,7 +27,7 @@ test('replacing any selected live model reuses its free color without changing o
     assert.equal(repaired.get('alice'), 3); assert.equal(new Set(repaired.values()).size, 3);
 });
 
-test('large live selections retain distinct stable slots and colors beyond the original twelve', async () => {
+test('large live selections retain distinct stable slots and colors beyond thirty', async () => {
     const {allocateLiveModelColors} = await import('../src/live-model-chart-data.js');
     const {comparisonLineColor} = await import('../src/analysis-chart-data.js');
     const rooms = Array.from({length: 1000}, (_, index) => 'model_' + index), initial = allocateLiveModelColors(rooms);
@@ -38,8 +38,18 @@ test('large live selections retain distinct stable slots and colors beyond the o
     for (const dark of [true, false]) {
         const colors = [...initial.values()].map(index => comparisonLineColor(index, dark));
         assert.equal(new Set(colors).size, 1000, 'generated colors never wrap to another assigned slot');
+        assert.equal(new Set(colors.slice(0, 30)).size, 30, 'the first thirty slots are distinct');
+        for (const color of colors.slice(0, 30)) {
+            if (color.startsWith('#')) {
+                const channels = color.slice(1).match(/../g).map(channel => parseInt(channel, 16));
+                assert(new Set(channels).size > 1, 'foreground palette slots are chromatic: ' + color);
+            } else {
+                assert.match(color, /^hsl\(/);
+                assert(Number(color.split(' ')[1].replace('%', '')) > 0, 'generated foreground colors have saturation');
+            }
+        }
         assert.notEqual(colors[0], colors[12]); assert.notEqual(colors[12], colors[24]);
-        assert.match(colors[12], /^hsl\(/);
+        assert.match(colors[30], /^hsl\(/);
     }
     assert.equal(comparisonLineColor(0), '#ff69b4'); assert.equal(comparisonLineColor(1, false), '#175db0');
 });
@@ -80,8 +90,16 @@ test('saved comparison ranks scale to many models and honor original dates after
     const originalTimes = series.map((_, index) => 50000 + index), {newestFirst, ranks} = comparisonSeriesOrder(series, originalTimes);
     assert.equal(newestFirst.length, 10000); assert.equal(newestFirst[0], 9999); assert.equal(newestFirst.at(-1), 0);
     assert.equal(ranks[9999], 0); assert.equal(ranks[0], 9999);
-    assert.equal(comparisonOpacity(ranks[9999]), 1); assert.equal(comparisonOpacity(ranks[9988]), 0.45);
-    assert.equal(comparisonOpacity(ranks[9987]), 0.12); assert.equal(comparisonOpacity(ranks[0]), 0.12);
+    const foreground = Array.from({length: 30}, (_, rank) => comparisonOpacity(rank));
+    assert.equal(foreground[0], 1); assert.equal(foreground[29], 0.45);
+    foreground.forEach((alpha, rank) => {
+        assert(Math.abs(alpha - (1 - rank * 0.55 / 29)) < 1e-12, 'all thirty foreground ranks fade evenly');
+        assert(alpha >= 0.45 && alpha <= 1);
+        if (rank) assert(alpha < foreground[rank - 1], 'older foreground sessions are progressively more transparent');
+    });
+    assert.equal(comparisonOpacity(ranks[9970]), 0.45, 'the thirtieth session remains a foreground color');
+    assert.equal(comparisonOpacity(ranks[9969]), 0.12, 'gray begins with the thirty-first session');
+    assert.equal(comparisonOpacity(ranks[0]), 0.12);
 });
 
 test('live models align the same instant rather than their individual session starts', async () => {

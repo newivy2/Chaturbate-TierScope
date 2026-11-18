@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.32.0-beta.5
+// @version      3.32.0-beta.6
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -5591,11 +5591,13 @@ underlying system, so should run in the browser, Node, or Plask.
     const start = Math.max(0, Math.min(axisMs - width, first - (width - (last - first)) / 2));
     return [start, start + width];
   }
-  var COMPARISON_FOREGROUND_COUNT = 12;
+  var COMPARISON_FOREGROUND_COUNT = 30;
   var COMPARISON_BACKGROUND_OPACITY = 0.12;
   var ANALYSIS_LINE_PAGE_SIZE = 30;
   function comparisonOpacity(rank) {
-    return rank < COMPARISON_FOREGROUND_COUNT ? (100 - rank * 5) / 100 : COMPARISON_BACKGROUND_OPACITY;
+    if (rank >= COMPARISON_FOREGROUND_COUNT) return COMPARISON_BACKGROUND_OPACITY;
+    const remaining = (COMPARISON_FOREGROUND_COUNT - 1 - rank) / (COMPARISON_FOREGROUND_COUNT - 1);
+    return 0.45 + 0.55 * remaining;
   }
   function comparisonSeriesOrder(series, rankTimes) {
     const at = (index) => {
@@ -5609,8 +5611,8 @@ underlying system, so should run in the browser, Node, or Plask.
     });
     return { newestFirst, ranks };
   }
-  var darkComparisonColors = ["#ff69b4", "#79baff", "#68d391", "#ffd166", "#c4a3ff", "#ff987d", "#47c9cf", "#eaa1e8", "#b5cf63", "#e99c55", "#92a3e8", "#b4b4bd"];
-  var brightComparisonColors = ["#b42370", "#175db0", "#176f36", "#835900", "#7140a6", "#a23c20", "#08767c", "#96558d", "#557315", "#98530d", "#414b9d", "#626269"];
+  var darkComparisonColors = ["#ff69b4", "#79baff", "#68d391", "#ffd166", "#c4a3ff", "#ff987d", "#47c9cf", "#eaa1e8", "#b5cf63", "#e99c55", "#92a3e8", "#f87192"];
+  var brightComparisonColors = ["#b42370", "#175db0", "#176f36", "#835900", "#7140a6", "#a23c20", "#08767c", "#96558d", "#557315", "#98530d", "#414b9d", "#9e2f48"];
   function comparisonLineColor(index, dark = true) {
     index = Number.isSafeInteger(index) && index >= 0 ? index : 0;
     const curated = dark ? darkComparisonColors : brightComparisonColors;
@@ -6399,7 +6401,11 @@ underlying system, so should run in the browser, Node, or Plask.
   var LIVE_MODEL_HEARTBEAT_MS = 3e4;
   var LIVE_MODEL_STALE_MS = 18e4;
   var statuses = /* @__PURE__ */ new Set(["tracking", "paused", "stopped", "waiting", "offline", "retry", "reset", "unavailable"]);
+  var ongoingStatuses = /* @__PURE__ */ new Set(["tracking", "paused", "retry", "offline"]);
   var timestamp = (value) => Number.isSafeInteger(value) && value >= 0 && value <= 864e13;
+  function isOngoingLiveModelStatus(status) {
+    return ongoingStatuses.has(status);
+  }
   function decodeLiveModelSource(value, key, at) {
     if (!value || value.version !== 1 || typeof value.publisherId !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.publisherId) || key !== LIVE_MODEL_PREFIX + value.publisherId || typeof value.room !== "string" || !/^[a-z0-9_-]{1,100}$/.test(value.room) || typeof value.roomEpoch !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.roomEpoch) || !(value.sessionStartedAt === null || timestamp(value.sessionStartedAt)) || value.sessionId !== value.roomEpoch + "@" + (value.sessionStartedAt === null ? "pending" : value.sessionStartedAt) || value.id !== value.publisherId + ":" + value.room + ":" + value.sessionId || !statuses.has(value.status) || !timestamp(value.lastSeenAt) || value.lastSeenAt > at + 5e3 || !Number.isSafeInteger(value.sampleCount) || value.sampleCount < 0 || value.sampleCount > 1e6 || !(value.sampleCount === 0 ? value.sampleAt === null : timestamp(value.sampleAt) && value.sampleAt <= value.lastSeenAt) || !(value.sessionStartedAt === null || value.sessionStartedAt <= value.lastSeenAt) || typeof value.revision !== "string" || value.revision.length > 512) return null;
     if (value.recordKey === null) {
@@ -8846,26 +8852,30 @@ underlying system, so should run in the browser, Node, or Plask.
       inspect();
     }, "tools-chart-pin");
     const legend = toolNode(parent, "div", void 0, "tools-chart-legend");
-    let newestFirst, ranks, colorIndices, opacities, newest, styledTimeline, primarySeries, trackedSeries, backgroundSeries, solidSeries;
+    let newestFirst, colorIndices, opacities, newest, primarySeries, trackedSeries, backgroundSeries;
     function refreshSeriesStyling() {
-      ({ newestFirst, ranks } = axisMode === "live" ? { newestFirst: series.map((_, index) => index), ranks: series.map((_, index) => index) } : comparisonSeriesOrder(series, config.rankTimes));
-      styledTimeline = axisMode === "timeline" && Array.isArray(config.seriesStyles);
+      const order = comparisonSeriesOrder(series, config.rankTimes);
+      newestFirst = order.newestFirst;
+      const { ranks } = order;
       primarySeries = series.map((_, index) => {
-        var _a2;
-        return styledTimeline && ((_a2 = config.seriesStyles[index]) == null ? void 0 : _a2.primary) === true;
+        var _a2, _b;
+        return ((_b = (_a2 = config.seriesStyles) == null ? void 0 : _a2[index]) == null ? void 0 : _b.primary) === true;
       });
+      const useLiveDefaults = axisMode === "live" && !config.seriesStyles;
       trackedSeries = series.map((_, index) => {
-        var _a2;
-        return primarySeries[index] || styledTimeline && ((_a2 = config.seriesStyles[index]) == null ? void 0 : _a2.live) === true;
+        var _a2, _b;
+        return useLiveDefaults || primarySeries[index] || ((_b = (_a2 = config.seriesStyles) == null ? void 0 : _a2[index]) == null ? void 0 : _b.live) === true;
       });
-      backgroundSeries = ranks.map((rank, index) => axisMode !== "live" && !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
+      backgroundSeries = ranks.map((rank, index) => !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
       newest = newestFirst[0];
-      solidSeries = series.map((_, index) => axisMode === "live" || (styledTimeline ? trackedSeries[index] : index === newest));
-      colorIndices = ranks.map((rank, i) => {
-        var _a2, _b, _c, _d;
-        return axisMode === "live" ? (_b = (_a2 = config.colorIndices) == null ? void 0 : _a2[i]) != null ? _b : i : styledTimeline ? primarySeries[i] ? 0 : Math.max(1, (_d = (_c = config.colorIndices) == null ? void 0 : _c[i]) != null ? _d : 1 + rank) : rank < 6 ? rank : 1 + (rank - 6) % 5;
+      const reservePink = primarySeries.includes(true) || axisMode === "timeline" && !!config.seriesStyles;
+      colorIndices = ranks.map((rank, index) => {
+        var _a2, _b;
+        if (primarySeries[index]) return 0;
+        if (axisMode === "live") return (_b = (_a2 = config.colorIndices) == null ? void 0 : _a2[index]) != null ? _b : index;
+        return rank + Number(reservePink);
       });
-      opacities = ranks.map((rank, index) => axisMode === "live" || trackedSeries[index] ? 1 : comparisonOpacity(rank));
+      opacities = ranks.map((rank, index) => trackedSeries[index] ? 1 : comparisonOpacity(rank));
     }
     refreshSeriesStyling();
     const legendLabels = /* @__PURE__ */ new Map(), rows = /* @__PURE__ */ new Map();
@@ -8934,11 +8944,11 @@ underlying system, so should run in the browser, Node, or Plask.
         item.control.style.color = background ? legendBackground : comparisonLineColor(colorIndices[i], legendDark);
         item.check.checked = !hidden.has(i);
         item.check.disabled = !config.allowAllHidden && hidden.size === series.length - 1 && !hidden.has(i);
-        item.swatch.style.borderTopStyle = solidSeries[i] ? "solid" : "dashed";
+        item.swatch.style.borderTopStyle = trackedSeries[i] ? "solid" : "dashed";
         item.swatch.style.opacity = String(opacities[i]);
-        const marker = styledTimeline ? primarySeries[i] ? " · Current" : trackedSeries[i] ? " · Tracked" : "" : series.length > 1 && i === newest ? " · Latest" : "";
+        const marker = primarySeries[i] ? " · Current" : trackedSeries[i] ? " · Tracked" : axisMode !== "timeline" && series.length > 1 && i === newest ? " · Latest" : "";
         item.text.textContent = axisMode === "live" ? label : comparisonLabel(i) + marker + " · " + label;
-        item.control.title = styledTimeline ? (primarySeries[i] ? "Current tracked session — solid pink: " : trackedSeries[i] ? "Currently tracked session — solid, 100% opacity: " : "Historical session — dashed, " + Math.round(opacities[i] * 100) + "% opacity: ") + label : axisMode === "live" ? label + " · live model · solid line" : (series.length > 1 ? i === newest ? "Latest session — solid pink: " : (background ? "Background session — dashed" : "Earlier session — dashed") + ", " + Math.round(opacities[i] * 100) + "% opacity: " : "") + label;
+        item.control.title = (primarySeries[i] ? "Current tracked session — solid pink: " : trackedSeries[i] ? "Currently tracked session — solid, 100% opacity: " : (background ? "Background session" : "Historical session") + " — dashed, " + Math.round(opacities[i] * 100) + "% opacity: ") + label;
       }
     }
     function renderLinePage() {
@@ -9095,7 +9105,7 @@ underlying system, so should run in the browser, Node, or Plask.
         target.strokeStyle = target.fillStyle = color;
         target.lineWidth = backgroundSeries[j] ? 1.2 : 1.8;
         target.lineCap = "butt";
-        target.setLineDash(solidSeries[j] ? [] : [6, 4]);
+        target.setLineDash(trackedSeries[j] ? [] : [6, 4]);
         target.beginPath();
         let previousY = 0;
         const dots = [], points = plots[j].points;
@@ -9129,24 +9139,18 @@ underlying system, so should run in the browser, Node, or Plask.
         ctx.globalAlpha = 1;
       }
       function paintForeground(j) {
-        var _a3, _b2;
         if (hidden.has(j) || backgroundSeries[j]) return;
-        const colorIndex = axisMode === "live" ? (_b2 = (_a3 = config.colorIndices) == null ? void 0 : _a3[j]) != null ? _b2 : colorIndices[j] : colorIndices[j];
-        const color = comparisonLineColor(colorIndex, isDark);
+        const color = comparisonLineColor(colorIndices[j], isDark);
         ctx.globalAlpha = opacities[j];
         paintSeries(ctx, j, color);
       }
-      if (styledTimeline) {
-        for (let layer = 0; layer < 3; layer++) for (let position = newestFirst.length - 1; position >= 0; position--) {
-          const j = newestFirst[position], seriesLayer = primarySeries[j] ? 2 : trackedSeries[j] ? 1 : 0;
-          if (seriesLayer === layer) paintForeground(j);
-        }
-      } else {
-        for (let position = newestFirst.length - 1; position >= 0; position--) paintForeground(newestFirst[position]);
+      for (let layer = 0; layer < 3; layer++) for (let position = newestFirst.length - 1; position >= 0; position--) {
+        const j = newestFirst[position], seriesLayer = primarySeries[j] ? 2 : trackedSeries[j] ? 1 : 0;
+        if (seriesLayer === layer) paintForeground(j);
       }
       ctx.globalAlpha = 1;
       range.textContent = "Chart window " + (datedAxis() ? liveDate(start).toLocaleString() + " – " + liveDate(end).toLocaleString() : axisLabel(start) + " – " + axisLabel(end) + (axisMode === "clock" ? " · 24h local clock" : " · full comparison/session range " + elapsed(axisMs)));
-      hint.textContent = (axisMode === "live" ? "Models are aligned by actual dated sample timestamps. Each line ends at its last accepted scan; it is not extended to the current time." : axisMode === "timeline" ? "Sessions are aligned by actual dated sample timestamps. Lines end at the last accepted sample, with no assumed coverage to the current time." : axisMode === "clock" ? "Aligned by local time of day. Midnight crossings continue at the start of the chart. Clock changes are separate segments; repeated clock times can show multiple dated values. Statistics use full sessions." : "Aligned from each session’s first retained sample, using real elapsed time. Hidden lines and zoom do not change summary totals or the shared comparison length.") + " Move to inspect; click to pin, drag to zoom, or use the buttons and arrow keys. Gaps have no assumed samples." + (styledTimeline ? " Solid pink marks the current room’s tracked session. Other tracked sessions are solid; historical sessions are dashed, with older history in faint gray." : axisMode === "live" ? " Each model has a solid, opaque line and can be hidden independently." : series.length > COMPARISON_FOREGROUND_COUNT ? " The newest twelve lines fade progressively; older sessions form a faint background. Each session remains inspectable and can be hidden." : " The newest line is opaque; earlier sessions fade progressively.");
+      hint.textContent = (axisMode === "live" ? "Models are aligned by actual dated sample timestamps. Each line ends at its last accepted scan; it is not extended to the current time." : axisMode === "timeline" ? "Sessions are aligned by actual dated sample timestamps. Lines end at the last accepted sample, with no assumed coverage to the current time." : axisMode === "clock" ? "Aligned by local time of day. Midnight crossings continue at the start of the chart. Clock changes are separate segments; repeated clock times can show multiple dated values. Statistics use full sessions." : "Aligned from each session’s first retained sample, using real elapsed time. Hidden lines and zoom do not change summary totals or the shared comparison length.") + " Move to inspect; click to pin, drag to zoom, or use the buttons and arrow keys. Gaps have no assumed samples." + (series.length > 1 || datedAxis() ? " Ongoing sessions use solid lines. Dashed lines fade with age and turn gray after the newest " + COMPARISON_FOREGROUND_COUNT + " sessions." : "");
       zoomIn.disabled = end - start <= Math.min(1e3, axisMs);
       zoomOut.disabled = end - start >= axisMs;
       panLeft.disabled = start <= 0;
@@ -9693,7 +9697,12 @@ underlying system, so should run in the browser, Node, or Plask.
         sourceIds: ids,
         fitVisibleRange: state.windowMs === Infinity,
         allowAllHidden: true,
-        colorIndices: selected.map((source) => state.colors.get(source.room))
+        colorIndices: selected.map((source) => state.colors.get(source.room)),
+        rankTimes: selected.map((source) => source.sessionStartedAt),
+        seriesStyles: selected.map((source) => {
+          const live = isOngoingLiveModelStatus(source.status);
+          return { live, primary: live && source.room === currentRoom };
+        })
       };
       if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[getMetric()], "live", config);
       else {
@@ -9856,12 +9865,11 @@ underlying system, so should run in the browser, Node, or Plask.
   function timestamp2(value) {
     return Number.isSafeInteger(value) && value >= 0 && value <= 864e13;
   }
-  var ongoingSourceStatuses = /* @__PURE__ */ new Set(["tracking", "paused", "retry", "offline"]);
   function buildRecentComparisonStyles(entries, sources, currentRoom = "") {
     if (!Array.isArray(entries)) throw new Error("Invalid recent comparison style input.");
     const winners = /* @__PURE__ */ new Map(), primaryRoom = typeof currentRoom === "string" ? currentRoom.toLowerCase() : "";
     for (const source of Array.isArray(sources) ? sources : []) {
-      if (!source || typeof source.room !== "string" || !source.room.length || typeof source.id !== "string" || !source.id.length || typeof source.roomEpoch !== "string" || !source.roomEpoch.length || !ongoingSourceStatuses.has(source.status) || !timestamp2(source.sessionStartedAt) || !timestamp2(source.sampleAt) || !Number.isSafeInteger(source.sampleCount) || source.sampleCount <= 0) continue;
+      if (!source || typeof source.room !== "string" || !source.room.length || typeof source.id !== "string" || !source.id.length || typeof source.roomEpoch !== "string" || !source.roomEpoch.length || !isOngoingLiveModelStatus(source.status) || !timestamp2(source.sessionStartedAt) || !timestamp2(source.sampleAt) || !Number.isSafeInteger(source.sampleCount) || source.sampleCount <= 0) continue;
       const room2 = source.room.toLowerCase(), previous = winners.get(room2);
       if (!previous || source.sampleCount > previous.sampleCount || source.sampleCount === previous.sampleCount && (source.sampleAt > previous.sampleAt || source.sampleAt === previous.sampleAt && source.id.localeCompare(previous.id) < 0)) winners.set(room2, source);
     }
@@ -10017,7 +10025,7 @@ underlying system, so should run in the browser, Node, or Plask.
       state.page++;
       paintReports();
     }, "tools-recent-next");
-    toolNode(root, "p", "Solid lines mark ongoing TierScope tracking, including paused tabs. Pink marks this room’s current session; history uses dashed lines. Gaps stay blank, lines end at their last accepted sample, and older history stays faint gray.", "tools-muted");
+    toolNode(root, "p", "Pink marks this room’s ongoing session. Paused sessions and temporary connection or retry waits still count as ongoing tracking.", "tools-muted");
     let disposed = false, refreshing = false, view = null, observer = null, plotSignature = "", paintSignature = "", selectionSignature = "", selection = null;
     let projection = null, projectionSignature = "";
     function rememberChart() {
@@ -10352,7 +10360,7 @@ underlying system, so should run in the browser, Node, or Plask.
     selectionTools.id = "tools-library-selection";
     selectionTools.open = selected.size > 0;
     toolNode(selectionTools, "summary", "Select sessions for Compare or export");
-    toolNode(selectionTools, "p", "Compare any number of saved sessions, from one or several models. Older sessions form a faint gray chart background.", "tools-muted");
+    toolNode(selectionTools, "p", "Compare any number of saved sessions, from one or several models. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray chart background.", "tools-muted");
     const bulk = toolNode(selectionTools, "div", void 0, "tools-actions tools-library-bulk"), selection = toolNode(bulk, "span");
     selection.id = "tools-library-selected";
     let matching = [];
@@ -10448,7 +10456,7 @@ underlying system, so should run in the browser, Node, or Plask.
         const compareModel = toolButton(controls, "Compare", () => actions.compareModel(room3), "tools-folder-compare-" + room3);
         compareModel.disabled = ids.length < 2;
         compareModel.setAttribute("aria-label", "Compare stored sessions for " + room3);
-        compareModel.title = ids.length < 2 ? "Keep at least two sessions for this model to compare." : "Compare the " + ids.length + " latest stored sessions for " + room3 + ", independently of the search filters. Sessions after the newest twelve form a faint chart background.";
+        compareModel.title = ids.length < 2 ? "Keep at least two sessions for this model to compare." : "Compare the " + ids.length + " latest stored sessions for " + room3 + ", independently of the search filters. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray background.";
       }
       else for (const entry of visible.slice(0, shown)) {
         const row = toolNode(list, "article", void 0, "tools-row");
@@ -11633,6 +11641,7 @@ underlying system, so should run in the browser, Node, or Plask.
       }
       refreshCards();
       if ((replaced || firstCapture) && (tab === "summary" && selectedA === "current" || tab === "compare" && [selectedA, selectedB, ...selectedExtra].includes("current"))) render(tab);
+      else if (analysisView && analysisSources.liveIndex !== currentAnalysisIndex(analysisSources.archives, analysisSources.ids)) refreshAnalysis();
     }
     function favoriteAction(room2, enableOnly = false) {
       if (!changeModelFavorite(room2, enableOnly)) return;
@@ -12276,7 +12285,7 @@ underlying system, so should run in the browser, Node, or Plask.
         tell(error.message, true);
       }
       node(picker, "p", filteredSources.length + " matching sessions. Existing selections stay available when outside the filters.", "tools-muted");
-      if (comparing) node(picker, "p", "Compare any number of saved sessions. The newest twelve remain distinct; older sessions form a faint gray background.", "tools-muted");
+      if (comparing) node(picker, "p", "Compare any number of saved sessions. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray background. Ongoing tracking stays solid and opaque.", "tools-muted");
       const sourceControls = node(picker, "div", void 0, "tools-actions");
       if (liveComparisonArchive) button(sourceControls, "Refresh live snapshot", () => {
         liveComparisonArchive = captureLiveSessionFile();
@@ -12539,26 +12548,41 @@ underlying system, so should run in the browser, Node, or Plask.
       }
       node(parent, "p", "The full-session high can predate retained history and is not limited by “Match shared length.” Token-holder share is weighted by recorded registered-viewer time.", "tools-muted");
     }
+    function currentAnalysisIndex(archives, ids) {
+      const room2 = getModelName();
+      if (runtime.isStopped || location.href !== runtime.lastUrl || runtime.activeSessionStorageKey !== getStorageKey(room2)) return -1;
+      return archives.findIndex((archive, index) => {
+        var _a, _b;
+        if (archive.room !== room2 || archive.session.isStopped || archive.session.sessionStartedAt !== runtime.sessionStartedAt) return false;
+        const id = ids[index];
+        if (id === "current") return !currentArchiveIsReplay;
+        return id === "live" || ((_b = (_a = followers[tab]) == null ? void 0 : _a.get(id)) == null ? void 0 : _b.archive) === archive;
+      });
+    }
     function chart(archives, labels, endMs, ids) {
       const axisMode = tab === "compare" ? compareAxis : "elapsed";
       const series = archives.map((archive) => {
         const source = __spreadProps(__spreadValues({}, analysisSeries(archive, metric)), { timestamps: archive.session.history.timestamps });
         return axisMode === "clock" ? __spreadProps(__spreadValues({}, source), { clock: projectClockSeries(source) }) : source;
       });
+      const liveIndex = currentAnalysisIndex(archives, ids);
+      const config = {
+        rankTimes: archives.map((archive) => archive.session.sessionStartedAt),
+        seriesStyles: archives.map((_, index) => index === liveIndex ? { live: true, primary: true } : {})
+      };
+      analysisSources = { archives, ids, liveIndex };
       if (analysisView) {
-        analysisSources = { archives, ids };
-        analysisView.update(series, endMs, ANALYSIS_METRICS[metric], axisMode);
+        analysisView.update(series, endMs, ANALYSIS_METRICS[metric], axisMode, config);
         return;
       }
       const saved = analysisStates.get(tab);
       const same = saved && (saved.state.axisMode || "elapsed") === axisMode && saved.ids.length === ids.length && ids.every((id, index) => saved.archives[saved.ids.indexOf(id)] === archives[index]);
       const restored = same ? __spreadProps(__spreadValues({}, saved.state), { hidden: saved.state.hidden.map((index) => ids.indexOf(saved.ids[index])) }) : null;
-      const view = renderAnalysisChart(content, series, labels, endMs, ANALYSIS_METRICS[metric], restored, axisMode);
+      const view = renderAnalysisChart(content, series, labels, endMs, ANALYSIS_METRICS[metric], restored, axisMode, config);
       const range = dialog.querySelector("#tools-comparison-range");
       if (range) view.settings.appendChild(range);
       content.appendChild(analysisOutput);
       analysisView = view;
-      analysisSources = { archives, ids };
       chartDraw = view.draw;
       chartDispose = view.dispose;
       if (window.ResizeObserver) {
@@ -14548,7 +14572,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.32.0-beta.5";
+    runtime.TIERSCOPE_VERSION = "3.32.0-beta.6";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

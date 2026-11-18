@@ -18,7 +18,7 @@ This view always reads the complete saved Library. Model, search, favorite and d
 - All qualifying sessions appear, including separate sessions from the same model. Their audiences and histories are never added together.
 - The chart uses actual dated timestamps, including midnight crossings. It shows the selected rolling range, with recording gaps preserved and no line extended past its final sample.
 
-Solid lines identify current sessions in open TierScope tracking tabs; this room’s matching current session stays opaque pink, even if it began before newer recordings. Other ongoing sessions stay solid and opaque. Older sessions of the same model remain dashed, as do stopped, closed and stale sessions. Historical traces keep their progressive fading; older history forms the faint gray background.
+Solid lines identify ongoing TierScope sessions; this room’s matching current session stays opaque pink, even if it began before newer recordings. Other ongoing sessions stay solid and opaque. Older sessions of the same model remain dashed, as do other saved, stopped, closed and stale sessions. On the 3.32.0 beta, the newest **30 sessions by start time** keep their colors, with historical lines fading progressively. Historical lines ranked **31** and older form the faint gray background. Ongoing sessions stay colored, solid and opaque regardless of age.
 
 Tracking indicators come from existing tab announcements, without reading more session histories or sending API requests. Paused tabs and temporary connection/retry waits still count as ongoing sessions. This indicates TierScope tracking, not confirmed broadcasting status on Chaturbate. A duplicate model uses the ongoing session with the most samples. Records with an unknown start are not guessed to be current. If tracking metadata is unavailable, an explanation appears and unmatched sessions use historical styling.
 
@@ -32,7 +32,7 @@ Last 24h uses sessions already kept in the Library. It does not automatically ke
 
 Saved comparisons no longer impose a thirty-session or twelve-model comparison limit. Select as many stored sessions as needed in the Sessions Book, use **Compare all matching saved sessions** in the saved comparison chooser, or use a model's Compare shortcut. **Compare with previous** includes all available earlier sessions for that model.
 
-The newest line stays opaque pink. The following eleven lines fade progressively. Every earlier session contributes to a faint gray background; that background is composited once so many overlapping old lines do not build into a dark mass. Each session remains separately inspectable and can be hidden.
+On the 3.32.0 beta, the newest **30 sessions by start time** keep their colors, with historical lines fading progressively from the newest to the oldest. Historical lines ranked **31** and older contribute to a faint gray background; that background is composited once so many overlapping old lines do not build into a dark mass. All historical lines are dashed, including the newest saved recording. Ongoing tracked sessions stay colored, solid and opaque regardless of age, including paused sessions and temporary retry or offline waits. Each session remains separately inspectable and can be hidden. Reordering or hiding lines does not promote older sessions or reassign their styles.
 
 With more than thirty selected sessions, the selected-session list and statistics use pages of 25. The chart still draws every selected line. Statistics paging does not change the comparison range, threshold calculations or chart selection. The original **Elapsed time** and **24h time of day** alignment options remain available for saved comparisons; the latter is separate from the rolling **Last 24h** view.
 
@@ -41,6 +41,8 @@ With more than thirty selected sessions, the selected-session list and statistic
 Live models has no separate twelve-model selection or two-hundred-publisher discovery cutoff. Use **Select all**, **Clear**, model search and **Show more models** to manage the chooser. Latest-sample reports use pages of fifty.
 
 One line is shown per selected model. If it is tracked in multiple tabs, the session with the most samples supplies that line; ties keep the current source. This room’s selected model uses pink. Other colors remain stable for models that stay selected, and additional models receive additional colors; a model joining as the current room takes the pink slot. Existing pause, stale-source, Reset and Freeze/Resume behavior is preserved.
+
+On the 3.32.0 beta, ongoing sessions stay solid and opaque, including paused sessions and temporary retry or offline waits. Retained stopped and stale sessions use dashed lines and fade by session start time: the newest 30 sessions retain their model colors, while older inactive sessions become faint gray. Range changes and Freeze/Resume keep selected models, hidden lines and model colors.
 
 ## Inspect large charts
 

@@ -1,6 +1,7 @@
 import { renderAnalysisChart } from './analysis-chart-view.js';
 import { CHART_RANGES } from './chart-ranges.js';
 import { allocateLiveModelColors, buildLiveModelSeries } from './live-model-chart-data.js';
+import { isOngoingLiveModelStatus } from './live-model-data.js';
 import { readLiveModelArchive, readLiveModelSources, retainLiveModelArchives, subscribeLiveModelSources } from './live-model-sources.js';
 import { ANALYSIS_METRICS } from './session-analysis.js';
 import { dismissComparisonSources, isComparisonDismissed, subscribeComparisonDismissals } from './comparison-dismissals.js';
@@ -207,7 +208,11 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
         }
         state.colors = allocateLiveModelColors(selected.map(source => source.room), state.colors, currentRoom);
         const config = {originAt: data.originAt, sourceIds: ids, fitVisibleRange: state.windowMs === Infinity, allowAllHidden: true,
-            colorIndices: selected.map(source => state.colors.get(source.room))};
+            colorIndices: selected.map(source => state.colors.get(source.room)), rankTimes: selected.map(source => source.sessionStartedAt),
+            seriesStyles: selected.map(source => {
+                const live = isOngoingLiveModelStatus(source.status);
+                return {live, primary: live && source.room === currentRoom};
+            })};
         if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[getMetric()], 'live', config);
         else {
             view = renderAnalysisChart(chartHost, data.series, selected.map(source => source.room), data.axisMs,

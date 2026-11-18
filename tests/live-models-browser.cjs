@@ -90,6 +90,8 @@ const source = instrument(prepareSource(fs.readFileSync(path.join(__dirname, '..
         });await page.close();};
         const advance = async ms => viewer.evaluate(ms=>localStorage.setItem('test:now',String(Date.now()+ms)),ms);
         const waitText = async (locator, pattern) => {for(let i=0;i<60;i++){if(pattern.test(await locator.textContent()))return;await viewer.waitForTimeout(50);}assert.match(await locator.textContent(),pattern);};
+        const lineStyle = room => viewer.locator('.tools-chart-legend label').filter({hasText:room}).locator('.tools-series-swatch')
+            .evaluate(swatch=>swatch.style.borderTopStyle);
 
         const baselineListeners = await viewer.evaluate(()=>window.__gmListeners.size);
         await viewer.click('#btn-control-library');await viewer.click('[data-tools-tab=compare]');await viewer.click('#tools-compare-live');
@@ -161,8 +163,10 @@ const source = instrument(prepareSource(fs.readFileSync(path.join(__dirname, '..
         await beta.evaluate(()=>{for(const [id,ms] of window.__testIntervals)if(ms===30000)clearInterval(id);});
         await advance(181000);await alpha.evaluate(()=>ViewerTracker.__liveTest.publish());await refresh();
         await waitText(group('beta_model').locator('[data-live-status]'),/stale|unavailable/i);
+        assert.equal(await lineStyle('beta_model'),'dashed','a retained stale snapshot uses a dashed line');
         assert.match(await rowStatus('alpha_model'),/tracking/i,'an open tab heartbeat is separate from an older sample');
         await beta.evaluate(()=>ViewerTracker.__liveTest.publish());await refresh();await waitText(group('beta_model').locator('[data-live-status]'),/tracking/i);
+        assert.equal(await lineStyle('beta_model'),'solid','a recovered publisher returns to a solid line');
 
         const waiting=await open('waiting_model',[]);await refresh();
         assert.match(await rowStatus('waiting_model'),/waiting.*first sample/i);
@@ -174,7 +178,11 @@ const source = instrument(prepareSource(fs.readFileSync(path.join(__dirname, '..
         await check('waiting_model').check();assert.equal(await viewer.locator('#tools-chart-inspection tbody tr').count(),3);
         await check('waiting_model').uncheck();assert.equal(await viewer.locator('#tools-chart-inspection tbody tr').count(),2);
         await closePublisher(waiting);await refresh();
+        await viewer.click('#tools-live-freeze');
         await beta.evaluate(()=>ViewerTracker.__liveTest.stop());await waitText(group('beta_model').locator('[data-live-status]'),/stopped/i);
+        assert.equal(await lineStyle('beta_model'),'dashed','Stop restyles a frozen snapshot');
+        assert.equal(await lineStyle('alpha_model'),'solid','the other ongoing line stays solid');
+        await viewer.click('#tools-live-freeze');
 
         const historyBefore=await beta.evaluate(()=>ViewerTracker.__liveTest.state());
         await viewer.locator('#tools-live-chooser > summary').click();

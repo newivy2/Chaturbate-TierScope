@@ -85,14 +85,15 @@ export function visibleAnalysisWindow(series, hidden, axisMs) {
     return [start, start + width];
 }
 
-// The most recent twelve remain individually readable; older sessions are a
-// faint background. Apply background opacity once to their composited layer.
-export const COMPARISON_FOREGROUND_COUNT = 12;
+// Keep the newest sessions in color and composite older history once.
+export const COMPARISON_FOREGROUND_COUNT = 30;
 export const COMPARISON_BACKGROUND_OPACITY = 0.12;
 export const ANALYSIS_LINE_PAGE_SIZE = 30;
 /** @param {number} rank */
 export function comparisonOpacity(rank) {
-    return rank < COMPARISON_FOREGROUND_COUNT ? (100 - rank * 5) / 100 : COMPARISON_BACKGROUND_OPACITY;
+    if (rank >= COMPARISON_FOREGROUND_COUNT) return COMPARISON_BACKGROUND_OPACITY;
+    const remaining = (COMPARISON_FOREGROUND_COUNT - 1 - rank) / (COMPARISON_FOREGROUND_COUNT - 1);
+    return 0.45 + 0.55 * remaining;
 }
 
 /** @param {InspectionSeries[]} series @param {number[]} [rankTimes] */
@@ -104,11 +105,10 @@ export function comparisonSeriesOrder(series, rankTimes) {
     return {newestFirst, ranks};
 }
 
-const darkComparisonColors = ['#ff69b4','#79baff','#68d391','#ffd166','#c4a3ff','#ff987d','#47c9cf','#eaa1e8','#b5cf63','#e99c55','#92a3e8','#b4b4bd'];
-const brightComparisonColors = ['#b42370','#175db0','#176f36','#835900','#7140a6','#a23c20','#08767c','#96558d','#557315','#98530d','#414b9d','#626269'];
+const darkComparisonColors = ['#ff69b4','#79baff','#68d391','#ffd166','#c4a3ff','#ff987d','#47c9cf','#eaa1e8','#b5cf63','#e99c55','#92a3e8','#f87192'];
+const brightComparisonColors = ['#b42370','#175db0','#176f36','#835900','#7140a6','#a23c20','#08767c','#96558d','#557315','#98530d','#414b9d','#9e2f48'];
 
-// Twelve familiar colors remain unchanged. Further live models receive stable
-// generated hues and alternating lightness, rather than wrapping onto color 1.
+// Additional sessions receive deterministic hues and alternating lightness.
 // Arbitrarily many traces cannot all be perceptually distinct; labels, search
 // and independent visibility remain available for inspecting crowded charts.
 /** @param {number} index @param {boolean} [dark] */
