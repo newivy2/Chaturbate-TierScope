@@ -92,8 +92,9 @@ export const ANALYSIS_LINE_PAGE_SIZE = 30;
 /** @param {number} rank */
 export function comparisonOpacity(rank) {
     if (rank >= COMPARISON_FOREGROUND_COUNT) return COMPARISON_BACKGROUND_OPACITY;
+    const minimum = 0.25;
     const remaining = (COMPARISON_FOREGROUND_COUNT - 1 - rank) / (COMPARISON_FOREGROUND_COUNT - 1);
-    return 0.45 + 0.55 * remaining;
+    return minimum + (1 - minimum) * remaining;
 }
 
 /** @param {InspectionSeries[]} series @param {number[]} [rankTimes] */

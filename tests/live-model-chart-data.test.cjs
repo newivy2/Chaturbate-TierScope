@@ -91,13 +91,13 @@ test('saved comparison ranks scale to many models and honor original dates after
     assert.equal(newestFirst.length, 10000); assert.equal(newestFirst[0], 9999); assert.equal(newestFirst.at(-1), 0);
     assert.equal(ranks[9999], 0); assert.equal(ranks[0], 9999);
     const foreground = Array.from({length: 30}, (_, rank) => comparisonOpacity(rank));
-    assert.equal(foreground[0], 1); assert.equal(foreground[29], 0.45);
+    assert.equal(foreground[0], 1); assert.equal(foreground[29], 0.25);
     foreground.forEach((alpha, rank) => {
-        assert(Math.abs(alpha - (1 - rank * 0.55 / 29)) < 1e-12, 'all thirty foreground ranks fade evenly');
-        assert(alpha >= 0.45 && alpha <= 1);
+        assert(Math.abs(alpha - (1 - rank * 0.75 / 29)) < 1e-12, 'all thirty foreground ranks fade evenly');
+        assert(alpha >= 0.25 && alpha <= 1);
         if (rank) assert(alpha < foreground[rank - 1], 'older foreground sessions are progressively more transparent');
     });
-    assert.equal(comparisonOpacity(ranks[9970]), 0.45, 'the thirtieth session remains a foreground color');
+    assert.equal(comparisonOpacity(ranks[9970]), 0.25, 'the thirtieth session remains a foreground color');
     assert.equal(comparisonOpacity(ranks[9969]), 0.12, 'gray begins with the thirty-first session');
     assert.equal(comparisonOpacity(ranks[0]), 0.12);
 });
