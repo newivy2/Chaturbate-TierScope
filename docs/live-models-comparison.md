@@ -21,8 +21,8 @@ A deliberate Reset or new session in the same tab has a separate identity. Its p
 ## Read the chart
 
 - All models share an axis of actual dates and clock times, including midnight crossings. The comparison does not fold different days onto a 24-hour chart.
-- On the 3.32.0 beta, choose **15 minutes**, **1 hour**, **4 hours**, **12 hours**, **24 hours**, or **Full range**. Full range fits visible, selected sample endpoints; presets preserve model selections and hidden lines. The initial range is the last hour.
-- On the 3.32.0 beta, ongoing tracking has solid, opaque lines, including paused sessions and temporary retry or offline waits. Retained stopped and stale sessions use dashed lines and fade by session start time. The newest 30 sessions retain their model colors; older inactive sessions form a faint gray background. Ongoing sessions stay colored and opaque regardless of age. Hide individual lines in the legend, inspect samples with the shared cursor, or zoom and pan using the existing chart controls.
+- In 3.32.0, choose **15 minutes**, **1 hour**, **4 hours**, **12 hours**, **24 hours**, or **Full range**. Full range fits visible, selected sample endpoints; presets preserve model selections and hidden lines. The initial range is the last hour.
+- In 3.32.0, ongoing tracking has solid, opaque lines, including paused sessions and temporary retry or offline waits. Retained stopped and stale sessions use dashed lines and fade by session start time. The newest 30 sessions retain their model colors; older inactive sessions form a faint gray background. Ongoing sessions stay colored and opaque regardless of age. Hide individual lines in the legend, inspect samples with the shared cursor, or zoom and pan using the existing chart controls.
 - Every line ends at its last accepted sample. Recording gaps stay gaps; a previous count is never extended to the current time to suggest a fresh scan.
 - The table reports each displayed snapshot's latest accepted count, timestamp and sample count. It does not total audiences across rooms.
 

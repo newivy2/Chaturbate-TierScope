@@ -1,6 +1,6 @@
 # TierScope — Usage and development notes
 
-Detailed reference for **3.31.1**. [Connection recovery guide](docs/connection-recovery.md). [Comparison fading and history guide](docs/comparison-history-shadows.md). [24h comparison guide](docs/clock-comparison.md). [Library chart controls guide](docs/library-chart-controls.md). [Follow live guide](docs/follow-live.md). [Audience trends and ratio guide](docs/audience-trends.md). [Sessions Book guide](docs/sessions-book.md). [ATH cleanup guide](docs/ath-retention.md). The simplified Current Live Session card provides Keep in Library, Auto, Compare with previous, Live sessions, Last 24h sessions, and History. File controls are below the session list, and exports remain on stored-session menus and the separate replay card. Development uses modular sources and a single installable script; see [BUILDING.md](BUILDING.md). For installation instructions, see the [README](readme.md).
+Detailed reference for **3.32.0**. [Connection recovery guide](docs/connection-recovery.md). [Comparison fading and history guide](docs/comparison-history-shadows.md). [24h comparison guide](docs/clock-comparison.md). [Library chart controls guide](docs/library-chart-controls.md). [Follow live guide](docs/follow-live.md). [Audience trends and ratio guide](docs/audience-trends.md). [Sessions Book guide](docs/sessions-book.md). [ATH cleanup guide](docs/ath-retention.md). The simplified Current Live Session card provides Keep in Library, Auto, Compare with previous, Live sessions, Last 24h sessions, and History. File controls are below the session list, and exports remain on stored-session menus and the separate replay card. Development uses modular sources and a single installable script; see [BUILDING.md](BUILDING.md). For installation instructions, see the [README](readme.md).
 
 [Expanded comparisons and Last 24h](docs/expanded-comparisons.md) are available in **3.30.0**.
 
@@ -10,7 +10,7 @@ Detailed reference for **3.31.1**. [Connection recovery guide](docs/connection-r
 
 ## Contents
 
-**3.32.0-beta.6 preview:** [Compare without watching](docs/compare-without-watching.md) tracks multiple selected rooms across Library closing, navigation and reloads, with per-room Stop, confirmed-absence stopping, three-hour recovery and normal favorite-model keeping. Main remains on 3.31.1 during beta review.
+**Available in 3.32.0:** [Compare without watching](docs/compare-without-watching.md) tracks multiple selected rooms across Library closing, navigation and reloads, with per-room Stop, confirmed-absence stopping, three-hour recovery and normal favorite-model keeping.
 
 [Live models comparison across tabs](docs/live-models-comparison.md) is available in **3.30.0**.
 
@@ -565,6 +565,7 @@ A room-level storage access failure can still make saving read-only. Individual 
 
 | Version | Notes |
 | --- | --- |
+| **3.32.0** | Release Compare without watching for multiple rooms, with per-room Stop, cross-tab ownership, three-hour recovery and stopped/stale cleanup. Standardize chart ranges, preserve selections, and keep the newest 30 sessions in color. |
 | **3.32.0-beta.6** | Compare the newest 30 sessions in color, with progressively faded historical lines and faint gray from session 31. Ongoing tracking stays solid and opaque. Saved, stopped and stale sessions use dashed lines. |
 | **3.32.0-beta.5** | Standardize panel, Live and saved-model range menus to 15 minutes, 1 hour, 4 hours, 12 hours, 24 hours and Full range. Preserve selected/deselected sessions and hidden lines through preset changes; allow frozen saved comparisons to expand beyond 24 hours. |
 | **3.32.0-beta.4** | Add Clear stopped/stale in background tracking and Live comparison. Dismiss old entries and their traces across Library reopenings without deleting saved/recovery data or stopping active rooms; fresh samples and explicit restarts return them to view. |
