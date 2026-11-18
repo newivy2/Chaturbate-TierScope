@@ -129,7 +129,7 @@ test('mixed-model comparisons have no additional count restriction',async()=>{
 test('comparison fading begins after the newest line, with moderate foreground and a faint background',async()=>{
  const {comparisonOpacity,COMPARISON_BACKGROUND_OPACITY}=await chart;
  const recent=Array.from({length:30},(_,i)=>comparisonOpacity(i));
- assert.equal(recent[0],1);assert.equal(recent.at(-1),.45);
+ assert.equal(recent[0],1);assert.equal(recent.at(-1),.25);
  for(let i=1;i<recent.length;i++){assert(recent[i]<recent[i-1]);assert(recent[i]>.12);}
  for(let i=30;i<60;i++)assert.equal(comparisonOpacity(i),COMPARISON_BACKGROUND_OPACITY);
 });

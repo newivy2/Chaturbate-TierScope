@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.32.0
+// @version      3.32.1-beta.1
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -5596,8 +5596,9 @@ underlying system, so should run in the browser, Node, or Plask.
   var ANALYSIS_LINE_PAGE_SIZE = 30;
   function comparisonOpacity(rank) {
     if (rank >= COMPARISON_FOREGROUND_COUNT) return COMPARISON_BACKGROUND_OPACITY;
+    const minimum = 0.25;
     const remaining = (COMPARISON_FOREGROUND_COUNT - 1 - rank) / (COMPARISON_FOREGROUND_COUNT - 1);
-    return 0.45 + 0.55 * remaining;
+    return minimum + (1 - minimum) * remaining;
   }
   function comparisonSeriesOrder(series, rankTimes) {
     const at = (index) => {
@@ -14572,7 +14573,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.32.0";
+    runtime.TIERSCOPE_VERSION = "3.32.1-beta.1";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;

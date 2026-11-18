@@ -285,13 +285,13 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   await page.selectOption('#tools-source-ad',lastSlot);assert.equal(await page.locator('[id^=tools-source-]').count(),30);
   assert(await page.locator('#tools-compare-add').isEnabled(),'an available thirty-first session is not blocked by a cap');
   const styles=()=>page.locator('.tools-chart-legend label').evaluateAll(labels=>labels.map(e=>({opacity:Number(e.querySelector('.tools-series-swatch').style.opacity),dash:e.querySelector('.tools-series-swatch').style.borderTopStyle,color:e.style.color})));
-  let thirty=await styles();assert.equal(thirty[0].opacity,1);assert.equal(thirty[29].opacity,.45);
+  let thirty=await styles();assert.equal(thirty[0].opacity,1);assert.equal(thirty[29].opacity,.25);
   assert.equal(new Set(thirty.map(s=>s.color)).size,30,'all thirty saved sessions have their own color');
   assert(thirty.every((s,i)=>s.dash==='dashed'&&(!i||s.opacity<thirty[i-1].opacity)));
   await page.evaluate(()=>{window.analysisStrokes=[];window.analysisComposites=[];});await page.click('#tools-chart-reset');
   const strokes=await page.evaluate(()=>window.analysisStrokes.filter(s=>s.dash.length));
   assert.equal(strokes.length,30);assert.equal(new Set(strokes.map(s=>s.color)).size,30);
-  assert(Math.abs(strokes[0].alpha-.45)<1e-6,'canvas draws the thirtieth line at 45% opacity');
+  assert(Math.abs(strokes[0].alpha-.25)<1e-6,'canvas draws the thirtieth line at 25% opacity');
   assert.equal(strokes.at(-1).alpha,1);
   assert.deepEqual(await page.evaluate(()=>window.analysisComposites),[],'the first thirty traces are drawn in color');
   assert.equal(await page.locator('#tools-source-aa').count(),1);assert.equal(await page.locator('#tools-source-ad').count(),1);
@@ -304,7 +304,7 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   const oldest=await page.locator('#tools-source-ad').inputValue(),newest=await page.locator('#tools-source-a').inputValue();
   await page.locator('#tools-recording-picker').evaluate(e=>e.open=true);
   await page.selectOption('#tools-source-a',oldest);await page.selectOption('#tools-source-ad',newest);
-  thirty=await styles();assert.equal(thirty[0].opacity,.45);assert.equal(thirty[29].opacity,1);assert.equal(thirty[29].dash,'dashed');
+  thirty=await styles();assert.equal(thirty[0].opacity,.25);assert.equal(thirty[29].opacity,1);assert.equal(thirty[29].dash,'dashed');
   await page.locator('[data-analysis-series="5"]').uncheck();assert.deepEqual(await styles(),thirty,'hidden lines do not reassign opacity');
   assert.equal(await page.locator('#tools-chart-inspection tbody tr:visible').count(),29);
   await page.locator('[data-analysis-series="5"]').check();
@@ -317,7 +317,7 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   await page.selectOption('#tools-compare-axis','clock');
   assert.equal(await page.locator('#tools-chart-inspection tbody tr').count(),30);
   await page.evaluate(()=>ViewerTracker.__organized.theme());await page.waitForTimeout(80);
-  assert.equal((await styles())[0].opacity,.45);assert.equal((await styles())[29].opacity,1);
+  assert.equal((await styles())[0].opacity,.25);assert.equal((await styles())[29].opacity,1);
   await page.locator('#tools-recording-picker').evaluate(e=>e.open=false);await page.locator('#tools-content').evaluate(e=>e.scrollTop=0);
   await page.selectOption('#tools-compare-axis','elapsed');
   await page.screenshot({path:'/tmp/tierscope-shadow-'+engine+'-dark.png'});

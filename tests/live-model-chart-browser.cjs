@@ -88,7 +88,7 @@ window.chartFixture={renderAnalysisChart,buildLiveModelSeries};`, resolveDir: pa
         const savedStyles = await page.locator('.tools-chart-legend label').evaluateAll(nodes => nodes.map(node => ({
             color: node.style.color, alpha: Number(node.querySelector('.tools-series-swatch').style.opacity)})));
         assert.equal(new Set(savedStyles.map(style => style.color)).size, 30, 'the newest thirty saved sessions have distinct colors');
-        savedStyles.forEach((style, rank) => assert(Math.abs(style.alpha - (1 - rank * 0.55 / 29)) < 1e-6,
+        savedStyles.forEach((style, rank) => assert(Math.abs(style.alpha - (1 - rank * 0.75 / 29)) < 1e-6,
             'all thirty colored sessions fade evenly by age'));
         assert(await page.locator('.tools-series-swatch').evaluateAll(nodes => nodes.every(node => node.style.borderTopStyle === 'dashed')),
             'saved snapshots use dashed strokes, including the newest');
@@ -96,7 +96,7 @@ window.chartFixture={renderAnalysisChart,buildLiveModelSeries};`, resolveDir: pa
         assert.equal(savedStrokes.length, 30, 'the canvas draws exactly thirty individual foreground strokes');
         assert.equal(new Set(savedStrokes.map(stroke => stroke.color)).size, 30, 'the actual foreground strokes have thirty distinct colors');
         assert(savedStrokes.every(stroke => stroke.dash.length > 0), 'the actual saved strokes are dashed');
-        savedStrokes.forEach((stroke, position) => assert(Math.abs(stroke.alpha - (1 - (29 - position) * 0.55 / 29)) < 1e-6));
+        savedStrokes.forEach((stroke, position) => assert(Math.abs(stroke.alpha - (1 - (29 - position) * 0.75 / 29)) < 1e-6));
         await page.click('#tools-chart-lines-next');
         assert.match(await page.locator('#tools-chart-lines-status').textContent(), /Lines 31–60 of 60/);
         const backgroundStyles = await page.locator('.tools-chart-legend label').evaluateAll(nodes => nodes.map(node => ({
