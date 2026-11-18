@@ -291,7 +291,8 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   await page.evaluate(()=>{window.analysisStrokes=[];window.analysisComposites=[];});await page.click('#tools-chart-reset');
   const strokes=await page.evaluate(()=>window.analysisStrokes.filter(s=>s.dash.length));
   assert.equal(strokes.length,30);assert.equal(new Set(strokes.map(s=>s.color)).size,30);
-  assert.equal(strokes[0].alpha,.45);assert.equal(strokes.at(-1).alpha,1);
+  assert(Math.abs(strokes[0].alpha-.45)<1e-6,'canvas draws the thirtieth line at 45% opacity');
+  assert.equal(strokes.at(-1).alpha,1);
   assert.deepEqual(await page.evaluate(()=>window.analysisComposites),[],'the first thirty traces are drawn in color');
   assert.equal(await page.locator('#tools-source-aa').count(),1);assert.equal(await page.locator('#tools-source-ad').count(),1);
   assert.match(await page.locator('.tools-chart-legend label').nth(29).textContent(),/^AD/);
