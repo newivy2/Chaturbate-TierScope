@@ -73,6 +73,10 @@ const source=prepareSource(fs.readFileSync(path.join(__dirname,'../tierscope.use
  await nav('library');await page.click('#tools-compare-previous');assert(await page.locator('#tools-follow-live').isChecked());
  const allCompared=await selectedSources();assert.equal(allCompared.length,31,'Compare with previous includes the live session and all thirty earlier sessions');
  assert.equal(new Set(allCompared).size,31);assert.equal(allCompared[0],'live');
+ const compareStyle=index=>page.locator('.tools-chart-legend label').filter({has:page.locator('[data-analysis-series="'+index+'"]')})
+  .locator('.tools-series-swatch').evaluate(swatch=>swatch.style.borderTopStyle);
+ assert.equal(await compareStyle(0),'solid','the actual current live snapshot is solid');
+ assert.equal(await compareStyle(1),'dashed','the newest previous recording remains dashed');
  assert.match(await page.locator('#tools-compare-slots').textContent(),/31 sessions selected/);
  assert.equal((await samples()).length,25,'reports render only a page of sessions without truncating the comparison');
  await page.click('#tools-report-next');assert.equal((await samples()).length,6);

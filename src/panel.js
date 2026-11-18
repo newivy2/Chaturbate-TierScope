@@ -1,4 +1,5 @@
 import { selectScanInterval } from './acquisition-state.js';
+import { CHART_RANGES } from './chart-ranges.js';
 import { hideChartTooltip } from './chart-view.js';
 import { bindPanelOptions } from './files.js';
 import { changeModelFavorite } from './favorite-controls.js';
@@ -66,7 +67,7 @@ export function createPanel() {
             '<div id="panel-options" role="group" aria-label="Chart and high options" style="display:none;position:absolute;right:5px;top:29px;width:190px;max-width:calc(100% - 10px);box-sizing:border-box;z-index:5;padding:8px;background:var(--panel-solid);color:var(--panel-text);border:1px solid #ff69b4;border-radius:4px;font-size:11px;box-shadow:0 3px 12px #0008;">' +
                 '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;"><strong>Charts &amp; highs</strong><button type="button" id="panel-options-close" aria-label="Close chart and high options" style="background:var(--panel-button);color:var(--panel-text);border:0;border-radius:3px;cursor:pointer;">×</button></div>' +
                 '<label for="chart-window-select">Chart window</label>' +
-                '<select id="chart-window-select" style="display:block;width:100%;margin:4px 0 6px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);font-size:11px;"><option value="full">Full history</option><option value="fourHours">Last 4 hours</option><option value="twoHours">Last 2 hours</option><option value="hour">Last hour</option><option value="halfHour">Last 30 minutes</option><option value="quarter">Last 15 minutes</option></select>' +
+                '<select id="chart-window-select" style="display:block;width:100%;margin:4px 0 6px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);font-size:11px;">' + CHART_RANGES.map(range => '<option value="' + range.key + '">' + range.label + '</option>').join('') + '</select>' +
                 '<div style="font-size:10px;color:var(--panel-muted);line-height:1.4;margin-bottom:8px;">Charts only. Downloads keep the full retained history.</div>' +
                 '<input type="file" id="session-file-input" accept=".json,application/json" style="display:none;">' +
                 '<div id="session-file-info" style="display:none;margin-top:7px;font-size:10px;line-height:1.4;white-space:pre-line;overflow-wrap:anywhere;color:var(--panel-secondary);"></div>' +

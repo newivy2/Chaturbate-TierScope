@@ -1,9 +1,9 @@
+import { isOngoingLiveModelStatus } from './live-model-data.js';
+
 export const RECENT_COMPARISON_MS = 24 * 60 * 60 * 1000;
 
 /** @param {number} value */
 function timestamp(value) { return Number.isSafeInteger(value) && value >= 0 && value <= 8640000000000000; }
-
-const ongoingSourceStatuses = new Set(['tracking', 'paused', 'retry', 'offline']);
 
 // Only the selected ongoing session of a model is live. An older recording of
 // that same model must not inherit the current tab's style. Discovery supplies
@@ -15,7 +15,7 @@ export function buildRecentComparisonStyles(entries, sources, currentRoom = '') 
     for (const source of Array.isArray(sources) ? sources : []) {
         if (!source || typeof source.room !== 'string' || !source.room.length ||
             typeof source.id !== 'string' || !source.id.length || typeof source.roomEpoch !== 'string' || !source.roomEpoch.length ||
-            !ongoingSourceStatuses.has(source.status) || !timestamp(source.sessionStartedAt) || !timestamp(source.sampleAt) ||
+            !isOngoingLiveModelStatus(source.status) || !timestamp(source.sessionStartedAt) || !timestamp(source.sampleAt) ||
             !Number.isSafeInteger(source.sampleCount) || source.sampleCount <= 0) continue;
         const room = source.room.toLowerCase(), previous = winners.get(room);
         if (!previous || source.sampleCount > previous.sampleCount || source.sampleCount === previous.sampleCount &&
@@ -36,7 +36,7 @@ export function buildRecentComparisonStyles(entries, sources, currentRoom = '') 
 // The caller supplies the complete validated Library, independent of filters.
 export function selectRecentComparisonEntries(entries, now, windowMs = RECENT_COMPARISON_MS) {
     if (!Array.isArray(entries) || !timestamp(now)) throw new Error('Invalid recent comparison input.');
-    const rangeMs = Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
+    const rangeMs = windowMs === Infinity || Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
     const cutoffAt = Math.max(0, now - rangeMs), selected = [];
     for (const [index, entry] of entries.entries()) {
         const archive = entry?.archive, session = archive?.session, times = session?.history?.timestamps;

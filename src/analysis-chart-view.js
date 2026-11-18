@@ -1,5 +1,5 @@
 import { buildClockPlot, inspectClockSample } from './analysis-clock-data.js';
-import { ANALYSIS_LINE_PAGE_SIZE, COMPARISON_BACKGROUND_OPACITY, COMPARISON_FOREGROUND_COUNT, comparisonLabel, comparisonLineColor, comparisonOpacity, comparisonSeriesOrder, analysisSampleIndex, buildAnalysisPlot, inspectAnalysisSample, zoomAnalysisWindow } from './analysis-chart-data.js';
+import { ANALYSIS_LINE_PAGE_SIZE, COMPARISON_BACKGROUND_OPACITY, COMPARISON_FOREGROUND_COUNT, comparisonLabel, comparisonLineColor, comparisonOpacity, comparisonSeriesOrder, analysisSampleIndex, buildAnalysisPlot, inspectAnalysisSample, visibleAnalysisWindow, zoomAnalysisWindow } from './analysis-chart-data.js';
 import { toolNode as node, toolButton as button } from './tools-view-helpers.js';
 
 // Receives snapshots of analysis values, not live/playback owners or archives.
@@ -8,6 +8,7 @@ import { toolNode as node, toolButton as button } from './tools-view-helpers.js'
 export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel, savedState = null, axisMode = 'elapsed', config = {}) {
     const element = node(parent, 'div'); element.id = 'tools-chart-view'; parent = element;
     let start = 0, end = axisMs, cursor = 0, pinned = false, drag = null, disposed = false;
+    let followingFull = savedState?.followingFull ?? true;
     function datedAxis(mode = axisMode) { return mode === 'live' || mode === 'timeline'; }
     const hidden = new Set(), controls = node(parent, 'div', undefined, 'tools-actions');
     if (savedState && (savedState.axisMode || 'elapsed') === axisMode) {
@@ -37,24 +38,28 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
     const zoomOut = button(controls, 'Zoom −', () => zoom(2), 'tools-chart-zoom-out');
     const panLeft = button(controls, '‹', () => pan(-1), 'tools-chart-pan-left'); panLeft.setAttribute('aria-label', 'Pan earlier');
     const panRight = button(controls, '›', () => pan(1), 'tools-chart-pan-right'); panRight.setAttribute('aria-label', 'Pan later');
-    button(controls, 'Full range', () => { start = 0; end = axisMs; draw(); }, 'tools-chart-reset');
+    button(controls, 'Full range', resetRange, 'tools-chart-reset');
     const pin = button(controls, 'Pin cursor', () => { pinned = !pinned; inspect(); }, 'tools-chart-pin');
     const legend = node(parent, 'div', undefined, 'tools-chart-legend');
     // Original session dates own saved-session styling even when a rolling
     // window clips earlier samples. Live models use their stable color slots.
-    let newestFirst, ranks, colorIndices, opacities, newest, styledTimeline, primarySeries, trackedSeries, backgroundSeries, solidSeries;
+    let newestFirst, colorIndices, opacities, newest, primarySeries, trackedSeries, backgroundSeries;
     function refreshSeriesStyling() {
-        ({newestFirst, ranks} = axisMode === 'live' ? {newestFirst: series.map((_, index) => index), ranks: series.map((_, index) => index)} :
-            comparisonSeriesOrder(series, config.rankTimes));
-        styledTimeline = axisMode === 'timeline' && Array.isArray(config.seriesStyles);
-        primarySeries = series.map((_, index) => styledTimeline && config.seriesStyles[index]?.primary === true);
-        trackedSeries = series.map((_, index) => primarySeries[index] || styledTimeline && config.seriesStyles[index]?.live === true);
-        backgroundSeries = ranks.map((rank, index) => axisMode !== 'live' && !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
+        const order = comparisonSeriesOrder(series, config.rankTimes);
+        newestFirst = order.newestFirst;
+        const {ranks} = order;
+        primarySeries = series.map((_, index) => config.seriesStyles?.[index]?.primary === true);
+        const useLiveDefaults = axisMode === 'live' && !config.seriesStyles;
+        trackedSeries = series.map((_, index) => useLiveDefaults || primarySeries[index] || config.seriesStyles?.[index]?.live === true);
+        backgroundSeries = ranks.map((rank, index) => !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
         newest = newestFirst[0];
-        solidSeries = series.map((_, index) => axisMode === 'live' || (styledTimeline ? trackedSeries[index] : index === newest));
-        colorIndices = ranks.map((rank, i) => axisMode === 'live' ? (config.colorIndices?.[i] ?? i) : styledTimeline ?
-            (primarySeries[i] ? 0 : Math.max(1, config.colorIndices?.[i] ?? 1 + rank)) : rank < 6 ? rank : 1 + (rank - 6) % 5);
-        opacities = ranks.map((rank, index) => axisMode === 'live' || trackedSeries[index] ? 1 : comparisonOpacity(rank));
+        const reservePink = primarySeries.includes(true) || axisMode === 'timeline' && !!config.seriesStyles;
+        colorIndices = ranks.map((rank, index) => {
+            if (primarySeries[index]) return 0;
+            if (axisMode === 'live') return config.colorIndices?.[index] ?? index;
+            return rank + Number(reservePink);
+        });
+        opacities = ranks.map((rank, index) => trackedSeries[index] ? 1 : comparisonOpacity(rank));
     }
     refreshSeriesStyling();
     const legendLabels = new Map(), rows = new Map();
@@ -96,17 +101,15 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         for (const [i, item] of legendLabels) {
             const label = labels[i], background = backgroundSeries[i];
             item.control.style.color = background ? legendBackground : comparisonLineColor(colorIndices[i], legendDark);
-            item.check.checked = !hidden.has(i); item.check.disabled = hidden.size === series.length - 1 && !hidden.has(i);
-            item.swatch.style.borderTopStyle = solidSeries[i] ? 'solid' : 'dashed';
+            item.check.checked = !hidden.has(i); item.check.disabled = !config.allowAllHidden && hidden.size === series.length - 1 && !hidden.has(i);
+            item.swatch.style.borderTopStyle = trackedSeries[i] ? 'solid' : 'dashed';
             item.swatch.style.opacity = String(opacities[i]);
-            const marker = styledTimeline ? (primarySeries[i] ? ' · Current' : trackedSeries[i] ? ' · Tracked' : '') :
-                (series.length > 1 && i === newest ? ' · Latest' : '');
+            const marker = primarySeries[i] ? ' · Current' : trackedSeries[i] ? ' · Tracked' :
+                (axisMode !== 'timeline' && series.length > 1 && i === newest ? ' · Latest' : '');
             item.text.textContent = axisMode === 'live' ? label : comparisonLabel(i) + marker + ' · ' + label;
-            item.control.title = styledTimeline ? (primarySeries[i] ? 'Current tracked session — solid pink: ' : trackedSeries[i] ?
-                'Currently tracked session — solid, 100% opacity: ' : 'Historical session — dashed, ' + Math.round(opacities[i] * 100) + '% opacity: ') + label :
-                axisMode === 'live' ? label + ' · live model · solid line' :
-                (series.length > 1 ? (i === newest ? 'Latest session — solid pink: ' : (background ? 'Background session — dashed' : 'Earlier session — dashed') +
-                    ', ' + Math.round(opacities[i] * 100) + '% opacity' + ': ') : '') + label;
+            item.control.title = (primarySeries[i] ? 'Current tracked session — solid pink: ' : trackedSeries[i] ?
+                'Currently tracked session — solid, 100% opacity: ' : (background ? 'Background session' : 'Historical session') +
+                ' — dashed, ' + Math.round(opacities[i] * 100) + '% opacity: ') + label;
         }
     }
     function renderLinePage() {
@@ -120,8 +123,9 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
             const swatch = node(control, 'span', '', 'tools-series-swatch'); swatch.setAttribute('aria-hidden', 'true');
             const text = node(control, 'span'); legendLabels.set(i, {control, check, swatch, text});
             check.onchange = () => {
-                if (!check.checked && hidden.size === series.length - 1) {check.checked = true; return;}
-                if (check.checked) hidden.delete(i); else hidden.add(i); draw();
+                if (!check.checked && !config.allowAllHidden && hidden.size === series.length - 1) {check.checked = true; return;}
+                if (check.checked) hidden.delete(i); else hidden.add(i);
+                if (config.fitVisibleRange) resetRange(); else draw();
             };
             const row = node(body, 'tr'); row.dataset.analysisInspection = String(i);
             const heading = node(row, 'th', axisMode === 'live' ? labels[i] : comparisonLabel(i)); heading.scope = 'row'; heading.title = labels[i];
@@ -139,8 +143,9 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         const bounds = canvas.getBoundingClientRect(), x = (event.clientX - bounds.left) * width / bounds.width;
         return start + Math.max(0, Math.min(1, (x - left) / (right - left))) * (end - start);
     };
-    function zoom(factor) { [start, end] = zoomAnalysisWindow(axisMs, start, end, factor, cursor); cursor = Math.max(start, Math.min(end, cursor)); draw(); }
+    function zoom(factor) { followingFull = false; [start, end] = zoomAnalysisWindow(axisMs, start, end, factor, cursor); cursor = Math.max(start, Math.min(end, cursor)); draw(); }
     function pan(direction) {
+        followingFull = false;
         const span = end - start, next = Math.max(0, Math.min(axisMs - span, start + direction * span / 2));
         start = next; end = next + span; cursor = Math.max(start, Math.min(end, cursor)); draw();
     }
@@ -208,7 +213,7 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         const backgroundColor = style.getPropertyValue('--panel-muted').trim();
         function paintSeries(target, j, color) {
             target.strokeStyle = target.fillStyle = color; target.lineWidth = backgroundSeries[j] ? 1.2 : 1.8; target.lineCap = 'butt';
-            target.setLineDash(solidSeries[j] ? [] : [6,4]); target.beginPath();
+            target.setLineDash(trackedSeries[j] ? [] : [6,4]); target.beginPath();
             let previousY = 0;
             const dots = [], points = plots[j].points;
             points.forEach((point, i) => {
@@ -231,20 +236,13 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         }
         function paintForeground(j) {
             if (hidden.has(j) || backgroundSeries[j]) return;
-            const colorIndex = axisMode === 'live' ? (config.colorIndices?.[j] ?? colorIndices[j]) : colorIndices[j];
-            const color = comparisonLineColor(colorIndex, isDark);
+            const color = comparisonLineColor(colorIndices[j], isDark);
             ctx.globalAlpha = opacities[j]; paintSeries(ctx, j, color);
         }
-        if (styledTimeline) {
-            // Tracked sessions sit above history; the current room stays pink
-            // and on top even when its recording started before the others.
-            for (let layer = 0; layer < 3; layer++) for (let position = newestFirst.length - 1; position >= 0; position--) {
-                const j = newestFirst[position], seriesLayer = primarySeries[j] ? 2 : trackedSeries[j] ? 1 : 0;
-                if (seriesLayer === layer) paintForeground(j);
-            }
-        } else {
-            // Ordinary saved comparisons keep the newest recording on top.
-            for (let position = newestFirst.length - 1; position >= 0; position--) paintForeground(newestFirst[position]);
+        // Paint older history first, followed by tracked sessions and the current room.
+        for (let layer = 0; layer < 3; layer++) for (let position = newestFirst.length - 1; position >= 0; position--) {
+            const j = newestFirst[position], seriesLayer = primarySeries[j] ? 2 : trackedSeries[j] ? 1 : 0;
+            if (seriesLayer === layer) paintForeground(j);
         }
         ctx.globalAlpha = 1;
         range.textContent = 'Chart window ' + (datedAxis() ? liveDate(start).toLocaleString() + ' – ' + liveDate(end).toLocaleString() :
@@ -255,8 +253,8 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
             'Aligned by local time of day. Midnight crossings continue at the start of the chart. Clock changes are separate segments; repeated clock times can show multiple dated values. Statistics use full sessions.' :
             'Aligned from each session’s first retained sample, using real elapsed time. Hidden lines and zoom do not change summary totals or the shared comparison length.') +
             ' Move to inspect; click to pin, drag to zoom, or use the buttons and arrow keys. Gaps have no assumed samples.' +
-            (styledTimeline ? ' Solid pink marks the current room’s tracked session. Other tracked sessions are solid; historical sessions are dashed, with older history in faint gray.' :
-                axisMode === 'live' ? ' Each model has a solid, opaque line and can be hidden independently.' : series.length > COMPARISON_FOREGROUND_COUNT ? ' The newest twelve lines fade progressively; older sessions form a faint background. Each session remains inspectable and can be hidden.' : ' The newest line is opaque; earlier sessions fade progressively.');
+            (series.length > 1 || datedAxis() ? ' Ongoing sessions use solid lines. Dashed lines fade with age and turn gray after the newest ' +
+                COMPARISON_FOREGROUND_COUNT + ' sessions.' : '');
         zoomIn.disabled = end-start <= Math.min(1000,axisMs); zoomOut.disabled = end-start >= axisMs;
         panLeft.disabled = start <= 0; panRight.disabled = end >= axisMs; paintLegend(); inspect();
     }
@@ -266,7 +264,7 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         if (!drag) return;
         const origin = drag; cursor = timeAt(event); drag = null;
         if (Math.abs(event.clientX-origin.x)>5 && Math.abs(cursor-origin.from)>=Math.min(1000,axisMs)) {
-            start = Math.min(cursor,origin.from);end = Math.max(cursor,origin.from);pinned = origin.pinned;draw();
+            followingFull = false; start = Math.min(cursor,origin.from);end = Math.max(cursor,origin.from);pinned = origin.pinned;draw();
         } else {pinned=!origin.pinned;inspect();}
         if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);
     };
@@ -298,10 +296,17 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
         }
         cursor = Math.max(start, Math.min(end, cursor + originShift));
     }
+    function fitFullRange() {
+        [start, end] = config.fitVisibleRange ? visibleAnalysisWindow(series, hidden, axisMs) : [0, axisMs];
+        cursor = Math.max(start, Math.min(end, cursor));
+    }
+    function resetRange() {followingFull = true; fitFullRange(); draw();}
+    if (config.fitVisibleRange && followingFull) fitFullRange();
     filterLines(); renderLinePage(); draw();
-    return {element, canvas, settings, draw,
+    return {element, canvas, settings, draw, resetRange,
         capture: () => ({start, end, cursor, pinned, axisMs, axisMode, hidden: [...hidden],
             ...(datedAxis() ? {originAt: config.originAt, sourceIds: config.sourceIds} : {}),
+            ...(config.fitVisibleRange ? {followingFull} : {}),
             ...(paged ? {linePage, lineQuery} : {})}),
         update(nextSeries, nextAxis, nextMetricLabel, nextMode = 'elapsed', nextConfig = config) {
             if (disposed) return;
@@ -309,8 +314,9 @@ export function renderAnalysisChart(parent, series, labels, axisMs, metricLabel,
             const previousAxis = axisMs; series = nextSeries; axisMs = nextAxis; metricLabel = nextMetricLabel;
             config = nextConfig;
             if (axisMode !== nextMode) {
-                axisMode = nextMode; start = 0; end = axisMs; cursor = 0; pinned = false;
+                axisMode = nextMode; start = 0; end = axisMs; cursor = 0; pinned = false; followingFull = true;
             } else fitWindow(previousAxis, originShift);
+            if (config.fitVisibleRange && followingFull) fitFullRange();
             drag = null; refreshSeriesStyling();
             canvas.setAttribute('aria-label', chartLabel());
             draw();

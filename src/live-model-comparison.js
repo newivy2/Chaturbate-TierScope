@@ -1,7 +1,10 @@
 import { renderAnalysisChart } from './analysis-chart-view.js';
+import { CHART_RANGES } from './chart-ranges.js';
 import { allocateLiveModelColors, buildLiveModelSeries } from './live-model-chart-data.js';
+import { isOngoingLiveModelStatus } from './live-model-data.js';
 import { readLiveModelArchive, readLiveModelSources, retainLiveModelArchives, subscribeLiveModelSources } from './live-model-sources.js';
 import { ANALYSIS_METRICS } from './session-analysis.js';
+import { dismissComparisonSources, isComparisonDismissed, subscribeComparisonDismissals } from './comparison-dismissals.js';
 import { toolNode as node, toolButton as button } from './tools-view-helpers.js';
 
 const MODEL_PAGE_SIZE = 50;
@@ -11,16 +14,21 @@ const statusNames = {tracking: 'Tracking', paused: 'Paused', stopped: 'Stopped',
 export function createLiveComparisonState() {
     return {selected: new Set(), choices: new Map(), known: new Map(), snapshots: new Map(), colors: new Map(),
         autoPicked: false, frozen: false, frozenAt: 0, windowMs: 3600000, pickerOpen: false, query: '', rowLimit: MODEL_PAGE_SIZE,
-        reportPage: 0, chartState: null, chartIds: []};
+        reportPage: 0, chartState: null, chartIds: [], hiddenSources: new Set()};
 }
 
 // A Library controller: it reads published aggregate snapshots and gives only
 // analysis values to the chart. It never scans, saves a recording or changes a
 // live session, and subscriptions exist only while this view is open.
 export function renderLiveModelsComparison(parent, {state, getMetric, metricControl, currentRoom = ''}) {
+    if (!state.hiddenSources) {
+        const hidden = new Set(state.chartState?.hidden || []);
+        state.hiddenSources = new Set(state.chartIds.filter((id, index) => hidden.has(index)));
+    }
     const root = node(parent, 'section'); root.id = 'tools-live-models';
     node(root, 'h3', 'Live models comparison');
-    node(root, 'p', 'Uses scans from your other TierScope tabs. No additional API requests.', 'tools-muted');
+    const sourceExplanation = node(root, 'p', 'Uses scans from your other TierScope tabs. No additional API requests.', 'tools-muted');
+    sourceExplanation.id = 'tools-live-source-explanation';
     const controls = node(root, 'div', undefined, 'tools-actions');
     const freeze = button(controls, '', () => {
         state.frozen = !state.frozen;
@@ -29,12 +37,18 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
     }, 'tools-live-freeze');
     freeze.className = 'tools-primary';
     button(controls, 'Refresh sources', () => refresh(true), 'tools-live-refresh');
+    const clearInactive = button(controls, 'Clear stopped/stale', () => {
+        try {
+            dismissComparisonSources(clearableSources); state.autoPicked = true; plotSignature = ''; refresh();
+        } catch (error) {status.textContent = 'Some entries could not be cleared: ' + error.message;}
+    }, 'tools-live-clear-inactive');
+    clearInactive.title = 'Hide stopped, stale and closed comparison entries. Saved recordings and active tracking are preserved.';
     const rangeLabel = node(controls, 'label', 'Show '), windowSelect = node(rangeLabel, 'select'); windowSelect.id = 'tools-live-window';
-    for (const [value, label] of [[900000, 'Last 15 minutes'], [3600000, 'Last hour'], [14400000, 'Last 4 hours'], [86400000, 'Last 24 hours'], [Infinity, 'Full sessions']]) {
-        const option = node(windowSelect, 'option', label); option.value = String(value);
+    for (const {ms, label} of CHART_RANGES) {
+        const option = node(windowSelect, 'option', label); option.value = String(ms);
     }
     windowSelect.value = String(state.windowMs);
-    windowSelect.onchange = () => { state.windowMs = Number(windowSelect.value); clearChart(); state.chartState = null; plotSignature = ''; refresh(); };
+    windowSelect.onchange = () => {state.windowMs = Number(windowSelect.value); resetRange = true; plotSignature = ''; refresh();};
     const status = node(root, 'p', '', 'tools-muted'); status.id = 'tools-live-status'; status.setAttribute('role', 'status');
     const chooser = node(root, 'details'); chooser.id = 'tools-live-chooser'; chooser.open = state.pickerOpen;
     chooser.ontoggle = () => {if (!disposed) state.pickerOpen = chooser.open;};
@@ -76,7 +90,8 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
     ['Model', 'Count', 'Sample time', 'Samples', 'Source status'].forEach(text => {node(heading, 'th', text).scope = 'col';});
     const reportBody = node(table, 'tbody');
     node(root, 'p', 'The chart uses actual dates and clock times, including midnight crossings. Gaps stay gaps and lines end at their last accepted sample. A stale source may be suspended or closed; its old counts are never treated as a fresh scan. Keeping sessions in Library remains a separate choice.', 'tools-muted');
-    let disposed = false, refreshing = false, view = null, observer = null, detach = null;
+    let disposed = false, refreshing = false, view = null, observer = null, detach = null, detachDismissals = null, resetRange = false;
+    let clearableSources = [];
     let rows = new Map(), currentGroups = new Map(), reportData = [], topology = '', plotSignature = '', notice = '', userNotice = '';
     function age(time, at) {
         if (!Number.isFinite(time)) return 'No sample';
@@ -85,8 +100,16 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
     }
     function describe(source) { return statusNames[source.status] || 'Unavailable'; }
     function eligible(source) { return source && source.sampleCount > 0 && !['reset', 'unavailable', 'stale'].includes(source.status); }
+    function rememberChart() {
+        if (!view) return;
+        state.chartState = view.capture();
+        const hidden = new Set(state.chartState.hidden);
+        state.chartIds.forEach((id, index) => {
+            if (hidden.has(index)) state.hiddenSources.add(id); else state.hiddenSources.delete(id);
+        });
+    }
     function clearChart() {
-        if (view) {state.chartState = view.capture(); view.dispose(); view = null;}
+        if (view) {rememberChart(); view.dispose(); view = null;}
         if (observer) {observer.disconnect(); observer = null;}
         chartHost.replaceChildren();
     }
@@ -97,7 +120,7 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
         plotSignature = ''; userNotice = ''; refresh();
     }
     function sourceText(source, index, at) {
-        return 'Tab ' + (index + 1) + ' · ' + describe(source) + ' · ' + (source.sampleAt ? new Date(source.sampleAt).toLocaleTimeString() : 'no sample');
+        return (source.kind === 'background' ? 'Compare without watching' : 'Tab ' + (index + 1)) + ' · ' + describe(source) + ' · ' + (source.sampleAt ? new Date(source.sampleAt).toLocaleTimeString() : 'no sample');
     }
     function updateRows(groups, at) {
         const query = state.query.trim().toLowerCase(), filtered = [...groups].filter(([room]) => room.includes(query));
@@ -109,7 +132,7 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
                 const row = node(rowsElement, 'div', undefined, 'tools-live-source'); row.dataset.liveRoom = room;
                 const label = node(row, 'label', undefined, 'tools-live-model');
                 const check = node(label, 'input'); check.type = 'checkbox'; node(label, 'strong', room);
-                const select = node(row, 'select'); select.dataset.liveTab = room; select.setAttribute('aria-label', 'Source tab for ' + room);
+                const select = node(row, 'select'); select.dataset.liveTab = room; select.setAttribute('aria-label', 'Tracking source for ' + room);
                 for (const source of sources) {const option = node(select, 'option'); option.value = source.id;}
                 const tabNote = node(row, 'span', '', 'tools-muted'); tabNote.dataset.liveTabNote = '';
                 const detail = node(row, 'span', '', 'tools-muted'); detail.dataset.liveStatus = '';
@@ -117,8 +140,10 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
                 rows.set(room, {row, check, select, tabNote, detail, snapshot});
                 check.onchange = () => choose(state.known.get(state.choices.get(room)), check.checked);
                 select.onchange = () => {
+                    rememberChart();
                     const old = state.choices.get(room), checked = state.selected.delete(old);
                     state.choices.set(room, select.value);
+                    if (state.hiddenSources.has(old)) state.hiddenSources.add(select.value); else state.hiddenSources.delete(select.value);
                     if (checked) state.selected.add(select.value);
                     state.autoPicked = true; plotSignature = ''; userNotice = ''; refresh();
                 };
@@ -136,8 +161,8 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
             [...row.select.options].forEach((option, index) => {option.textContent = sourceText(sources[index], index, at);});
             const publishers = new Set(sources.filter(item => item.status !== 'unavailable' && item.status !== 'reset').map(item => item.publisherId));
             row.tabNote.hidden = publishers.size < 2;
-            row.tabNote.textContent = publishers.size + ' tabs · using the session with the most samples';
-            row.detail.textContent = describe(source);
+            row.tabNote.textContent = publishers.size + (sources.some(item => item.kind === 'background') ? ' sources' : ' tabs') + ' · using the session with the most samples';
+            row.detail.textContent = (source.kind === 'background' ? 'Compare without watching · ' : '') + describe(source);
             row.snapshot.textContent = source.sampleCount ? source.sampleCount.toLocaleString() + ' samples · latest ' + age(source.sampleAt, at) : 'Waiting for a first accepted sample';
             row.row.dataset.liveState = source.status;
             row.row.dataset.liveSampleCount = String(source.sampleCount);
@@ -169,18 +194,32 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
             ...selected.map(source => source.id + ':' + source.status + ':' + state.snapshots.get(source.id).revision)].join('|');
         if (signature === plotSignature && !force) return;
         plotSignature = signature;
-        if (!selected.length) {clearChart(); reportData = []; renderReports(); return;}
+        if (!selected.length) {clearChart(); state.chartIds = []; reportData = []; renderReports(); return;}
         const data = buildLiveModelSeries(archives, getMetric(), {now: state.frozen ? state.frozenAt : at, windowMs: state.windowMs});
         const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
-        if (!same) {clearChart(); state.chartState = null; state.reportPage = 0;}
+        if (!same) {
+            clearChart();
+            // Visibility belongs to the source, not its current legend index.
+            // Keep choices for removed sources so reselecting one restores it.
+            state.chartState = {...state.chartState, start: 0, end: data.axisMs, cursor: 0, pinned: false,
+                axisMs: data.axisMs, axisMode: 'live', originAt: data.originAt, sourceIds: ids,
+                hidden: ids.flatMap((id, index) => state.hiddenSources.has(id) ? [index] : [])};
+            state.reportPage = 0; resetRange = true;
+        }
         state.colors = allocateLiveModelColors(selected.map(source => source.room), state.colors, currentRoom);
-        const config = {originAt: data.originAt, sourceIds: ids, colorIndices: selected.map(source => state.colors.get(source.room))};
+        const config = {originAt: data.originAt, sourceIds: ids, fitVisibleRange: state.windowMs === Infinity, allowAllHidden: true,
+            colorIndices: selected.map(source => state.colors.get(source.room)), rankTimes: selected.map(source => source.sessionStartedAt),
+            seriesStyles: selected.map(source => {
+                const live = isOngoingLiveModelStatus(source.status);
+                return {live, primary: live && source.room === currentRoom};
+            })};
         if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[getMetric()], 'live', config);
         else {
             view = renderAnalysisChart(chartHost, data.series, selected.map(source => source.room), data.axisMs,
-                ANALYSIS_METRICS[getMetric()], same ? state.chartState : null, 'live', config);
+                ANALYSIS_METRICS[getMetric()], state.chartState, 'live', config);
             if (window.ResizeObserver) {observer = new window.ResizeObserver(view.draw); observer.observe(view.canvas);}
         }
+        if (resetRange) {view.resetRange(); resetRange = false;}
         state.chartIds = ids.slice();
         state.displayAt = state.frozen ? state.frozenAt : at;
         const metric = getMetric();
@@ -210,13 +249,24 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
         refreshing = true;
         try {
             notice = '';
-            const at = Date.now(), result = readLiveModelSources(force), sources = [...(result.sources || [])], available = new Map(sources.map(source => [source.id, source]));
+            const at = Date.now(), result = readLiveModelSources(force), sources = (result.sources || []).filter(source => !isComparisonDismissed(source)), available = new Map(sources.map(source => [source.id, source]));
+            sourceExplanation.textContent = sources.some(source => source.kind === 'background') ?
+                'Uses scans from TierScope tabs and Compare without watching. Rooms tracked without watching make additional API requests while running.' :
+                'Uses scans from your other TierScope tabs. No additional API requests.';
             if (result.error) notice = 'Live sharing is unavailable: ' + result.error + '. Previous snapshots are retained.';
             for (const id of state.selected) {
                 if (available.has(id)) continue;
                 const previous = state.known.get(id);
+                if (previous && isComparisonDismissed(previous)) {
+                    state.selected.delete(id); state.snapshots.delete(id); state.known.delete(id);
+                    if (state.choices.get(previous.room) === id) state.choices.delete(previous.room);
+                    continue;
+                }
                 if (previous) sources.push({...previous, status: 'unavailable'});
             }
+            clearableSources = sources.filter(source => ['stopped', 'stale'].includes(source.status) ||
+                source.status === 'unavailable' && !available.has(source.id));
+            clearInactive.disabled = !clearableSources.length;
             const groups = new Map();
             sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
             for (const source of sources) {
@@ -238,6 +288,10 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
                 if (!state.frozen && preferred && !result.error && (!choice || !state.selected.has(choice) ||
                     previous?.status !== 'reset' && !changedSession &&
                     (!available.has(choice) || previous?.status === 'stale' || preferred.sampleCount > previous.sampleCount))) {
+                    if (choice && choice !== preferred.id) {
+                        rememberChart();
+                        if (state.hiddenSources.has(choice)) state.hiddenSources.add(preferred.id); else state.hiddenSources.delete(preferred.id);
+                    }
                     if (state.selected.delete(choice)) state.selected.add(preferred.id);
                     state.choices.set(room, preferred.id);
                 } else if (!choice) state.choices.set(room, entries[0].id);
@@ -255,12 +309,12 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
             freeze.setAttribute('aria-pressed', String(state.frozen)); freeze.disabled = !state.snapshots.size;
             chooserTitle.textContent = 'Models being tracked · ' + groups.size + ' · ' + state.selected.size + ' selected';
             empty.hidden = groups.size > 0;
-            empty.textContent = 'Open broadcast rooms in other tabs with TierScope enabled. Models appear after their tabs start tracking; no favorite or saved Library session is required.';
+            empty.textContent = 'Open broadcast rooms in other tabs with TierScope enabled, or use Compare without watching in Current Live Session. Models appear after tracking starts; no favorite or saved Library session is required.';
             const unavailable = selected.filter(source => ['unavailable', 'reset', 'stale'].includes(source.status)).length;
             status.textContent = (state.frozen ? 'Frozen at ' + new Date(state.frozenAt).toLocaleTimeString() + ' · source status still updates.' : 'Following new scans · ' + state.selected.size + ' models selected.') +
                 (unavailable ? ' ' + unavailable + ' source(s) unavailable or stale; open Models being tracked for details.' : '') +
                 (notice ? ' ' + notice : '') + (userNotice ? ' ' + userNotice : '');
-            if (!groups.size) {chooser.open = true; status.textContent = 'Open a room in another TierScope tab to start comparing live models.';}
+            if (!groups.size) {chooser.open = true; status.textContent = 'Open a room in another TierScope tab or use Compare without watching in Current Live Session.';}
             for (const id of [...state.snapshots.keys()]) if (!state.selected.has(id)) state.snapshots.delete(id);
             retainLiveModelArchives(state.selected);
             const chosenIds = new Set(state.choices.values());
@@ -270,12 +324,14 @@ export function renderLiveModelsComparison(parent, {state, getMetric, metricCont
     }
     refresh();
     detach = subscribeLiveModelSources(() => refresh());
+    detachDismissals = subscribeComparisonDismissals(() => refresh());
     return {
         refresh, draw() {if (view) view.draw();},
         dispose() {
             if (disposed) return; disposed = true;
             if (detach) detach();
-            if (view) {state.chartState = view.capture(); view.dispose();}
+            if (detachDismissals) detachDismissals();
+            if (view) {rememberChart(); view.dispose();}
             if (observer) observer.disconnect();
         }
     };

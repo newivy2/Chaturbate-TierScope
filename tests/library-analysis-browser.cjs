@@ -24,7 +24,7 @@ const source=prepareSource(fs.readFileSync(path.join(__dirname,'../tierscope.use
  }
  },probeShadow(){
  const host=document.createElement('div');host.style.width='300px';document.getElementById('tools-content').appendChild(host);
- const samples=Array.from({length:30},(_,i)=>({times:[0,60000],values:[i<12?20:8,i<12?20:8],breaks:[false,false],timestamps:[100000-i*1000,160000-i*1000]}));
+ const samples=Array.from({length:48},(_,i)=>({times:[0,60000],values:i<30?[20,20]:[8,8],breaks:[false,false],timestamps:[100000-i*1000,160000-i*1000]}));
  const view=renderAnalysisChart(host,samples,samples.map((_,i)=>'Probe '+i),60000,'Probe');
  const canvas=view.canvas,ratio=window.devicePixelRatio||1;
  const pixels=canvas.getContext('2d').getImageData(80*ratio,98*ratio,100*ratio,14*ratio).data;
@@ -134,17 +134,17 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   const defaultLabel=await page.locator('#tools-source-a option[value=organized_0]').textContent();assert.equal(defaultLabel.split('alpha_model').length-1,1,'default model title is not duplicated');assert.match(defaultLabel,/10\/1\/2026/);
   assert.match(await page.locator('#tools-source-a option[value=organized_1]').textContent(),/alpha_model — Recording 2 —/,'custom titles remain visible');
   assert.equal(await page.locator('#tools-summary-table thead th').count(),7);assert.equal(await page.locator('#tools-chart-inspection tbody tr').count(),6);
-  // The latest date owns the solid pink line even when it is not in slot A.
+  // The latest saved session is pink and dashed even when it is not in slot A.
   const firstSlot=await page.locator('#tools-source-a').inputValue(),thirdSlot=await page.locator('#tools-source-c').inputValue();
   await page.selectOption('#tools-source-a',thirdSlot);await page.selectOption('#tools-source-c',firstSlot);
-  assert.equal(await page.locator('.tools-chart-legend label').nth(2).locator('.tools-series-swatch').evaluate(e=>e.style.borderTopStyle),'solid');
+  assert.equal(await page.locator('.tools-chart-legend label').nth(2).locator('.tools-series-swatch').evaluate(e=>e.style.borderTopStyle),'dashed');
   assert.equal(await page.locator('.tools-chart-legend label').nth(0).locator('.tools-series-swatch').evaluate(e=>e.style.borderTopStyle),'dashed');
-  assert.match(await page.locator('.tools-chart-legend label').nth(2).getAttribute('title'),/Latest session — solid pink/);
+  assert.match(await page.locator('.tools-chart-legend label').nth(2).getAttribute('title'),/Historical session — dashed, 100% opacity/);
   await page.evaluate(()=>{window.analysisStrokes=[];window.analysisComposites=[];});await page.click('#tools-chart-reset');
   const darkStrokes=await page.evaluate(()=>window.analysisStrokes.filter(s=>['#ff69b4','#79baff','#68d391','#ffd166','#c4a3ff','#ff987d'].includes(s.color)));
   assert(darkStrokes.some(s=>s.color==='#ff69b4'));assert(darkStrokes.some(s=>s.color!=='#ff69b4'));
-  for(const s of darkStrokes)assert.deepEqual(s.dash,s.color==='#ff69b4'?[]:[6,4]);
-  assert.equal(darkStrokes.at(-1).color,'#ff69b4','latest solid line is painted over earlier dashes');
+  for(const s of darkStrokes)assert.deepEqual(s.dash,[6,4]);
+  assert.equal(darkStrokes.at(-1).color,'#ff69b4','latest saved line is painted over earlier dashes');
   await page.selectOption('#tools-source-a',firstSlot);await page.selectOption('#tools-source-c',thirdSlot);
   await page.click('#tools-chart-zoom-in');await page.locator('[data-analysis-series="1"]').uncheck();await page.click('#tools-chart-pin');
   const keptRange=await page.locator('#tools-chart-range').textContent();
@@ -195,7 +195,7 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   await page.evaluate(()=>{window.analysisStrokes=[];ViewerTracker.__organized.theme();});await page.waitForTimeout(80);await page.screenshot({path:'/tmp/tierscope-314-'+engine+'-compare-bright.png'});
   const brightStrokes=await page.evaluate(()=>window.analysisStrokes.filter(s=>['#b42370','#175db0','#176f36','#835900','#7140a6','#a23c20'].includes(s.color)));
   assert(brightStrokes.some(s=>s.color==='#b42370'));assert(brightStrokes.some(s=>s.color!=='#b42370'));
-  for(const s of brightStrokes)assert.deepEqual(s.dash,s.color==='#b42370'?[]:[6,4]);
+  for(const s of brightStrokes)assert.deepEqual(s.dash,[6,4]);
   assert.deepEqual(await page.locator('#tracker-container').boundingBox(),bounds,'analysis actions preserve Scope position before viewport clamping');
   await page.setViewportSize({width:380,height:740});await page.waitForTimeout(80);
   assert((await page.locator('#tierscope-session-tools').evaluate(e=>e.scrollWidth-e.clientWidth))<=1);
@@ -240,7 +240,7 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   // Closing/reopening keeps metadata while clearing transient selections.
   await page.keyboard.press('Escape');await page.click('#btn-control-library');await openLibraryBook(page);await page.selectOption('#tools-library-model','alpha_model');await page.check('#tools-library-favorites');
   assert.equal(await page.locator('.tools-row').count(),6);assert.match(await page.locator('.tools-recording-note').textContent(),/Remember this/);assert.match(await page.locator('#tools-library-selected').textContent(),/^0 selected/);
-  // Thirty slots: twelve progressively faded foreground lines, eighteen faint background traces.
+  // Thirty colored lines with the thirty-first in the gray background.
   await page.evaluate(()=>ViewerTracker.__organized.extended());await page.click('#tools-refresh-library');
   await page.click('#tools-library-clear');await page.selectOption('#tools-library-model','extended_model');
   // Mixed-model selections beyond twelve remain comparable, including hidden selections.
@@ -269,6 +269,7 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   assert.equal(await page.locator('#tools-compare-slots').textContent(),'31 sessions selected');
   assert.equal(await page.locator('#tools-chart-inspection tbody tr').count(),30,'inspection pages controls without dropping chart lines');
   await page.click('#tools-chart-lines-next');assert.equal(await page.locator('#tools-chart-inspection tbody tr').count(),1);
+  assert.equal(await page.locator('.tools-series-swatch').evaluate(element=>Number(element.style.opacity)),.12,'the thirty-first session is the first gray line');
   assert.equal(await page.locator('#tools-summary-table thead th').count(),26,'large reports show twenty-five session columns per page');
   await page.click('#tools-report-next');assert.equal(await page.locator('#tools-summary-table thead th').count(),7);
   await page.click('[data-tools-tab=library]');await page.selectOption('#tools-library-model','extended_model');
@@ -284,12 +285,15 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   await page.selectOption('#tools-source-ad',lastSlot);assert.equal(await page.locator('[id^=tools-source-]').count(),30);
   assert(await page.locator('#tools-compare-add').isEnabled(),'an available thirty-first session is not blocked by a cap');
   const styles=()=>page.locator('.tools-chart-legend label').evaluateAll(labels=>labels.map(e=>({opacity:Number(e.querySelector('.tools-series-swatch').style.opacity),dash:e.querySelector('.tools-series-swatch').style.borderTopStyle,color:e.style.color})));
-  let thirty=await styles();assert.deepEqual(thirty.map(s=>Math.round(s.opacity*100)),[100,95,90,85,80,75,70,65,60,55,50,45,...Array(18).fill(12)]);
-  assert.equal(thirty[0].dash,'solid');assert(thirty.slice(1).every(s=>s.dash==='dashed'));
+  let thirty=await styles();assert.equal(thirty[0].opacity,1);assert.equal(thirty[29].opacity,.45);
+  assert.equal(new Set(thirty.map(s=>s.color)).size,30,'all thirty saved sessions have their own color');
+  assert(thirty.every((s,i)=>s.dash==='dashed'&&(!i||s.opacity<thirty[i-1].opacity)));
   await page.evaluate(()=>{window.analysisStrokes=[];window.analysisComposites=[];});await page.click('#tools-chart-reset');
-  const alphas=await page.evaluate(()=>window.analysisStrokes.filter(s=>['#b42370','#175db0','#176f36','#835900','#7140a6','#a23c20'].includes(s.color)).map(s=>Math.round(s.alpha*100)));
-  assert.deepEqual(alphas,[45,50,55,60,65,70,75,80,85,90,95,100]);
-  assert.deepEqual(await page.evaluate(()=>window.analysisComposites.map(alpha=>Math.round(alpha*100))),[12],'old traces composite once at 12% opacity without accumulating');
+  const strokes=await page.evaluate(()=>window.analysisStrokes.filter(s=>s.dash.length));
+  assert.equal(strokes.length,30);assert.equal(new Set(strokes.map(s=>s.color)).size,30);
+  assert(Math.abs(strokes[0].alpha-.45)<1e-6,'canvas draws the thirtieth line at 45% opacity');
+  assert.equal(strokes.at(-1).alpha,1);
+  assert.deepEqual(await page.evaluate(()=>window.analysisComposites),[],'the first thirty traces are drawn in color');
   assert.equal(await page.locator('#tools-source-aa').count(),1);assert.equal(await page.locator('#tools-source-ad').count(),1);
   assert.match(await page.locator('.tools-chart-legend label').nth(29).textContent(),/^AD/);
   await page.locator('#tools-content').evaluate(e=>e.scrollTop=0);
@@ -300,12 +304,12 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   const oldest=await page.locator('#tools-source-ad').inputValue(),newest=await page.locator('#tools-source-a').inputValue();
   await page.locator('#tools-recording-picker').evaluate(e=>e.open=true);
   await page.selectOption('#tools-source-a',oldest);await page.selectOption('#tools-source-ad',newest);
-  thirty=await styles();assert.equal(thirty[0].opacity,.12);assert.equal(thirty[29].opacity,1);assert.equal(thirty[29].dash,'solid');
+  thirty=await styles();assert.equal(thirty[0].opacity,.45);assert.equal(thirty[29].opacity,1);assert.equal(thirty[29].dash,'dashed');
   await page.locator('[data-analysis-series="5"]').uncheck();assert.deepEqual(await styles(),thirty,'hidden lines do not reassign opacity');
   assert.equal(await page.locator('#tools-chart-inspection tbody tr:visible').count(),29);
   await page.locator('[data-analysis-series="5"]').check();
   await page.locator('[data-analysis-series="13"]').uncheck();
-  assert.deepEqual(await styles(),thirty,'hiding a background session does not reassign foreground styles');
+  assert.deepEqual(await styles(),thirty,'hiding another session does not reassign colors or opacity');
   assert.equal(await page.locator('#tools-chart-inspection tbody tr:visible').count(),29);
   await page.locator('[data-analysis-series="13"]').check();
   await page.locator('#tools-analysis-chart').focus();await page.keyboard.press('Home');
@@ -313,7 +317,7 @@ const file=(name,value)=>({name,mimeType:'application/json',buffer:Buffer.from(J
   await page.selectOption('#tools-compare-axis','clock');
   assert.equal(await page.locator('#tools-chart-inspection tbody tr').count(),30);
   await page.evaluate(()=>ViewerTracker.__organized.theme());await page.waitForTimeout(80);
-  assert.equal((await styles())[0].opacity,.12);assert.equal((await styles())[29].opacity,1);
+  assert.equal((await styles())[0].opacity,.45);assert.equal((await styles())[29].opacity,1);
   await page.locator('#tools-recording-picker').evaluate(e=>e.open=false);await page.locator('#tools-content').evaluate(e=>e.scrollTop=0);
   await page.selectOption('#tools-compare-axis','elapsed');
   await page.screenshot({path:'/tmp/tierscope-shadow-'+engine+'-dark.png'});

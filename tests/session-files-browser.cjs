@@ -41,9 +41,11 @@ async function downloaded(page,action){const [download]=await Promise.all([page.
  assert.equal(await page.locator('#btn-control-save-session,#btn-control-open-session,#btn-playback-keep-library').count(),0);
  const windowSelect=page.getByLabel('Chart window',{exact:true});
  await options.click();assert(await menu.isVisible());assert.deepEqual(await panel.boundingBox(),bounds,'options do not drag or grow panel');
- const windows=[['full',0,'Full'],['fourHours',0,'4h'],['twoHours',0,'2h'],['hour',60,'1h'],['halfHour',90,'30m'],['quarter',105,'15m']];
+ const windows=[['quarter',105,'15m'],['hour',60,'1h'],['fourHours',0,'4h'],['twelveHours',0,'12h'],['day',0,'24h'],['full',0,'Full']];
  assert.deepEqual(await windowSelect.locator('option').evaluateAll(options=>options.map(o=>o.value)),windows.map(([mode])=>mode));
  for(const [mode,start,label]of windows){await windowSelect.selectOption(mode);assert.equal(await canvas.evaluate(c=>c._tierScopeChart.plot.start),start);assert.equal(await options.textContent(),label+' ▾');assert.deepEqual(await panel.boundingBox(),bounds);}
+ assert.deepEqual(await windowSelect.locator('option').evaluateAll(options=>options.map(o=>o.textContent)),['15 minutes','1 hour','4 hours','12 hours','24 hours','Full range']);
+ await windowSelect.selectOption('quarter');
  assert.equal(await canvas.evaluate(c=>c._tierScopeChart.plot.max),130,'old high is outside selected scale');
  assert.equal((await page.evaluate(()=>ViewerTracker.__files.state())).high,10000,'session high survives chart crop');
  if(process.env.TIERSCOPE_FILE_SHOTS)await panel.screenshot({path:process.env.TIERSCOPE_FILE_SHOTS+'-menu.png'});
@@ -79,10 +81,11 @@ async function downloaded(page,action){const [download]=await Promise.all([page.
  assert.deepEqual(await page.evaluate(()=>ViewerTracker.__files.state()),replayBeforeSave,'Keep does not move the playhead or change live data');
  if(process.env.TIERSCOPE_FILE_SHOTS)await panel.screenshot({path:process.env.TIERSCOPE_FILE_SHOTS+'-ordinary-replay.png'});
  await options.click();
- for(const [mode,minutes]of [['full',Infinity],['fourHours',240],['twoHours',120],['hour',60],['halfHour',30],['quarter',15]]){
+ for(const [mode,minutes]of [['quarter',15],['hour',60],['fourHours',240],['twelveHours',720],['day',1440],['full',Infinity]]){
   await windowSelect.selectOption(mode);assert.equal((await page.evaluate(()=>ViewerTracker.__files.state())).index,index);
   assert.equal(await canvas.evaluate(c=>c._tierScopeChart.plot.end),110);assert.equal(await canvas.evaluate(c=>c._tierScopeChart.plot.start),Math.max(0,110-minutes));
  }
+ await windowSelect.selectOption('quarter');
  await page.locator('#panel-options-close').click();await page.click('#playback-return');
  archive.room='archived_room';const file={name:'archived.tierscope.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(archive))};
  const picker=page.waitForEvent('filechooser');await open.click();await(await picker).setFiles(file);

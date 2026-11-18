@@ -1,4 +1,5 @@
 import { renderAnalysisChart } from './analysis-chart-view.js';
+import { CHART_RANGES } from './chart-ranges.js';
 import { freezeRecordingData } from './immutable-data.js';
 import { buildLiveModelSeries } from './live-model-chart-data.js';
 import { readLiveModelSources } from './live-model-sources.js';
@@ -39,7 +40,7 @@ function sameSource(left, right) {
 // included; neither Library filters nor a model/session count cap apply here.
 export function renderRecentComparison(parent, {readEntries, getMetric, metricControl, currentRoom = '', readSources = readLiveModelSources, state = createRecentComparisonState()}) {
     const root = node(parent, 'section'); root.id = 'tools-recent-comparison';
-    node(root, 'h3', 'Last 24 hours · all models');
+    node(root, 'h3', 'Saved comparison · all models');
     node(root, 'p', 'All saved models with samples in the selected range. Library filters do not apply.', 'tools-muted');
     const controls = node(root, 'div', undefined, 'tools-actions');
     const freeze = button(controls, '', () => {
@@ -49,8 +50,8 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
     }, 'tools-recent-freeze'); freeze.className = 'tools-primary';
     const refreshButton = button(controls, 'Refresh', () => refresh(true), 'tools-recent-refresh');
     const rangeLabel = node(controls, 'label', 'Range '), range = node(rangeLabel, 'select'); range.id = 'tools-recent-range';
-    for (const [value, label] of [[3600000, 'Last hour'], [14400000, 'Last 4 hours'], [43200000, 'Last 12 hours'], [RECENT_COMPARISON_MS, 'Last 24 hours']]) {
-        const option = node(range, 'option', label); option.value = String(value);
+    for (const {ms, label} of CHART_RANGES) {
+        const option = node(range, 'option', label); option.value = String(ms);
     }
     range.value = String(state.windowMs);
     range.onchange = () => {state.windowMs = Number(range.value); state.page = 0; paint(true);};
@@ -67,7 +68,7 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
     const previous = button(pagination, 'Previous', () => {state.page--; paintReports();}, 'tools-recent-previous');
     const pageLabel = node(pagination, 'span', '', 'tools-muted'); pageLabel.setAttribute('aria-live', 'polite');
     const next = button(pagination, 'Next', () => {state.page++; paintReports();}, 'tools-recent-next');
-    node(root, 'p', 'Solid lines mark ongoing TierScope tracking, including paused tabs. Pink marks this room’s current session; history uses dashed lines. Gaps stay blank, lines end at their last accepted sample, and older history stays faint gray.', 'tools-muted');
+    node(root, 'p', 'Pink marks this room’s ongoing session. Paused sessions and temporary connection or retry waits still count as ongoing tracking.', 'tools-muted');
     let disposed = false, refreshing = false, view = null, observer = null, plotSignature = '', paintSignature = '', selectionSignature = '', selection = null;
     let projection = null, projectionSignature = '';
 
@@ -142,13 +143,15 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         const nextPaintSignature = [state.revision, state.liveRevision, at, metric, state.windowMs, state.frozen, state.loaded, state.notice, state.liveNotice].join('|');
         if (!force && nextPaintSignature === paintSignature) return;
         rememberChart();
-        if (state.chartWindowMs !== state.windowMs) {
+        const resetRange = state.chartWindowMs !== state.windowMs;
+        if (resetRange) {
             clearChart();
             // An explicit preset opens its full range, even when it is empty.
             // Ordinary updates retain the user's absolute zoom and cursor.
-            const axisMs = Math.max(1000, Math.min(at, state.windowMs));
-            if (state.chartState) state.chartState = {...state.chartState,
-                start: 0, end: axisMs, axisMs, originAt: Math.max(0, at - state.windowMs), cursor: 0, pinned: false};
+            const axisMs = Number.isFinite(state.windowMs) ? Math.max(1000, Math.min(at, state.windowMs)) : 1000;
+            if (state.chartState) state.chartState = {...state.chartState, start: 0, end: axisMs, axisMs,
+                originAt: Number.isFinite(state.windowMs) ? Math.max(0, at - state.windowMs) : at,
+                cursor: 0, pinned: false, followingFull: true};
             state.chartWindowMs = state.windowMs;
         }
         const nextSelectionSignature = state.revision + ':' + at + ':' + state.windowMs;
@@ -168,17 +171,21 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
             }
             const data = projection;
             const config = {originAt: data.originAt, sourceIds: ids, rankTimes: selection.metadata.map(item => item.startAt), allowAllHidden: true,
+                fitVisibleRange: state.windowMs === Infinity,
                 seriesStyles: buildRecentComparisonStyles(selection.entries, state.liveSources, currentRoom)};
             state.liveSignature = JSON.stringify(config.seriesStyles);
             if (!same) {
                 clearChart(); state.chartState = retainedChartState(ids);
             }
+            if (resetRange && state.chartState) state.chartState = {...state.chartState,
+                start: 0, end: data.axisMs, axisMs: data.axisMs, originAt: data.originAt, cursor: 0, pinned: false, followingFull: true};
             if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[metric], 'timeline', config);
             else {
                 const labels = selection.metadata.map(item => item.room + ' · ' + new Date(item.startAt).toLocaleString());
                 view = renderAnalysisChart(chartHost, data.series, labels, data.axisMs, ANALYSIS_METRICS[metric], state.chartState, 'timeline', config);
                 if (window.ResizeObserver) {observer = new window.ResizeObserver(view.draw); observer.observe(view.canvas);}
             }
+            if (resetRange) view.resetRange();
             state.chartSources = selection.entries.map((entry, index) => ({id: ids[index], entry}));
         } else if (!ids.length) {clearChart(); projection = null; projectionSignature = '';}
         state.chartIds = ids; plotSignature = signature;
@@ -189,7 +196,8 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
         status.textContent = (state.frozen ? 'Frozen' : 'Following saved Library updates') + ' · ' + ids.length.toLocaleString() + ' sessions · ' +
             selection.roomCount.toLocaleString() + ' models · ' + selection.sampleCount.toLocaleString() + ' accepted samples in window.' +
             (state.notice ? ' ' + state.notice : '') + (state.liveNotice ? ' ' + state.liveNotice : '');
-        windowLabel.textContent = 'Window: ' + new Date(selection.cutoffAt).toLocaleString() + ' — ' + new Date(selection.now).toLocaleString();
+        windowLabel.textContent = state.windowMs === Infinity ? 'Full range · saved recordings through ' + new Date(selection.now).toLocaleString() :
+            'Window: ' + new Date(selection.cutoffAt).toLocaleString() + ' — ' + new Date(selection.now).toLocaleString();
         windowLabel.title = 'Both endpoints are included. A recording qualifies by actual samples, including sessions that started earlier. Future samples, empty recordings and gaps without a sample in this window are excluded. No additional API requests or automatic saves.';
         empty.hidden = !!ids.length;
         empty.textContent = state.loaded ? 'No saved Library session has an accepted sample in this date window.' : 'Saved Library sessions could not be read.';
@@ -234,9 +242,9 @@ export function renderRecentComparison(parent, {readEntries, getMetric, metricCo
                     const changed = !state.loaded || inputSources.size !== state.inputSources.size ||
                         [...inputSources].some(([id, source]) => !sameSource(state.inputSources.get(id), source));
                     if (changed || windowChanged) {
-                        // Retain the whole day's snapshots so a frozen view can
-                        // switch to a wider preset without reading storage.
-                        const result = selectRecentComparisonEntries(incoming, at), snapshots = new Map();
+                        // Retain every eligible saved recording so a frozen view
+                        // can expand to Full range without reading storage.
+                        const result = selectRecentComparisonEntries(incoming, at, Infinity), snapshots = new Map();
                         state.entries = result.entries.map((entry, index) => {
                             const id = result.metadata[index].sourceId, previous = state.snapshots.get(id);
                             const source = inputSources.get(id) || sourceToken(entry);

@@ -1,6 +1,6 @@
 import { isBrowserOffline } from './connection-status.js';
 import { freezeRecordingData } from './immutable-data.js';
-import { decodeLiveModelSource, liveModelSourceStatus, LIVE_MODEL_PREFIX, LIVE_MODEL_NOTICE, LIVE_MODEL_HEARTBEAT_MS } from './live-model-data.js';
+import { decodeInMemoryLiveModelSource, decodeLiveModelSource, liveModelSourceStatus, LIVE_MODEL_PREFIX, LIVE_MODEL_NOTICE, LIVE_MODEL_HEARTBEAT_MS } from './live-model-data.js';
 import { getStorageKey, makeStorageId } from './record-validation.js';
 import { roomFromUrl } from './room-context.js';
 import { runtime } from './runtime.js';
@@ -91,6 +91,35 @@ const exchange = createLiveModelExchange({
         producerVersion: session.producerVersion || runtime.TIERSCOPE_VERSION, room, session})
 });
 let publisherId = null, heartbeat = null, announced = false, started = false, cleanupInitialized = false, savedBinding = null;
+const sourceProviders = new Set(), sourceSubscribers = new Set();
+
+// Providers supply read surfaces only. Registration never starts acquisition;
+// the Library controller separately owns starting and stopping its comparison.
+export function registerLiveModelSourceProvider(provider) {
+    if (!provider || !['readSources', 'readArchive', 'subscribe'].every(key => typeof provider[key] === 'function')) {
+        throw new Error('Invalid comparison source provider.');
+    }
+    const entry = {provider, detach: null};
+    const changed = () => {for (const notify of sourceSubscribers) notify();};
+    entry.detach = provider.subscribe(changed);
+    sourceProviders.add(entry); changed();
+    return () => {
+        if (!sourceProviders.delete(entry)) return;
+        if (typeof entry.detach === 'function') entry.detach();
+        changed();
+    };
+}
+
+function providerSources(provider) {
+    const result = provider.readSources(), sources = [];
+    let error = result?.error || '';
+    for (const value of result?.sources || []) {
+        const source = decodeInMemoryLiveModelSource(value, Date.now());
+        if (source) sources.push(Object.freeze(source));
+        else error = 'Some comparison-only sources could not be read.';
+    }
+    return {sources, error};
+}
 
 function notifyLiveModels() {
     exchange.invalidate();
@@ -152,8 +181,39 @@ export function stopLiveModelSources() {
     if (heartbeat !== null) clearInterval(heartbeat);
     heartbeat = null; retirePublisher(); exchange.clear();
 }
-export function readLiveModelSources(force = false) { return exchange.readSources(force); }
-export function readLiveModelArchive(source) { return exchange.readArchive(source); }
+export function readLiveModelSources(force = false) {
+    const result = exchange.readSources(force), sources = result.sources.slice();
+    const ids = new Set(sources.map(source => source.id)), errors = result.error ? [result.error] : [];
+    for (const {provider} of sourceProviders) {
+        try {
+            const extra = providerSources(provider);
+            if (extra.error) errors.push(extra.error);
+            for (const source of extra.sources) {
+                if (ids.has(source.id)) {errors.push('A comparison-only source identity is duplicated.'); continue;}
+                sources.push(source); ids.add(source.id);
+            }
+        } catch (_) {errors.push('Comparison-only sources are unavailable. Their previous snapshots are retained.');}
+    }
+    sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
+    return {sources, error: errors.join(' ')};
+}
+export function readLiveModelArchive(source) {
+    if (source.kind !== 'background') return exchange.readArchive(source);
+    for (const {provider} of sourceProviders) {
+        const current = providerSources(provider).sources.find(value => value.id === source.id);
+        if (!current) continue;
+        if (current.revision !== source.revision || current.room !== source.room || current.sessionId !== source.sessionId ||
+            current.sampleCount !== source.sampleCount || current.sampleAt !== source.sampleAt ||
+            !current.sampleCount || ['reset', 'unavailable', 'stale'].includes(current.status)) break;
+        const archive = freezeRecordingData(validateSessionFile(provider.readArchive(current))), session = archive.session;
+        if (archive.room.toLowerCase() !== current.room || session.sessionStartedAt !== current.sessionStartedAt ||
+            session.history.timestamps.length !== current.sampleCount || session.history.timestamps.at(-1) !== current.sampleAt) break;
+        const latest = providerSources(provider).sources.find(value => value.id === current.id);
+        if (!latest || latest.revision !== current.revision) break;
+        return archive;
+    }
+    throw new Error('This comparison-only source changed or is unavailable. Its previous chart snapshot is retained.');
+}
 export function retainLiveModelArchives(ids) { exchange.retain(ids); }
 
 export function subscribeLiveModelSources(changed) {
@@ -162,12 +222,14 @@ export function subscribeLiveModelSources(changed) {
         if (disposed || pending !== null) return;
         pending = setTimeout(() => { pending = null; if (!disposed) changed(); }, 80);
     }
+    sourceSubscribers.add(schedule);
     try {
         if (typeof GM_addValueChangeListener === 'function') listener = GM_addValueChangeListener(LIVE_MODEL_NOTICE, () => { exchange.invalidate(); schedule(); });
     } catch (_) { /* Polling also handles discovery, missed notifications and suspended tabs. */ }
     const timer = setInterval(schedule, 5000);
     return () => {
         disposed = true; clearInterval(timer);
+        sourceSubscribers.delete(schedule);
         if (pending !== null) clearTimeout(pending);
         if (listener !== null) {
             try { if (typeof GM_removeValueChangeListener === 'function') GM_removeValueChangeListener(listener); } catch (_) { /* Already removed. */ }

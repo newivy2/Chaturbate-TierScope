@@ -1,5 +1,6 @@
 import { observeAthRoom, stopAthActivity } from './ath-activity.js';
 import { initializeAthGrace } from './ath-maintenance.js';
+import { initializeBackgroundTracking } from './background-tracking-lifecycle.js';
 import { isAcquisitionCurrent } from './acquisition-context.js';
 import { isBrowserOffline } from './connection-status.js';
 import { beginAcquisitionGeneration, resetAcquisitionForRoom, schedulePresenceAcquisition, startAcquisitionClock, stopAcquisitionClock } from './acquisition-state.js';
@@ -31,6 +32,7 @@ export function scheduleInit(delay) {
 }
 
 export function init() {
+    try { initializeBackgroundTracking(); } catch (error) { log('Comparison tracking recovery unavailable: ' + error.message); }
     try { initializeAthGrace(); } catch (error) { log('ATH grace initialization unavailable: ' + error.message); }
     observeAthRoom();
     leavePlayback(false);

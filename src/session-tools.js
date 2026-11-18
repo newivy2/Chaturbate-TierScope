@@ -1,5 +1,7 @@
 import { CLOCK_DAY_MS, clockSessionDuration, projectClockSeries } from './analysis-clock-data.js';
 import { createAnalysisFollower } from './analysis-follow.js';
+import { getPersistentBackgroundComparisonStates, initializeBackgroundTracking, readPersistentBackgroundComparisonSources, startPersistentBackgroundComparison, stopPersistentBackgroundComparison, subscribePersistentBackgroundComparison } from './background-tracking-lifecycle.js';
+import { clearComparisonDismissalsForRoom, dismissComparisonSources, isComparisonDismissed, subscribeComparisonDismissals } from './comparison-dismissals.js';
 import { renderMetricStrip } from './analysis-metric-view.js';
 import { automaticLibraryStatus, keepFavoriteSession } from './automatic-library.js';
 import { changeModelFavorite } from './favorite-controls.js';
@@ -19,6 +21,7 @@ import { readAutomaticKeepingMinutes, saveAutomaticKeepingMinutes, readLibraryLi
 import { renderAutomaticKeepingSettings, renderLibraryCapacity } from './library-capacity-view.js';
 import { libraryShell } from './library-shell.js';
 import { createLiveComparisonState, renderLiveModelsComparison } from './live-model-comparison.js';
+import { readLiveModelSources } from './live-model-sources.js';
 import { createRecentComparisonState, renderRecentComparison } from './recent-comparison.js';
 import { RECENT_COMPARISON_MS } from './recent-comparison-data.js';
 import { migrateRecordingFavorites, readModelFavorites, readModelFavorite } from './library-models.js';
@@ -79,6 +82,7 @@ export function bindSessionTools() {
 
 export function openSessionTools(focusTarget) {
     if (closeSessionTools) closeSessionTools();
+    initializeBackgroundTracking();
     const origin = location.href, generation = runtime.initGuard, focusBefore = focusTarget || document.getElementById('btn-control-library') || document.activeElement;
     const dialog = document.createElement('dialog');
     dialog.id = 'tierscope-session-tools'; dialog.setAttribute('aria-labelledby', 'tools-title');
@@ -110,6 +114,8 @@ export function openSessionTools(focusTarget) {
     let compareMode = 'saved', liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
     const recentState = createRecentComparisonState();
+    let backgroundRoomDraft = '', detachBackgroundStatus = null, detachComparisonDismissals = null;
+    const pendingBackgroundSelection = new Set();
     const followers = {summary: createAnalysisFollower(), compare: createAnalysisFollower(), history: createAnalysisFollower()};
     try { currentArchive = captureSessionFile(); } catch (error) { /* Tools also work on directory pages. */ }
     const content = dialog.querySelector('#tools-content'), message = dialog.querySelector('#tools-message');
@@ -326,6 +332,7 @@ export function openSessionTools(focusTarget) {
         if (followers[tab]) followers[tab].reset();
     }
     function refreshCurrent() {
+        refreshBackgroundControls();
         if (tab === 'compare' && recentView) { recentView.refresh(); return; }
         if (tab === 'compare' && liveModelsView) { liveModelsView.refresh(); return; }
         if (followers[tab] && updateFollowing()) refreshFollowedView();
@@ -357,6 +364,7 @@ export function openSessionTools(focusTarget) {
         }
         refreshCards();
         if ((replaced || firstCapture) && (tab === 'summary' && selectedA === 'current' || tab === 'compare' && [selectedA, selectedB, ...selectedExtra].includes('current'))) render(tab);
+        else if (analysisView && analysisSources.liveIndex !== currentAnalysisIndex(analysisSources.archives, analysisSources.ids)) refreshAnalysis();
     }
     function favoriteAction(room, enableOnly = false) {
         if (!changeModelFavorite(room, enableOnly)) return;
@@ -466,8 +474,9 @@ export function openSessionTools(focusTarget) {
         history.dataset.cardHistory = '';
         if (!replay) {
             const comparisons = node(card, 'div', undefined, 'tools-actions');
-            button(comparisons, 'Live sessions', openLiveComparison, 'tools-compare-live').title = 'Compare models being tracked in your open TierScope tabs.';
-            button(comparisons, 'Last 24h sessions', openRecentComparison, 'tools-compare-last24h').title = 'Compare all models with saved samples in the last 24 hours.';
+            button(comparisons, 'Compare all live sessions', openLiveComparison, 'tools-compare-live').title = 'Compare models being tracked in your open TierScope tabs and this Library.';
+            button(comparisons, 'Compare last 24h sessions', openRecentComparison, 'tools-compare-last24h').title = 'Compare all models with saved samples in the last 24 hours.';
+            backgroundComparisonControls(card, true);
         }
         if (replay) {
             const exports = node(card, 'div', undefined, 'tools-actions tools-exports');
@@ -481,6 +490,90 @@ export function openSessionTools(focusTarget) {
         const retry = button(card, 'Retry keeping', () => { keepFavoriteSession(star.dataset.favoriteRoom, true); render('library'); }, 'tools-retry-automatic' + suffix); retry.dataset.cardRetry = '';
         if (!replay) {
             const status = node(card, 'div', '', 'tools-muted'); status.id = 'session-save-info'; status.setAttribute('role', 'status');
+        }
+    }
+    function backgroundComparisonControls(parent, allowStart) {
+        const section = node(parent, 'div', undefined, 'tools-background-comparison');
+        if (allowStart) {
+            const form = node(section, 'form', undefined, 'tools-actions tools-background-form');
+            const input = node(form, 'input'); input.id = 'tools-background-room'; input.type = 'text';
+            input.placeholder = 'Room name'; input.maxLength = 100; input.required = true; input.value = backgroundRoomDraft;
+            input.setAttribute('aria-label', 'Room to compare without watching'); input.autocomplete = 'off'; input.spellcheck = false;
+            input.oninput = () => {backgroundRoomDraft = input.value; input.setCustomValidity('');};
+            const start = node(form, 'button', 'Compare without watching'); start.type = 'submit'; start.id = 'tools-compare-background';
+            form.onsubmit = async event => {
+                event.preventDefault();
+                try {
+                    if (input.value.trim().toLowerCase() === getModelName().toLowerCase()) throw new Error('This room is already being tracked. Enter another room name.');
+                    clearComparisonDismissalsForRoom(input.value.trim().toLowerCase());
+                    input.disabled = true; start.disabled = true;
+                    const state = await startPersistentBackgroundComparison(input.value);
+                    if (!current()) return;
+                    backgroundRoomDraft = state.room;
+                    const firstSelection = !liveModelsState.autoPicked;
+                    liveModelsState.autoPicked = true;
+                    liveModelsState.frozen = false; liveModelsState.chartState = null;
+                    if (firstSelection) {
+                        if (getModelName() !== 'unknown') pendingBackgroundSelection.add(getModelName().toLowerCase());
+                        for (const tracked of getPersistentBackgroundComparisonStates()) if (tracked.active) pendingBackgroundSelection.add(tracked.room);
+                    } else pendingBackgroundSelection.add(state.room);
+                    selectBackgroundComparisons(); compareMode = 'live'; render('compare');
+                } catch (error) {if (input.isConnected) {input.setCustomValidity(error.message); input.reportValidity();}}
+                finally {input.disabled = false; start.disabled = false;}
+            };
+            node(section, 'p', 'Add rooms without opening their videos. Tracking continues while Chaturbate is open. Stops after more than 15 minutes of confirmed broadcaster absence, or when you press Stop.', 'tools-muted');
+        }
+        const status = node(section, 'div', undefined, 'tools-background-status'); status.id = 'tools-background-status';
+        button(section, 'Clear stopped/stale', () => {
+            try {dismissComparisonSources(inactiveBackgroundSources()); refreshBackgroundControls();}
+            catch (error) {tell('Some entries could not be cleared: ' + error.message, true);}
+        }, 'tools-clear-background-inactive').title = 'Hide old tracking entries without deleting saved sessions or recovery data.';
+        refreshBackgroundControls();
+    }
+    function backgroundSourcesForView() {
+        const raw = readPersistentBackgroundComparisonSources().sources;
+        const displayed = new Map(readLiveModelSources().sources.map(source => [source.id, source]));
+        return raw.map(source => displayed.get(source.id) || source);
+    }
+    function inactiveBackgroundSources() {
+        return backgroundSourcesForView().filter(source => ['stopped', 'stale'].includes(source.status) && !isComparisonDismissed(source));
+    }
+    function refreshBackgroundControls() {
+        const status = dialog.querySelector('#tools-background-status');
+        if (!status) return;
+        const sources = backgroundSourcesForView(), states = getPersistentBackgroundComparisonStates().filter(state => {
+            const source = sources.find(item => item.room === state.room);
+            return !source || !isComparisonDismissed(source);
+        });
+        const clear = dialog.querySelector('#tools-clear-background-inactive');
+        if (clear) clear.disabled = !inactiveBackgroundSources().length;
+        status.hidden = !states.length;
+        const visible = new Set(states.map(state => state.room));
+        for (const row of Array.from(status.children)) if (!visible.has(row.dataset.backgroundRoom)) row.remove();
+        for (const state of states) {
+            let row = Array.from(status.children).find(item => item.dataset.backgroundRoom === state.room);
+            if (!row) {
+                row = node(status, 'div', undefined, 'tools-background-row'); row.dataset.backgroundRoom = state.room;
+                const text = node(row, 'span', '', 'tools-muted'); text.setAttribute('role', 'status'); text.dataset.backgroundMessage = '';
+                const stop = button(row, 'Stop', () => {
+                    try {stopPersistentBackgroundComparison(state.room); pendingBackgroundSelection.delete(state.room); refreshBackgroundControls();}
+                    catch (error) {tell(error.message, true);}
+                }); stop.dataset.backgroundStop = ''; stop.setAttribute('aria-label', 'Stop tracking ' + state.room);
+            }
+            const text = row.querySelector('[data-background-message]');
+            const message = state.room + ' · ' + state.message;
+            if (text.textContent !== message) text.textContent = message;
+            text.style.color = ['retry', 'unavailable', 'offline'].includes(state.status) ? 'var(--panel-warning)' : 'var(--panel-muted)';
+            row.querySelector('[data-background-stop]').hidden = !state.active;
+        }
+    }
+    function selectBackgroundComparisons() {
+        const {sources} = readLiveModelSources(true);
+        for (const room of pendingBackgroundSelection) {
+            const candidates = sources.filter(source => source.room === room && !['reset', 'unavailable', 'stale'].includes(source.status));
+            candidates.sort((a, b) => b.sampleCount - a.sampleCount || (b.sampleAt || 0) - (a.sampleAt || 0) || a.id.localeCompare(b.id));
+            const chosen = candidates[0];
+            if (chosen) {liveModelsState.selected.add(chosen.id); liveModelsState.choices.set(room, chosen.id); pendingBackgroundSelection.delete(room);}
         }
     }
     function compareLiveWithPrevious() {
@@ -688,7 +781,7 @@ export function openSessionTools(focusTarget) {
         try { filteredSources = filterLibraryEntries(sourceOptions(), analysisFilters); }
         catch (error) { filteredSources = []; tell(error.message, true); }
         node(picker, 'p', filteredSources.length + ' matching sessions. Existing selections stay available when outside the filters.', 'tools-muted');
-        if (comparing) node(picker, 'p', 'Compare any number of saved sessions. The newest twelve remain distinct; older sessions form a faint gray background.', 'tools-muted');
+        if (comparing) node(picker, 'p', 'Compare any number of saved sessions. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray background. Ongoing tracking stays solid and opaque.', 'tools-muted');
         const sourceControls = node(picker, 'div', undefined, 'tools-actions');
         if (liveComparisonArchive) button(sourceControls, 'Refresh live snapshot', () => { liveComparisonArchive = captureLiveSessionFile(); selectNewFollowSource(); render(tab); }, 'tools-refresh-live-snapshot');
         if (currentArchive) button(sourceControls, 'Refresh current / replayed snapshot', () => { currentArchive = captureSessionFile(); currentArchiveIsReplay = isPlaybackCurrent(runtime.playback); selectNewFollowSource(); render(tab); }, 'tools-refresh-snapshot');
@@ -851,21 +944,35 @@ export function openSessionTools(focusTarget) {
         }
         node(parent, 'p', 'The full-session high can predate retained history and is not limited by “Match shared length.” Token-holder share is weighted by recorded registered-viewer time.', 'tools-muted');
     }
+    function currentAnalysisIndex(archives, ids) {
+        const room = getModelName();
+        if (runtime.isStopped || location.href !== runtime.lastUrl || runtime.activeSessionStorageKey !== getStorageKey(room)) return -1;
+        return archives.findIndex((archive, index) => {
+            if (archive.room !== room || archive.session.isStopped || archive.session.sessionStartedAt !== runtime.sessionStartedAt) return false;
+            const id = ids[index];
+            if (id === 'current') return !currentArchiveIsReplay;
+            return id === 'live' || followers[tab]?.get(id)?.archive === archive;
+        });
+    }
     function chart(archives, labels, endMs, ids) {
         const axisMode = tab === 'compare' ? compareAxis : 'elapsed';
         const series = archives.map(archive => {
             const source = {...analysisSeries(archive, metric), timestamps: archive.session.history.timestamps};
             return axisMode === 'clock' ? {...source, clock: projectClockSeries(source)} : source;
         });
-        if (analysisView) { analysisSources = {archives, ids}; analysisView.update(series, endMs, ANALYSIS_METRICS[metric], axisMode); return; }
+        const liveIndex = currentAnalysisIndex(archives, ids);
+        const config = {rankTimes: archives.map(archive => archive.session.sessionStartedAt),
+            seriesStyles: archives.map((_, index) => index === liveIndex ? {live: true, primary: true} : {})};
+        analysisSources = {archives, ids, liveIndex};
+        if (analysisView) { analysisView.update(series, endMs, ANALYSIS_METRICS[metric], axisMode, config); return; }
         const saved = analysisStates.get(tab);
         const same = saved && (saved.state.axisMode || 'elapsed') === axisMode && saved.ids.length === ids.length && ids.every((id, index) => saved.archives[saved.ids.indexOf(id)] === archives[index]);
         const restored = same ? {...saved.state, hidden: saved.state.hidden.map(index => ids.indexOf(saved.ids[index]))} : null;
-        const view = renderAnalysisChart(content, series, labels, endMs, ANALYSIS_METRICS[metric], restored, axisMode);
+        const view = renderAnalysisChart(content, series, labels, endMs, ANALYSIS_METRICS[metric], restored, axisMode, config);
         const range = dialog.querySelector('#tools-comparison-range');
         if (range) view.settings.appendChild(range);
         content.appendChild(analysisOutput);
-        analysisView = view; analysisSources = {archives, ids};
+        analysisView = view;
         chartDraw = view.draw; chartDispose = view.dispose;
         if (window.ResizeObserver) { chartObserver = new window.ResizeObserver(view.draw); chartObserver.observe(view.canvas); }
     }
@@ -889,6 +996,7 @@ export function openSessionTools(focusTarget) {
                 chartDraw = recentView.draw; return;
             }
             if (compareMode === 'live') {
+                if (getPersistentBackgroundComparisonStates().length) backgroundComparisonControls(content, false);
                 liveModelsView = renderLiveModelsComparison(content, {state: liveModelsState, currentRoom: getModelName(), getMetric: () => metric,
                     metricControl: (parent, changed) => metricStrip(parent, changed, 'tools-live-metric')});
                 chartDraw = liveModelsView.draw;
@@ -1031,6 +1139,8 @@ export function openSessionTools(focusTarget) {
         }
     }
     function close() {
+        if (detachComparisonDismissals) {detachComparisonDismissals(); detachComparisonDismissals = null;}
+        if (detachBackgroundStatus) {detachBackgroundStatus(); detachBackgroundStatus = null;}
         if (compactView) {compactView.dispose(); compactView = null;}
         if (recentView) { recentView.dispose(); recentView = null; }
         if (liveModelsView) { liveModelsView.dispose(); liveModelsView = null; }
@@ -1092,5 +1202,11 @@ export function openSessionTools(focusTarget) {
         },
         modeChanged: enabled => detachDock.setChartOnly(enabled), redraw: () => detachDock.redraw()
     });
+    detachBackgroundStatus = subscribePersistentBackgroundComparison(() => {
+        if (!current()) return;
+        selectBackgroundComparisons(); refreshBackgroundControls();
+        if (liveModelsView) liveModelsView.refresh();
+    });
+    detachComparisonDismissals = subscribeComparisonDismissals(() => {if (current()) refreshBackgroundControls();});
     render('library'); dialog.querySelector('#tools-close').focus();
 }

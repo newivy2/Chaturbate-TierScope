@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TierScope - Chaturbate Viewers Visualizer
 // @namespace    http://tampermonkey.net/
-// @version      3.31.1
+// @version      3.32.0
 // @description  TierScope - Viewer visualizer with trend tracking, reports, and GIF export
 // @author       newivy
 // @match        https://chaturbate.com/*
@@ -1057,6 +1057,21 @@ underlying system, so should run in the browser, Node, or Plask.
     acquisitionState.requestPolicyCache = emptyRequestPolicy();
     acquisitionState.requestPolicyUnsaved = false;
     return true;
+  }
+
+  // src/chart-ranges.js
+  var CHART_RANGES = Object.freeze([
+    { key: "quarter", ms: 15 * 6e4, label: "15 minutes", shortLabel: "15m" },
+    { key: "hour", ms: 60 * 6e4, label: "1 hour", shortLabel: "1h" },
+    { key: "fourHours", ms: 4 * 60 * 6e4, label: "4 hours", shortLabel: "4h" },
+    { key: "twelveHours", ms: 12 * 60 * 6e4, label: "12 hours", shortLabel: "12h" },
+    { key: "day", ms: 24 * 60 * 6e4, label: "24 hours", shortLabel: "24h" },
+    { key: "full", ms: Infinity, label: "Full range", shortLabel: "Full" }
+  ].map((range) => Object.freeze(range)));
+  function normalizeChartRangeKey(value) {
+    if (value === "halfHour") return "hour";
+    if (value === "twoHours") return "fourHours";
+    return CHART_RANGES.some((range) => range.key === value) ? value : null;
   }
 
   // src/highs-store.js
@@ -2478,7 +2493,7 @@ underlying system, so should run in the browser, Node, or Plask.
       return (value == null ? void 0 : value.version) === 1 && Number.isSafeInteger(value.until) && value.until >= 0 && value.until <= 864e13 ? value.until : 0;
     }
     function deadline() {
-      for (const owner of ["tierscope", "viewer-probe"]) rememberedUntil = Math.max(rememberedUntil, validUntil(read("cooldown:" + owner)));
+      for (const owner2 of ["tierscope", "viewer-probe"]) rememberedUntil = Math.max(rememberedUntil, validUntil(read("cooldown:" + owner2)));
       return rememberedUntil;
     }
     function publish(until) {
@@ -3504,8 +3519,8 @@ underlying system, so should run in the browser, Node, or Plask.
     try {
       const key = getStorageKey(room2);
       if (runtime.activeSessionStorageKey !== key) return;
-      const identity = room2 + ":" + runtime.sessionStartedAt + ":" + runtime.activeRoomEpoch;
-      if (checkpoint.identity !== identity) checkpoint = { room: room2, identity, signature: "", phase: "", attemptedAt: null, savedAt: null, error: "" };
+      const identity2 = room2 + ":" + runtime.sessionStartedAt + ":" + runtime.activeRoomEpoch;
+      if (checkpoint.identity !== identity2) checkpoint = { room: room2, identity: identity2, signature: "", phase: "", attemptedAt: null, savedAt: null, error: "" };
       const preference = readModelFavorite(room2);
       if (!preference.autoKeep) {
         clearAutomaticLibraryStatus(room2);
@@ -3705,7 +3720,7 @@ underlying system, so should run in the browser, Node, or Plask.
       displayHighs[key] = __spreadProps(__spreadValues({}, high), { label: highLabel(high), shortLabel: highLabel(high, true), description: highDescription(high) });
       if (runtime.highMode === "ath" && high.source && value > 0 && value >= high.value) highlights[key] = true;
     }
-    const comparison = !frame.isRestored && runtime.hasTrendBaseline ? getComparisonCounts().counts : null;
+    const comparison2 = !frame.isRestored && runtime.hasTrendBaseline ? getComparisonCounts().counts : null;
     const modelName = frame.isPlayback && runtime.playback && runtime.playback.archive ? runtime.playback.archive.room : getModelName();
     let favorite = { favorite: false, autoKeep: false };
     if (modelName !== "unknown") {
@@ -3744,13 +3759,13 @@ underlying system, so should run in the browser, Node, or Plask.
       textColor: themeColor("text"),
       withTokensColor: themeColor("warning"),
       roomTotalColor: themeColor("accent"),
-      comparison: comparison ? __spreadValues({}, comparison) : null,
+      comparison: comparison2 ? __spreadValues({}, comparison2) : null,
       comparisonLabel: runtime.trendComparisonMode === "last" ? "previous sample" : runtime.trendComparisonMode === "start" ? "first retained sample" : runtime.trendComparisonMode,
       freshness: runtime.isMinimized ? buildFreshnessModel() : null
     });
   }
   function buildTrendDisplayModel() {
-    const frame = buildLiveDisplayFrame(), comparison = getComparisonCounts();
+    const frame = buildLiveDisplayFrame(), comparison2 = getComparisonCounts();
     return freezeRecordingData({
       isPlayback: runtime.presentationMode === "PLAYBACK",
       isRestored: !!runtime.restoredDisplayFrame,
@@ -3762,7 +3777,7 @@ underlying system, so should run in the browser, Node, or Plask.
       anonymousCount: frame.anonymousCount,
       fullRoomTotal: frame.fullRoomTotal,
       historyLength: runtime.history.timestamps.length,
-      comparison: __spreadProps(__spreadValues({}, comparison), { counts: comparison.counts ? __spreadValues({}, comparison.counts) : null }),
+      comparison: __spreadProps(__spreadValues({}, comparison2), { counts: comparison2.counts ? __spreadValues({}, comparison2.counts) : null }),
       tierLabels: Object.fromEntries(runtime.PANEL_ROWS.map((row) => [row.key, row.label])),
       tierMarkers: Object.fromEntries(Object.keys(runtime.TIERS).map((key) => [key, getTierMarker(key)]))
     });
@@ -4042,21 +4057,21 @@ underlying system, so should run in the browser, Node, or Plask.
   // src/compact-view.js
   function updateCompactDashboard(frame) {
     if (!frame.minimized) return;
-    var comparison = frame.comparison;
+    var comparison2 = frame.comparison;
     var mode = frame.comparisonLabel;
     function delta(id, value, old) {
       var el = document.getElementById(id);
       if (!el) return "";
-      var change = comparison ? value - old : null;
+      var change = comparison2 ? value - old : null;
       var text = change === null ? "" : change > 0 ? "+" + compactNumber(change) : change < 0 ? "−" + compactNumber(-change) : "0";
       el.textContent = text;
       el.style.color = change > 0 ? "var(--panel-delta-up)" : change < 0 ? "var(--panel-delta-down)" : "var(--panel-warning)";
       el.title = change === null ? "Waiting for a fresh sample and comparison history" : "Change versus " + mode + ": " + change;
       return text;
     }
-    delta("mini-withtokens-change", frame.withTokens, comparison && comparison.withTokens);
-    delta("mini-total-change", frame.total, comparison && comparison.total);
-    var roomChange = delta("mini-room-change", frame.fullRoomTotal, comparison && comparison.total + comparison.anonymous);
+    delta("mini-withtokens-change", frame.withTokens, comparison2 && comparison2.withTokens);
+    delta("mini-total-change", frame.total, comparison2 && comparison2.total);
+    var roomChange = delta("mini-room-change", frame.fullRoomTotal, comparison2 && comparison2.total + comparison2.anonymous);
     var roomCount = document.getElementById("mini-room-count");
     if (roomCount) {
       roomCount.textContent = compactNumber(frame.fullRoomTotal);
@@ -4323,10 +4338,10 @@ underlying system, so should run in the browser, Node, or Plask.
       return;
     }
     var counts = model.counts, total = model.total, withTokens = model.withTokens, anonymousCount = model.anonymousCount;
-    var comparison = model.comparison;
-    var comparisonCounts = comparison.counts;
-    var shortSession = comparison.short;
-    var actualMinutes = comparison.actualMinutes;
+    var comparison2 = model.comparison;
+    var comparisonCounts = comparison2.counts;
+    var shortSession = comparison2.short;
+    var actualMinutes = comparison2.actualMinutes;
     if (!comparisonCounts) {
       var waitingText = model.historyLength === 1 ? "Waiting for second scan..." : "Waiting for scan...";
       trendContainer.innerHTML = '<div style="font-size:8px;color:var(--panel-faint);text-align:center;padding:8px;">' + waitingText + "</div>";
@@ -5559,11 +5574,30 @@ underlying system, so should run in the browser, Node, or Plask.
     const left = Math.max(0, Math.min(span - width, center - width * ratio));
     return [left, left + width];
   }
-  var COMPARISON_FOREGROUND_COUNT = 12;
+  function visibleAnalysisWindow(series, hidden, axisMs) {
+    if (!Number.isFinite(axisMs) || axisMs < 0) throw new Error("Invalid chart range.");
+    let first = Infinity, last = -Infinity;
+    series.forEach((source, index) => {
+      if (hidden.has(index)) return;
+      source.times.forEach((time, sample) => {
+        const value = source.values[sample];
+        if (!Number.isFinite(time) || time < 0 || time > axisMs || !Number.isSafeInteger(value) || value < 0) return;
+        first = Math.min(first, time);
+        last = Math.max(last, time);
+      });
+    });
+    if (first === Infinity) return [0, axisMs];
+    const width = Math.min(axisMs, Math.max(1e3, last - first));
+    const start = Math.max(0, Math.min(axisMs - width, first - (width - (last - first)) / 2));
+    return [start, start + width];
+  }
+  var COMPARISON_FOREGROUND_COUNT = 30;
   var COMPARISON_BACKGROUND_OPACITY = 0.12;
   var ANALYSIS_LINE_PAGE_SIZE = 30;
   function comparisonOpacity(rank) {
-    return rank < COMPARISON_FOREGROUND_COUNT ? (100 - rank * 5) / 100 : COMPARISON_BACKGROUND_OPACITY;
+    if (rank >= COMPARISON_FOREGROUND_COUNT) return COMPARISON_BACKGROUND_OPACITY;
+    const remaining = (COMPARISON_FOREGROUND_COUNT - 1 - rank) / (COMPARISON_FOREGROUND_COUNT - 1);
+    return 0.45 + 0.55 * remaining;
   }
   function comparisonSeriesOrder(series, rankTimes) {
     const at = (index) => {
@@ -5577,8 +5611,8 @@ underlying system, so should run in the browser, Node, or Plask.
     });
     return { newestFirst, ranks };
   }
-  var darkComparisonColors = ["#ff69b4", "#79baff", "#68d391", "#ffd166", "#c4a3ff", "#ff987d", "#47c9cf", "#eaa1e8", "#b5cf63", "#e99c55", "#92a3e8", "#b4b4bd"];
-  var brightComparisonColors = ["#b42370", "#175db0", "#176f36", "#835900", "#7140a6", "#a23c20", "#08767c", "#96558d", "#557315", "#98530d", "#414b9d", "#626269"];
+  var darkComparisonColors = ["#ff69b4", "#79baff", "#68d391", "#ffd166", "#c4a3ff", "#ff987d", "#47c9cf", "#eaa1e8", "#b5cf63", "#e99c55", "#92a3e8", "#f87192"];
+  var brightComparisonColors = ["#b42370", "#175db0", "#176f36", "#835900", "#7140a6", "#a23c20", "#08767c", "#96558d", "#557315", "#98530d", "#414b9d", "#9e2f48"];
   function comparisonLineColor(index, dark = true) {
     index = Number.isSafeInteger(index) && index >= 0 ? index : 0;
     const curated = dark ? darkComparisonColors : brightComparisonColors;
@@ -5717,7 +5751,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/analysis-follow.js
   function createAnalysisFollower() {
-    let enabled = true, identity = null, signature = "", expired = false;
+    let enabled = true, identity2 = null, signature = "", expired = false;
     const snapshots = /* @__PURE__ */ new Map();
     return {
       get enabled() {
@@ -5727,7 +5761,7 @@ underlying system, so should run in the browser, Node, or Plask.
         return expired;
       },
       get identity() {
-        return identity;
+        return identity2;
       },
       get(id) {
         return snapshots.get(id);
@@ -5740,13 +5774,13 @@ underlying system, so should run in the browser, Node, or Plask.
         signature = "";
       },
       reset() {
-        identity = null;
+        identity2 = null;
         signature = "";
         expired = false;
         snapshots.clear();
       },
       check(nextIdentity) {
-        if (identity !== null && identity !== nextIdentity) {
+        if (identity2 !== null && identity2 !== nextIdentity) {
           enabled = false;
           expired = true;
         }
@@ -5758,7 +5792,7 @@ underlying system, so should run in the browser, Node, or Plask.
           var _a;
           return ((_a = snapshots.get(entry.id)) == null ? void 0 : _a.archive) === archive;
         })) return false;
-        identity = nextIdentity;
+        identity2 = nextIdentity;
         signature = nextSignature;
         for (const entry of entries) snapshots.set(entry.id, __spreadProps(__spreadValues({}, entry), { archive }));
         return true;
@@ -5781,6 +5815,1828 @@ underlying system, so should run in the browser, Node, or Plask.
         return aliases;
       }
     };
+  }
+
+  // src/user-list-data.js
+  function parseGetChatUserListResponse(text) {
+    if (typeof text !== "string" || !text.trim()) throw new Error("Empty API response");
+    var parts = text.trim().split(",");
+    if (!/^\d+$/.test(parts[0])) throw new Error("Invalid API anonymous count");
+    var anonymousCount = Number(parts[0]);
+    if (!Number.isSafeInteger(anonymousCount)) throw new Error("Unsafe API anonymous count");
+    var firstUser = 1;
+    if (parts.length > 1 && /^\d+$/.test(parts[1])) {
+      if (!Number.isSafeInteger(Number(parts[1]))) throw new Error("Unsafe API metadata count");
+      firstUser = 2;
+    }
+    var classTiers = { m: "red", f: "green", l: "purple", p: "pink", tr: "dark-blue", t: "light-blue", g: "gray" };
+    var genders = { m: "male", f: "female", s: "trans", c: "couple" };
+    var seen = /* @__PURE__ */ new Set();
+    var parsedUsers = [];
+    var unknownClasses = /* @__PURE__ */ Object.create(null);
+    var unknownGenders = /* @__PURE__ */ Object.create(null);
+    for (var i = firstUser; i < parts.length; i++) {
+      var fields = parts[i].split("|");
+      if (fields.length !== 4 || !/^[A-Za-z0-9_-]{2,30}$/.test(fields[0]) || fields.slice(1).some(function(field) {
+        return !/^[^\s|,<>\x00-\x1f]+$/.test(field);
+      })) {
+        throw new Error("Malformed API record at index " + i);
+      }
+      var username = fields[0];
+      var key = username.toLowerCase();
+      if (seen.has(key)) throw new Error("Duplicate API username at index " + i);
+      seen.add(key);
+      var rawClass = fields[1];
+      var genderCode = fields[2];
+      var isOwner = rawClass === "o";
+      var tier = Object.prototype.hasOwnProperty.call(classTiers, rawClass) ? classTiers[rawClass] : null;
+      var gender = Object.prototype.hasOwnProperty.call(genders, genderCode) ? genders[genderCode] : "unknown";
+      if (!tier && !isOwner) unknownClasses[rawClass] = (unknownClasses[rawClass] || 0) + 1;
+      if (gender === "unknown") unknownGenders[genderCode] = (unknownGenders[genderCode] || 0) + 1;
+      parsedUsers.push({
+        username,
+        rawClass,
+        tier,
+        genderCode,
+        gender,
+        rawFlag: fields[3],
+        isOwner
+      });
+    }
+    var registeredCount = parsedUsers.length;
+    var totalUsers = anonymousCount + registeredCount;
+    if (!Number.isSafeInteger(totalUsers)) throw new Error("Unsafe API total users");
+    return {
+      anonymousCount,
+      registeredCount,
+      totalUsers,
+      users: parsedUsers,
+      diagnostics: { unknownClasses, unknownGenders }
+    };
+  }
+  function validateRoomSnapshot(snapshot) {
+    if (!snapshot || !Number.isSafeInteger(snapshot.roomTotal) || snapshot.roomTotal < 0 || !Array.isArray(snapshot.users)) throw new Error("Invalid room snapshot");
+    if (snapshot.source === "API" && (!Number.isSafeInteger(snapshot.anonymousCount) || snapshot.anonymousCount < 0 || snapshot.registeredCount !== snapshot.users.length || snapshot.totalUsers !== snapshot.anonymousCount + snapshot.registeredCount || snapshot.roomTotal !== snapshot.totalUsers)) {
+      throw new Error("Inconsistent API anonymous, registered, or total user counts");
+    }
+  }
+
+  // src/background-comparison.js
+  var INTERVAL_MS = 6e4, TIMEOUT_MS = 1e4;
+  var SERIES = ["red", "green", "purple", "pink", "dark-blue", "light-blue", "gray", "female-trans", "withTokens", "total", "anonymous"];
+  function normalizeBackgroundRoom(value) {
+    if (typeof value !== "string") throw new Error("Enter a room username.");
+    const room2 = value.trim().toLowerCase();
+    if (!/^[a-z0-9_-]{1,100}$/.test(room2) || !roomFromUrl("https://chaturbate.com/" + room2 + "/")) {
+      throw new Error("Enter a room username, without a URL or spaces.");
+    }
+    return room2;
+  }
+  function createBackgroundComparison(effects) {
+    const sessions = /* @__PURE__ */ new Map(), listeners = /* @__PURE__ */ new Set(), interval = effects.interval || INTERVAL_MS;
+    const now = effects.now, setTimer = effects.setTimeout, clearTimer = effects.clearTimeout;
+    const absenceStopMs = 15 * 6e4, absenceGapMs = interval * 2 + TIMEOUT_MS;
+    let latestRoom = null, timer = null, work = Promise.resolve();
+    function emit() {
+      for (const changed of listeners) {
+        try {
+          changed();
+        } catch (_) {
+        }
+      }
+    }
+    function targetFor(room2) {
+      return sessions.get(room2 || latestRoom) || null;
+    }
+    function view(target) {
+      var _a;
+      return Object.freeze(target ? {
+        room: target.room,
+        active: target.active,
+        status: target.status,
+        message: target.message,
+        sampleCount: target.history.timestamps.length,
+        sampleAt: (_a = target.history.timestamps.at(-1)) != null ? _a : null,
+        nextAt: target.nextAt,
+        absentSince: target.absentSince,
+        absenceObservedAt: target.absenceObservedAt,
+        absenceObservations: target.absenceObservations,
+        absenceMs: target.absentSince === null ? 0 : Math.max(0, target.absenceObservedAt - target.absentSince),
+        stoppedReason: target.stoppedReason
+      } : {
+        room: null,
+        active: false,
+        status: "stopped",
+        message: "",
+        sampleCount: 0,
+        sampleAt: null,
+        nextAt: null,
+        absentSince: null,
+        absenceObservedAt: null,
+        absenceObservations: 0,
+        absenceMs: 0,
+        stoppedReason: null
+      });
+    }
+    function state(room2) {
+      return view(targetFor(room2));
+    }
+    function states() {
+      return Object.freeze([...sessions.values()].map(view));
+    }
+    function clearScheduled() {
+      if (timer !== null) clearTimer(timer);
+      timer = null;
+    }
+    function schedule() {
+      clearScheduled();
+      const due = [...sessions.values()].filter((target) => target.active && !target.pending);
+      if (!due.length) return;
+      const nextAt = Math.min(...due.map((target) => target.nextAt));
+      timer = setTimer(() => {
+        timer = null;
+        for (const target of sessions.values()) if (target.active && !target.pending && target.nextAt <= now()) refresh(target.room);
+        schedule();
+      }, Math.max(0, nextAt - now()));
+    }
+    function resetAbsence(target) {
+      target.absentSince = null;
+      target.absenceObservedAt = null;
+      target.absenceObservations = 0;
+    }
+    function stop(value = {}, options = {}) {
+      const room2 = typeof value === "string" ? normalizeBackgroundRoom(value) : null;
+      const settings = room2 ? options : value || {};
+      const targets = room2 ? [sessions.get(room2)].filter((target) => !!target) : [...sessions.values()];
+      for (const target of targets) {
+        target.generation++;
+        target.active = false;
+        target.status = "stopped";
+        target.stoppedReason = "manual";
+        target.message = "Comparison tracking stopped.";
+        target.nextAt = null;
+        if (target.controller) target.controller.abort();
+        if (settings.clear) sessions.delete(target.room);
+      }
+      if (!sessions.has(latestRoom)) latestRoom = [...sessions.keys()].at(-1) || null;
+      schedule();
+      emit();
+      return room2 ? state(room2) : state();
+    }
+    function current(target, token) {
+      return sessions.get(target.room) === target && target.active && target.generation === token && effects.host() === target.host && (!effects.ownership || target.ownership !== null && effects.ownership(target.room) === target.ownership);
+    }
+    function fresh(room2, at, publisherId2) {
+      const history = { timestamps: [], breaks: [] }, highs = {};
+      for (const key of SERIES) {
+        history[key] = [];
+        highs[key] = { value: 0, time: null };
+      }
+      return {
+        room: room2,
+        host: effects.host(),
+        ownership: effects.ownership ? effects.ownership(room2) : "standalone",
+        publisherId: publisherId2,
+        startedAt: at,
+        active: true,
+        status: "waiting",
+        message: "Waiting for the first audience sample.",
+        nextAt: now(),
+        history,
+        highs,
+        roomHigh: 0,
+        roomHighTime: null,
+        revision: 0,
+        archive: null,
+        failures: 0,
+        gap: false,
+        coveredMs: 0,
+        controller: null,
+        generation: 0,
+        pending: null,
+        stoppedReason: null,
+        absentSince: null,
+        absenceObservedAt: null,
+        absenceObservations: 0
+      };
+    }
+    function start(value) {
+      const room2 = normalizeBackgroundRoom(value), existing = sessions.get(room2);
+      latestRoom = room2;
+      if (existing == null ? void 0 : existing.active) return state(room2);
+      if (existing) stop(room2, { clear: true });
+      const target = fresh(room2, now(), "background-" + effects.id());
+      sessions.set(room2, target);
+      schedule();
+      emit();
+      return state(room2);
+    }
+    function restore(value, checkpoint2) {
+      var _a, _b;
+      const room2 = normalizeBackgroundRoom(value);
+      if ((_a = sessions.get(room2)) == null ? void 0 : _a.active) {
+        latestRoom = room2;
+        return state(room2);
+      }
+      if (typeof ((_b = checkpoint2 == null ? void 0 : checkpoint2.archive) == null ? void 0 : _b.room) !== "string" || checkpoint2.archive.room.toLowerCase() !== room2) throw new Error("Invalid saved background comparison.");
+      const archive = effects.archive(room2, checkpoint2.archive.session), source = checkpoint2 == null ? void 0 : checkpoint2.source;
+      const session = archive.session, startAt = session.sessionStartedAt;
+      if (archive.room.toLowerCase() !== room2 || !source || source.room !== room2 || source.kind !== "background" || !/^background-[a-z0-9-]{1,140}$/i.test(source.publisherId) || !Number.isSafeInteger(startAt) || startAt < 0 || source.sessionStartedAt !== startAt || source.sessionId !== "background@" + startAt || source.id !== source.publisherId + ":" + room2 + ":background@" + startAt || !session.history.timestamps.length || session.history.timestamps.length > effects.maxHistory()) {
+        throw new Error("Invalid saved background comparison.");
+      }
+      const target = fresh(room2, startAt, source.publisherId);
+      for (const [key, values] of Object.entries(session.history)) target.history[key] = values.slice();
+      for (const key of SERIES) target.highs[key] = __spreadValues({}, session.sessionHighs[key]);
+      target.roomHigh = session.roomTotalHigh;
+      target.roomHighTime = session.roomTotalHighTime;
+      target.coveredMs = session.pausedElapsedTime;
+      target.revision = /^\d+$/.test(source.revision) && Number.isSafeInteger(Number(source.revision)) && Number(source.revision) < Number.MAX_SAFE_INTEGER ? Number(source.revision) + 1 : 1;
+      target.gap = true;
+      target.message = "Resuming this comparison. The interruption remains a recording gap.";
+      if (sessions.has(room2)) stop(room2, { clear: true });
+      sessions.set(room2, target);
+      latestRoom = room2;
+      schedule();
+      emit();
+      return state(room2);
+    }
+    function sourceFor(target) {
+      var _a;
+      const sessionId = "background@" + target.startedAt;
+      return Object.freeze({
+        version: 1,
+        id: target.publisherId + ":" + target.room + ":" + sessionId,
+        publisherId: target.publisherId,
+        room: target.room,
+        roomEpoch: "background",
+        sessionId,
+        sessionStartedAt: target.startedAt,
+        kind: "background",
+        status: target.status,
+        lastSeenAt: now(),
+        sampleAt: (_a = target.history.timestamps.at(-1)) != null ? _a : null,
+        sampleCount: target.history.timestamps.length,
+        revision: String(target.revision),
+        recordKey: null,
+        recordSavedAt: null
+      });
+    }
+    function readSources() {
+      const outdated = [...sessions.values()].filter((target) => effects.host() !== target.host);
+      for (const target of outdated) stop(target.room, { clear: true });
+      return { sources: [...sessions.values()].map(sourceFor), error: "" };
+    }
+    function readArchive(source) {
+      const target = sessions.get(source.room), actual = target ? sourceFor(target) : null;
+      if (!actual || source.id !== actual.id || source.revision !== actual.revision || !actual.sampleCount) {
+        throw new Error("This background comparison changed or has no accepted samples yet.");
+      }
+      if (!target.archive) {
+        const history = {}, sessionHighs = {};
+        for (const [key, values] of Object.entries(target.history)) history[key] = values.slice();
+        for (const key of SERIES) sessionHighs[key] = __spreadValues({}, target.highs[key]);
+        target.archive = freezeRecordingData(effects.archive(target.room, {
+          schemaVersion: effects.schemaVersion(),
+          timestamp: history.timestamps.at(-1),
+          history,
+          sessionStartedAt: target.startedAt,
+          sessionStartEstimated: false,
+          sessionHighs,
+          roomTotalHigh: target.roomHigh,
+          roomTotalHighTime: target.roomHighTime,
+          pausedElapsedTime: target.coveredMs,
+          isPaused: true,
+          isStopped: false,
+          stoppedAt: null,
+          stopReason: null
+        }));
+      }
+      return target.archive;
+    }
+    function observeAbsence(target, at) {
+      if (target.absenceObservedAt === null || at <= target.absenceObservedAt || at - target.absenceObservedAt > absenceGapMs) {
+        target.absentSince = at;
+        target.absenceObservations = 0;
+      }
+      target.absenceObservedAt = at;
+      target.absenceObservations++;
+      target.gap = true;
+      target.failures = 0;
+      if (target.absenceObservations >= 2 && at - target.absentSince > absenceStopMs) {
+        target.active = false;
+        target.status = "stopped";
+        target.stoppedReason = "absence";
+        target.nextAt = null;
+        target.message = "Stopped after confirming the broadcaster absent for more than 15 minutes.";
+      } else {
+        target.status = "waiting";
+        target.nextAt = at + interval;
+        target.message = "Broadcaster absent in the latest room list. Confirming absence before stopping after 15 minutes.";
+      }
+    }
+    function accept(target, snapshot, at) {
+      validateRoomSnapshot(snapshot);
+      const owners = snapshot.users.filter((user) => user.isOwner);
+      if (!owners.length) {
+        observeAbsence(target, at);
+        return false;
+      }
+      if (owners.length !== 1 || owners[0].username.toLowerCase() !== target.room) {
+        throw Object.assign(new Error("The response does not identify this room’s broadcaster. Waiting for a confirmed room response."), { roomUnavailable: true });
+      }
+      resetAbsence(target);
+      const history = target.history, previousAt = history.timestamps.at(-1);
+      if (previousAt !== void 0 && at <= previousAt) throw new Error("Waiting for the recording clock to advance.");
+      const previousTotal = previousAt === void 0 ? 0 : history.total.at(-1) + history.anonymous.at(-1), previousUsers = history.total.at(-1) || 0;
+      if (previousTotal && (!snapshot.roomTotal || Math.abs(snapshot.roomTotal - previousTotal) / previousTotal <= 0.1 && previousUsers && (previousUsers - snapshot.users.length) / previousUsers > 0.5)) throw new Error("Audience sample was incomplete.");
+      const counts = Object.fromEntries(SERIES.map((key) => [key, 0]));
+      for (const user of snapshot.users) {
+        if (user.tier && Object.prototype.hasOwnProperty.call(counts, user.tier)) counts[user.tier]++;
+        if (user.gender === "female" || user.gender === "trans") counts["female-trans"]++;
+      }
+      counts.total = snapshot.users.length;
+      counts.anonymous = snapshot.anonymousCount;
+      counts.withTokens = ["red", "green", "purple", "pink", "dark-blue", "light-blue"].reduce((sum, key) => sum + counts[key], 0);
+      const gap = previousAt !== void 0 && (target.gap || at - previousAt > absenceGapMs);
+      if (previousAt !== void 0 && !gap) target.coveredMs += at - previousAt;
+      history.timestamps.push(at);
+      history.breaks.push(gap);
+      for (const key of SERIES) {
+        history[key].push(counts[key]);
+        if (counts[key] > target.highs[key].value) target.highs[key] = { value: counts[key], time: at };
+      }
+      if (snapshot.roomTotal > target.roomHigh) {
+        target.roomHigh = snapshot.roomTotal;
+        target.roomHighTime = at;
+      }
+      if (history.timestamps.length > effects.maxHistory()) for (const values of Object.values(history)) values.shift();
+      target.revision++;
+      target.archive = null;
+      target.gap = false;
+      target.failures = 0;
+      return true;
+    }
+    async function run(target, token) {
+      let timeout = null, abortListener = null;
+      try {
+        if (!current(target, token)) {
+          target.nextAt = now() + interval;
+          return;
+        }
+        const permission = effects.permission();
+        if (permission.offline || permission.blocked || permission.until > now()) {
+          resetAbsence(target);
+          target.gap = true;
+          target.status = permission.offline ? "offline" : "retry";
+          target.message = permission.offline ? "Offline. Comparison will retry when the connection returns." : "Waiting for the shared API restriction to end.";
+          target.nextAt = Math.max(now() + interval, permission.until || 0);
+          emit();
+          return;
+        }
+        target.status = "waiting";
+        target.message = "Waiting for a background API request slot.";
+        emit();
+        const canRequest = () => {
+          const policy = effects.permission();
+          return current(target, token) && !policy.offline && !policy.blocked && policy.until <= now();
+        };
+        if (!await effects.waitForSlot(canRequest) || !canRequest()) {
+          if (current(target, token)) {
+            resetAbsence(target);
+            target.gap = true;
+            target.status = "retry";
+            target.message = "Background request deferred. Normal tracking has priority.";
+            target.nextAt = now() + interval;
+            emit();
+          }
+          return;
+        }
+        const controller = new AbortController();
+        target.controller = controller;
+        const snapshot = await Promise.race([effects.request(target.room, controller.signal), new Promise((resolve, reject) => {
+          timeout = setTimer(() => {
+            controller.abort();
+            reject(Object.assign(new Error("Background request timed out."), { connectionFailure: true }));
+          }, TIMEOUT_MS);
+          abortListener = () => reject(new Error("Background request canceled."));
+          controller.signal.addEventListener("abort", abortListener, { once: true });
+        })]);
+        if (!current(target, token)) return;
+        if (accept(target, snapshot, now())) {
+          target.status = "tracking";
+          target.message = "Tracking " + target.room + " without opening their room. Updates about once a minute.";
+          target.nextAt = now() + interval;
+        }
+        emit();
+      } catch (error) {
+        if (!current(target, token)) return;
+        resetAbsence(target);
+        target.gap = true;
+        target.failures = Math.min(20, target.failures + 1);
+        const status = error.status || 0, at = now();
+        const wait = status === 429 || status >= 500 ? Math.min(9e5, interval * Math.pow(2, target.failures - 1)) : interval;
+        target.nextAt = Math.max(at + wait, error.retryAt || 0);
+        if (status === 429 || status >= 500 || error.retryAt > at) effects.publish(target.nextAt);
+        target.status = effects.permission().offline ? "offline" : error.roomUnavailable || [400, 401, 403, 404].includes(status) ? "unavailable" : "retry";
+        target.message = status ? "Compare without watching: HTTP " + status + ". Room data unavailable; tracking will retry." : "Compare without watching: " + error.message + " Previous samples are retained.";
+        emit();
+      } finally {
+        if (timeout !== null) clearTimer(timeout);
+        if (target.controller && abortListener) target.controller.signal.removeEventListener("abort", abortListener);
+        target.controller = null;
+        if (sessions.get(target.room) === target && target.active && !current(target, token)) {
+          resetAbsence(target);
+          target.gap = true;
+          target.nextAt = now() + interval;
+        }
+      }
+    }
+    function refresh(room2) {
+      if (room2 === void 0) {
+        return Promise.all([...sessions.values()].filter((target2) => target2.active).map((target2) => refresh(target2.room))).then(() => state());
+      }
+      const target = sessions.get(normalizeBackgroundRoom(room2));
+      if (!target || !target.active) return Promise.resolve(state(room2));
+      if (effects.host() !== target.host) {
+        stop(target.room, { clear: true });
+        return Promise.resolve(state(room2));
+      }
+      if (target.pending) return target.pending;
+      const token = target.generation;
+      const operation = work.then(() => run(target, token)).finally(() => {
+        if (target.pending === operation) target.pending = null;
+        schedule();
+      });
+      target.pending = operation;
+      work = operation.catch(() => {
+      });
+      schedule();
+      return operation.then(() => state(room2));
+    }
+    return {
+      start,
+      restore,
+      stop,
+      state,
+      states,
+      refresh,
+      readSources,
+      readArchive,
+      subscribe(changed) {
+        listeners.add(changed);
+        return () => listeners.delete(changed);
+      }
+    };
+  }
+  function createBackgroundPermissionReader(effects) {
+    return () => {
+      const at = effects.now(), sharedUntil = effects.deadline();
+      try {
+        const raw = effects.read(), cached = effects.foregroundPolicy();
+        const policies = raw === null ? [] : [JSON.parse(raw)];
+        if (cached) policies.push(cached);
+        let until = sharedUntil, blocked = false;
+        for (const policy of policies) {
+          if (!policy || !Number.isFinite(policy.until) || policy.until < 0 || policy.until > 864e13 || ![0, 401, 403].includes(policy.blocked) || policy.serverUntil !== void 0 && (!Number.isSafeInteger(policy.serverUntil) || policy.serverUntil < 0 || policy.serverUntil > 864e13)) throw new Error("Invalid shared restriction.");
+          blocked = blocked || policy.blocked !== 0;
+          until = Math.max(until, policy.until, policy.serverUntil || 0);
+        }
+        return { offline: effects.offline(), blocked, until };
+      } catch (_) {
+        return { offline: effects.offline(), blocked: true, until: Math.max(sharedUntil, at + INTERVAL_MS) };
+      }
+    };
+  }
+  var coordinator = createRequestCoordinator("tierscope", true);
+  var backgroundPermission = createBackgroundPermissionReader({
+    now: () => Date.now(),
+    offline: isBrowserOffline,
+    read: () => GM_getValue(runtime.REQUEST_POLICY_KEY, null),
+    foregroundPolicy: () => runtime.requestPolicyCache,
+    deadline: () => Math.max(coordinator.deadline(), requestCoordinator.deadline())
+  });
+  var ownershipProvider = () => "standalone";
+  function setBackgroundComparisonOwnership(provider) {
+    ownershipProvider = typeof provider === "function" ? provider : () => "standalone";
+  }
+  var comparison = createBackgroundComparison({
+    now: () => Date.now(),
+    host: () => location.origin,
+    id: makeStorageId,
+    ownership: (room2) => ownershipProvider(room2),
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id),
+    maxHistory: () => runtime.MAX_HISTORY_LENGTH,
+    schemaVersion: () => runtime.STORAGE_SCHEMA_VERSION,
+    archive: (room2, session) => validateSessionFile({
+      format: runtime.SESSION_FILE_FORMAT,
+      formatVersion: runtime.SESSION_FILE_VERSION,
+      producerVersion: runtime.TIERSCOPE_VERSION,
+      room: room2,
+      session
+    }),
+    permission: backgroundPermission,
+    waitForSlot: (current) => coordinator.waitForSlot(current),
+    publish: (until) => coordinator.publish(until),
+    request: async (room2, signal) => {
+      const url = new URL("/api/getchatuserlist/", location.origin);
+      for (const [key, value] of Object.entries({ roomname: room2, private: "false", sort_by: "a", exclude_staff: "false" })) url.searchParams.set(key, value);
+      let response;
+      try {
+        response = await fetch(url.href, {
+          method: "GET",
+          credentials: "same-origin",
+          mode: "same-origin",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+          cache: "no-store",
+          redirect: "error",
+          signal
+        });
+      } catch (error) {
+        throw Object.assign(new Error(error.message || "Connection unavailable."), { connectionFailure: true });
+      }
+      if (!response.ok) {
+        const raw = response.headers.get("Retry-After"), at = Date.now();
+        const retryAt = raw && /^\d+$/.test(raw.trim()) ? at + Number(raw.trim()) * 1e3 : raw ? Date.parse(raw) : 0;
+        throw Object.assign(new Error("API HTTP " + response.status), {
+          status: response.status,
+          retryAt: Number.isSafeInteger(retryAt) && retryAt > at && retryAt <= 864e13 ? retryAt : 0
+        });
+      }
+      const snapshot = parseGetChatUserListResponse(await response.text());
+      return __spreadProps(__spreadValues({}, snapshot), { roomTotal: snapshot.totalUsers, source: "API" });
+    }
+  });
+  function startBackgroundComparison(room2) {
+    return comparison.start(room2);
+  }
+  function restoreBackgroundComparison(room2, record) {
+    return comparison.restore(room2, record);
+  }
+  function stopBackgroundComparison(roomOrOptions = {}, options = {}) {
+    return comparison.stop(roomOrOptions, options);
+  }
+  function getBackgroundComparisonState(room2) {
+    return comparison.state(room2);
+  }
+  function getBackgroundComparisonStates() {
+    return comparison.states();
+  }
+  function refreshBackgroundComparison(room2) {
+    return comparison.refresh(room2);
+  }
+  function readBackgroundComparisonSources() {
+    return comparison.readSources();
+  }
+  function readBackgroundComparisonArchive(source) {
+    return comparison.readArchive(source);
+  }
+  function subscribeBackgroundComparison(changed) {
+    return comparison.subscribe(changed);
+  }
+
+  // src/live-model-data.js
+  var LIVE_MODEL_PREFIX = "tierscope:live:v1:source:";
+  var LIVE_MODEL_NOTICE = "tierscope:live:v1:changed";
+  var LIVE_MODEL_HEARTBEAT_MS = 3e4;
+  var LIVE_MODEL_STALE_MS = 18e4;
+  var statuses = /* @__PURE__ */ new Set(["tracking", "paused", "stopped", "waiting", "offline", "retry", "reset", "unavailable"]);
+  var ongoingStatuses = /* @__PURE__ */ new Set(["tracking", "paused", "retry", "offline"]);
+  var timestamp = (value) => Number.isSafeInteger(value) && value >= 0 && value <= 864e13;
+  function isOngoingLiveModelStatus(status) {
+    return ongoingStatuses.has(status);
+  }
+  function decodeLiveModelSource(value, key, at) {
+    if (!value || value.version !== 1 || typeof value.publisherId !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.publisherId) || key !== LIVE_MODEL_PREFIX + value.publisherId || typeof value.room !== "string" || !/^[a-z0-9_-]{1,100}$/.test(value.room) || typeof value.roomEpoch !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.roomEpoch) || !(value.sessionStartedAt === null || timestamp(value.sessionStartedAt)) || value.sessionId !== value.roomEpoch + "@" + (value.sessionStartedAt === null ? "pending" : value.sessionStartedAt) || value.id !== value.publisherId + ":" + value.room + ":" + value.sessionId || !statuses.has(value.status) || !timestamp(value.lastSeenAt) || value.lastSeenAt > at + 5e3 || !Number.isSafeInteger(value.sampleCount) || value.sampleCount < 0 || value.sampleCount > 1e6 || !(value.sampleCount === 0 ? value.sampleAt === null : timestamp(value.sampleAt) && value.sampleAt <= value.lastSeenAt) || !(value.sessionStartedAt === null || value.sessionStartedAt <= value.lastSeenAt) || typeof value.revision !== "string" || value.revision.length > 512) return null;
+    if (value.recordKey === null) {
+      if (value.recordSavedAt !== null || value.revision !== "") return null;
+    } else if (typeof value.recordKey !== "string" || !value.recordKey.startsWith("tierscope:tab:v2:" + value.room + ":") || !/^[a-z0-9-]{1,160}$/i.test(value.recordKey.slice(("tierscope:tab:v2:" + value.room + ":").length)) || !timestamp(value.recordSavedAt) || value.recordSavedAt > value.lastSeenAt || !value.revision) return null;
+    return {
+      version: 1,
+      id: value.id,
+      publisherId: value.publisherId,
+      room: value.room,
+      roomEpoch: value.roomEpoch,
+      sessionId: value.sessionId,
+      sessionStartedAt: value.sessionStartedAt,
+      status: value.status,
+      lastSeenAt: value.lastSeenAt,
+      sampleAt: value.sampleAt,
+      sampleCount: value.sampleCount,
+      revision: value.revision,
+      recordKey: value.recordKey,
+      recordSavedAt: value.recordSavedAt
+    };
+  }
+  function liveModelSourceStatus(source, at, epoch) {
+    if (source.roomEpoch !== epoch) return "reset";
+    if (at - source.lastSeenAt > LIVE_MODEL_STALE_MS) return "stale";
+    return source.status;
+  }
+  function decodeInMemoryLiveModelSource(value, at) {
+    if (!value || value.kind !== "background" || value.recordKey !== null || value.recordSavedAt !== null || typeof value.revision !== "string" || value.revision.length > 512) return null;
+    const source = decodeLiveModelSource(__spreadProps(__spreadValues({}, value), { revision: "" }), LIVE_MODEL_PREFIX + value.publisherId, at);
+    if (!source) return null;
+    return __spreadProps(__spreadValues({}, source), {
+      kind: "background",
+      revision: value.revision,
+      status: at - source.lastSeenAt > LIVE_MODEL_STALE_MS ? "stale" : source.status
+    });
+  }
+
+  // src/background-recording-storage.js
+  var BACKGROUND_RECORDING_PREFIX = "tierscope:background-recording:v1:";
+  var BACKGROUND_RECORDING_NOTICE = "tierscope:background-recording-notice:v1";
+  var BACKGROUND_RECORDING_TTL_MS = 3 * 60 * 60 * 1e3;
+  function recordingRoom(value) {
+    if (typeof value !== "string") throw new Error("Invalid background recording room.");
+    const room2 = value.toLowerCase();
+    if (value !== value.trim() || !/^[a-z0-9_-]{1,100}$/.test(room2) || !roomFromUrl("https://chaturbate.com/" + room2 + "/")) {
+      throw new Error("Invalid background recording room.");
+    }
+    return room2;
+  }
+  function createBackgroundRecordingStore(effects) {
+    const libraryCheckpoints = /* @__PURE__ */ new Map();
+    const keyFor2 = (room2) => BACKGROUND_RECORDING_PREFIX + recordingRoom(room2);
+    function clean(room2, input, savedAt) {
+      var _a, _b, _c, _d;
+      const archive = effects.validateArchive(input == null ? void 0 : input.archive), raw = input == null ? void 0 : input.source, state = input == null ? void 0 : input.state;
+      if (!isStorageTimestamp(savedAt) || savedAt > effects.now() + 5e3 || archive.room.toLowerCase() !== room2 || !raw || raw.kind !== "background" || raw.recordKey !== null || raw.recordSavedAt !== null || typeof raw.revision !== "string" || raw.revision.length > 512) throw new Error("Invalid background recording.");
+      const metadata = decodeLiveModelSource(__spreadProps(__spreadValues({}, raw), { revision: "" }), LIVE_MODEL_PREFIX + raw.publisherId, effects.now());
+      const history = archive.session.history, lastAt = history.timestamps.at(-1);
+      if (!metadata || metadata.room !== room2 || metadata.roomEpoch !== "background" || metadata.sessionStartedAt !== archive.session.sessionStartedAt || metadata.sampleCount !== history.timestamps.length || metadata.sampleAt !== lastAt || metadata.lastSeenAt > savedAt + 5e3 || lastAt > savedAt + 5e3) {
+        throw new Error("Background source and recording do not match.");
+      }
+      if (!state || state.room !== room2 || typeof state.active !== "boolean" || state.status !== metadata.status || typeof state.message !== "string" || state.message.length > 2e3 || state.sampleCount !== metadata.sampleCount || state.sampleAt !== metadata.sampleAt || !(state.nextAt === null || isStorageTimestamp(state.nextAt))) {
+        throw new Error("Invalid background recording status.");
+      }
+      const absentSince = (_a = state.absentSince) != null ? _a : null, absenceObservations = (_b = state.absenceObservations) != null ? _b : 0;
+      const absenceObservedAt = (_c = state.absenceObservedAt) != null ? _c : absentSince;
+      const absenceMs = absentSince === null ? 0 : Math.max(0, absenceObservedAt - absentSince);
+      const stoppedReason = (_d = state.stoppedReason) != null ? _d : null;
+      if (!(absentSince === null || isStorageTimestamp(absentSince) && absentSince <= savedAt + 5e3) || !Number.isSafeInteger(absenceObservations) || absenceObservations < 0 || !(absenceObservedAt === null || isStorageTimestamp(absenceObservedAt) && absenceObservedAt <= savedAt + 5e3) || absentSince === null && (absenceObservedAt !== null || absenceObservations !== 0) || absentSince !== null && (absenceObservedAt === null || absenceObservedAt < absentSince) || state.absenceMs !== void 0 && state.absenceMs !== absenceMs || !(stoppedReason === null || typeof stoppedReason === "string" && stoppedReason.length <= 100)) {
+        throw new Error("Invalid background absence status.");
+      }
+      return freezeRecordingData({
+        schemaVersion: 1,
+        room: room2,
+        savedAt,
+        archive,
+        source: __spreadProps(__spreadValues({}, metadata), { kind: "background", revision: raw.revision }),
+        state: {
+          room: room2,
+          active: state.active,
+          status: state.status,
+          message: state.message,
+          sampleCount: state.sampleCount,
+          sampleAt: state.sampleAt,
+          nextAt: state.nextAt,
+          absentSince,
+          absenceObservedAt,
+          absenceObservations,
+          absenceMs,
+          stoppedReason
+        }
+      });
+    }
+    function decode(room2, raw) {
+      const record = JSON.parse(raw);
+      if (!record || record.schemaVersion !== 1 || record.room !== room2) throw new Error("Unsupported background recording.");
+      return clean(room2, record, record.savedAt);
+    }
+    function read(room2) {
+      room2 = recordingRoom(room2);
+      const raw = effects.get(keyFor2(room2), void 0);
+      if (raw === void 0) return null;
+      const record = decode(room2, raw);
+      return effects.now() - record.savedAt > BACKGROUND_RECORDING_TTL_MS ? null : record;
+    }
+    function readAll() {
+      const records = [];
+      for (const key of effects.list().filter((value) => value.startsWith(BACKGROUND_RECORDING_PREFIX))) {
+        try {
+          const room2 = key.slice(BACKGROUND_RECORDING_PREFIX.length);
+          if (keyFor2(room2) !== key) continue;
+          const record = read(room2);
+          if (record) records.push(record);
+        } catch (_) {
+        }
+      }
+      return records;
+    }
+    function keepFavorite(record) {
+      const room2 = record.room, state = { saved: false, waiting: false, error: "" };
+      try {
+        const preference = effects.favorite(room2);
+        if (!preference.favorite || !preference.autoKeep) {
+          libraryCheckpoints.delete(room2);
+          return state;
+        }
+        const minimumMinutes = effects.minimumMinutes(), coveredMs = recordedCoverageMs(record.archive.session.history);
+        Object.assign(state, { minimumMinutes, coveredMs, waiting: coveredMs < minimumMinutes * 6e4 });
+        if (state.waiting) return state;
+        const signature = [
+          record.source.id,
+          record.source.revision,
+          record.state.active,
+          record.state.status,
+          record.state.stoppedReason
+        ].join(":");
+        if (libraryCheckpoints.get(room2) === signature) return __spreadProps(__spreadValues({}, state), { saved: true });
+        const result = effects.keep(record.archive);
+        libraryCheckpoints.set(room2, signature);
+        return __spreadValues(__spreadProps(__spreadValues({}, state), { saved: true }), result);
+      } catch (error) {
+        return __spreadProps(__spreadValues({}, state), { error: error.message || String(error) });
+      }
+    }
+    function save(room2, input) {
+      let record;
+      try {
+        room2 = recordingRoom(room2);
+        record = clean(room2, input, effects.now());
+      } catch (error2) {
+        return { saved: false, error: error2.message || String(error2), library: { saved: false, waiting: false, error: "" } };
+      }
+      const key = keyFor2(room2), value = JSON.stringify(record);
+      let saved = false, error = "", before, attempted = false;
+      try {
+        before = effects.get(key, void 0);
+        if (before !== void 0) {
+          const previous = decode(room2, before), prior = previous.archive.session, next = record.archive.session;
+          if (prior.sessionStartedAt > next.sessionStartedAt || prior.sessionStartedAt === next.sessionStartedAt && (previous.source.sampleAt > record.source.sampleAt || previous.source.sampleCount > record.source.sampleCount)) {
+            throw new Error("A newer background recording already exists.");
+          }
+        }
+        if (effects.get(key, void 0) !== before) throw new Error("Background recording changed in another tab.");
+        attempted = true;
+        effects.set(key, value);
+        if (effects.get(key, void 0) !== value) throw new Error("Background recording save could not be verified.");
+        saved = true;
+      } catch (failure) {
+        error = failure.message || String(failure);
+        try {
+          if (attempted && effects.get(key, void 0) === value) {
+            if (before === void 0) effects.remove(key);
+            else effects.set(key, before);
+          }
+        } catch (_) {
+          error += " Recovery rollback could not be verified.";
+        }
+      }
+      const library = keepFavorite(record);
+      if (library.error) error = (error ? error + " " : "") + library.error;
+      if (saved && effects.notice) {
+        try {
+          effects.notice({ version: 1, room: room2, at: record.savedAt, revision: record.source.revision });
+        } catch (_) {
+        }
+      }
+      return { saved, error, library };
+    }
+    function retryFavorite(room2) {
+      try {
+        const record = read(room2);
+        if (!record) return { saved: false, waiting: false, error: "No recent background recovery recording is available." };
+        return keepFavorite(record);
+      } catch (error) {
+        return { saved: false, waiting: false, error: error.message || String(error) };
+      }
+    }
+    function cleanupExpired() {
+      const result = { cleared: 0, changed: 0, damaged: 0 };
+      for (const key of effects.list().filter((value) => value.startsWith(BACKGROUND_RECORDING_PREFIX))) {
+        try {
+          const room2 = key.slice(BACKGROUND_RECORDING_PREFIX.length);
+          if (keyFor2(room2) !== key) throw new Error("Invalid background recording key.");
+          const before = effects.get(key, void 0), record = decode(room2, before);
+          if (effects.now() - record.savedAt <= BACKGROUND_RECORDING_TTL_MS) continue;
+          if (effects.get(key, void 0) !== before) {
+            result.changed++;
+            continue;
+          }
+          effects.remove(key);
+          if (effects.get(key, void 0) === void 0) result.cleared++;
+          else result.changed++;
+        } catch (_) {
+          result.damaged++;
+        }
+      }
+      return result;
+    }
+    return { read, readAll, save, retryFavorite, cleanupExpired };
+  }
+  var libraryReader = createLibraryReader();
+  var store = createBackgroundRecordingStore({
+    now: () => Date.now(),
+    get: (key, fallback) => GM_getValue(key, fallback),
+    set: (key, value) => GM_setValue(key, value),
+    remove: (key) => GM_deleteValue(key),
+    list: () => GM_listValues(),
+    notice: (notice) => GM_setValue(BACKGROUND_RECORDING_NOTICE, __spreadProps(__spreadValues({}, notice), { revision: makeStorageId() })),
+    validateArchive: validateSessionFile,
+    favorite: readModelFavorite,
+    minimumMinutes: readAutomaticKeepingMinutes,
+    keep: (archive) => keepSessionInLibrary(archive, "", libraryReader)
+  });
+  function readBackgroundRecording(room2) {
+    return store.read(room2);
+  }
+  function readAllBackgroundRecordings() {
+    return store.readAll();
+  }
+  function saveBackgroundRecording(room2, value) {
+    return store.save(room2, value);
+  }
+  function retryFavoriteBackgroundRecording(room2) {
+    return store.retryFavorite(room2);
+  }
+  function cleanupExpiredBackgroundRecordings() {
+    return store.cleanupExpired();
+  }
+
+  // src/background-tracking-preferences.js
+  var BACKGROUND_TRACKING_PREFIX = "tierscope:background-tracking:v1:";
+  var BACKGROUND_TRACKING_NOTICE = "tierscope:background-tracking:changed:v1";
+  function roomName(value) {
+    const room2 = typeof value === "string" ? value.trim().toLowerCase() : "";
+    if (!room2 || !/^[a-z0-9_-]{1,100}$/.test(room2) || !roomFromUrl("https://chaturbate.com/" + room2 + "/")) {
+      throw new Error("Enter a room username, without a URL or spaces.");
+    }
+    return room2;
+  }
+  function createBackgroundTrackingPreferences(effects) {
+    function decode(raw, room2) {
+      if (raw === void 0) return null;
+      const value = JSON.parse(raw);
+      if (!value || value.schemaVersion !== 1 || value.room !== room2 || typeof value.active !== "boolean" || typeof value.revision !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.revision) || !Number.isSafeInteger(value.changedAt) || value.changedAt < 0 || value.changedAt > 864e13) {
+        throw new Error("Background tracking settings for " + room2 + " are invalid.");
+      }
+      return Object.freeze({ room: room2, active: value.active, revision: value.revision, changedAt: value.changedAt });
+    }
+    function read(value) {
+      const room2 = roomName(value);
+      return decode(effects.get(BACKGROUND_TRACKING_PREFIX + room2, void 0), room2);
+    }
+    function list() {
+      const choices = /* @__PURE__ */ new Map(), errors = [];
+      for (const key of effects.list().filter((key2) => key2.startsWith(BACKGROUND_TRACKING_PREFIX))) {
+        const room2 = key.slice(BACKGROUND_TRACKING_PREFIX.length);
+        try {
+          if (roomName(room2) !== room2) throw new Error("Invalid background tracking key.");
+          const choice = read(room2);
+          if (choice) choices.set(room2, choice);
+        } catch (_) {
+          errors.push(room2);
+        }
+      }
+      return { choices, error: errors.length ? "Some background tracking settings are unavailable." : "" };
+    }
+    function set(value, active, expectedRevision) {
+      const room2 = roomName(value), key = BACKGROUND_TRACKING_PREFIX + room2;
+      if (typeof active !== "boolean") throw new Error("Invalid background tracking choice.");
+      const before = effects.get(key, void 0), previous = decode(before, room2);
+      if (expectedRevision !== void 0 && (previous == null ? void 0 : previous.revision) !== expectedRevision) return { changed: false, choice: previous };
+      if ((previous == null ? void 0 : previous.active) === active) return { changed: false, choice: previous };
+      const record = { schemaVersion: 1, room: room2, active, revision: effects.id(), changedAt: effects.now() };
+      const raw = JSON.stringify(record);
+      try {
+        if (effects.get(key, void 0) !== before) return { changed: false, choice: read(room2) };
+        effects.set(key, raw);
+        if (effects.get(key, void 0) !== raw) throw new Error("Background tracking choice could not be verified.");
+      } catch (error) {
+        try {
+          if (effects.get(key, void 0) === raw) {
+            if (before === void 0) effects.remove(key);
+            else effects.set(key, before);
+          }
+        } catch (_) {
+          throw new Error("Background tracking settings could not be saved or restored. Refresh before retrying.");
+        }
+        throw error;
+      }
+      try {
+        effects.notice({ version: 1, at: record.changedAt, revision: record.revision });
+      } catch (_) {
+      }
+      return { changed: true, choice: decode(raw, room2) };
+    }
+    return { read, list, set };
+  }
+  var preferences = createBackgroundTrackingPreferences({
+    get: (key, fallback) => GM_getValue(key, fallback),
+    set: (key, value) => GM_setValue(key, value),
+    remove: (key) => GM_deleteValue(key),
+    list: () => GM_listValues(),
+    now: () => Date.now(),
+    id: makeStorageId,
+    notice: (value) => GM_setValue(BACKGROUND_TRACKING_NOTICE, value)
+  });
+  function readBackgroundTrackingPreference(room2) {
+    return preferences.read(room2);
+  }
+  function readBackgroundTrackingPreferences() {
+    return preferences.list();
+  }
+  function setBackgroundTrackingPreference(room2, active, expectedRevision) {
+    return preferences.set(room2, active, expectedRevision);
+  }
+
+  // src/live-model-sources.js
+  function createLiveModelExchange(effects) {
+    const archives = /* @__PURE__ */ new Map();
+    let discoveryKeys = null, discoveryAt = -Infinity;
+    function invalidate() {
+      discoveryKeys = null;
+    }
+    function readSources(force = false) {
+      if (force) invalidate();
+      const sources = [], errors = [];
+      const at = effects.now();
+      try {
+        if (!discoveryKeys || at < discoveryAt || at - discoveryAt >= 1e4) {
+          discoveryKeys = effects.list().filter((key) => key.startsWith(LIVE_MODEL_PREFIX));
+          discoveryAt = at;
+        }
+      } catch (_) {
+        return { sources, error: "Live tab discovery is unavailable. Existing chart snapshots are retained." };
+      }
+      for (const key of discoveryKeys) {
+        try {
+          const source = decodeLiveModelSource(effects.get(key, null), key, at);
+          if (!source || at - source.lastSeenAt > 3 * 60 * 60 * 1e3) continue;
+          source.status = liveModelSourceStatus(source, at, effects.epoch(source.room));
+          sources.push(Object.freeze(source));
+        } catch (_) {
+          errors.push(key);
+        }
+      }
+      sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
+      const currentIds = new Set(sources.map((source) => source.id));
+      for (const id of archives.keys()) if (!currentIds.has(id)) archives.delete(id);
+      return { sources, error: errors.length ? "Some live tabs could not be read. Their previous snapshots are retained." : "" };
+    }
+    function readArchive(source) {
+      var _a;
+      const at = effects.now(), key = LIVE_MODEL_PREFIX + source.publisherId;
+      const current = decodeLiveModelSource(effects.get(key, null), key, at);
+      if (!current || current.id !== source.id || current.recordKey !== source.recordKey || current.revision !== source.revision || current.roomEpoch !== effects.epoch(current.room) || ["reset", "unavailable"].includes(current.status) || !current.recordKey) {
+        throw new Error("This live source changed or is unavailable. Its previous chart snapshot is retained.");
+      }
+      const cached = archives.get(current.id);
+      if ((cached == null ? void 0 : cached.revision) === current.revision) return cached.archive;
+      const raw = effects.get(current.recordKey, null);
+      if (typeof raw !== "string") throw new Error("The live session record is unavailable.");
+      const data = JSON.parse(raw), times = (_a = data == null ? void 0 : data.history) == null ? void 0 : _a.timestamps;
+      if (data.roomEpoch !== current.roomEpoch || data.sessionStartedAt !== current.sessionStartedAt || data.timestamp !== current.recordSavedAt || !Array.isArray(times) || times.length !== current.sampleCount || times.at(-1) !== current.sampleAt) {
+        throw new Error("The live session changed while reading. Waiting for its next announcement.");
+      }
+      const archive = freezeRecordingData(effects.archive(current.room, data));
+      if (effects.epoch(current.room) !== current.roomEpoch) throw new Error("This room was reset. Choose its new session.");
+      archives.set(current.id, { revision: current.revision, archive });
+      return archive;
+    }
+    function clear() {
+      archives.clear();
+      invalidate();
+    }
+    function retain(ids) {
+      const selected = ids instanceof Set ? ids : new Set(ids);
+      for (const id of archives.keys()) if (!selected.has(id)) archives.delete(id);
+    }
+    function cleanupExpired() {
+      if (!effects.remove) return;
+      try {
+        const at = effects.now();
+        for (const key of effects.list().filter((key2) => key2.startsWith(LIVE_MODEL_PREFIX))) {
+          const source = decodeLiveModelSource(effects.get(key, null), key, at);
+          if (!source || at - source.lastSeenAt <= 3 * 60 * 60 * 1e3) continue;
+          const current = decodeLiveModelSource(effects.get(key, null), key, at);
+          if ((current == null ? void 0 : current.id) === source.id && current.lastSeenAt === source.lastSeenAt && current.revision === source.revision) effects.remove(key);
+        }
+        invalidate();
+      } catch (_) {
+      }
+    }
+    return { readSources, readArchive, clear, retain, invalidate, cleanupExpired };
+  }
+  var exchange = createLiveModelExchange({
+    get: (key, fallback) => GM_getValue(key, fallback),
+    list: () => GM_listValues(),
+    remove: (key) => GM_deleteValue(key),
+    now: () => Date.now(),
+    epoch: (room2) => getRoomEpoch(getStorageKey(room2)),
+    archive: (room2, session) => validateSessionFile({
+      format: runtime.SESSION_FILE_FORMAT,
+      formatVersion: runtime.SESSION_FILE_VERSION,
+      producerVersion: session.producerVersion || runtime.TIERSCOPE_VERSION,
+      room: room2,
+      session
+    })
+  });
+  var publisherId = null, heartbeat = null, announced = false, started = false, cleanupInitialized = false, savedBinding = null;
+  var sourceProviders = /* @__PURE__ */ new Set(), sourceSubscribers = /* @__PURE__ */ new Set();
+  function registerLiveModelSourceProvider(provider) {
+    if (!provider || !["readSources", "readArchive", "subscribe"].every((key) => typeof provider[key] === "function")) {
+      throw new Error("Invalid comparison source provider.");
+    }
+    const entry = { provider, detach: null };
+    const changed = () => {
+      for (const notify of sourceSubscribers) notify();
+    };
+    entry.detach = provider.subscribe(changed);
+    sourceProviders.add(entry);
+    changed();
+    return () => {
+      if (!sourceProviders.delete(entry)) return;
+      if (typeof entry.detach === "function") entry.detach();
+      changed();
+    };
+  }
+  function providerSources(provider) {
+    const result = provider.readSources(), sources = [];
+    let error = (result == null ? void 0 : result.error) || "";
+    for (const value of (result == null ? void 0 : result.sources) || []) {
+      const source = decodeInMemoryLiveModelSource(value, Date.now());
+      if (source) sources.push(Object.freeze(source));
+      else error = "Some comparison-only sources could not be read.";
+    }
+    return { sources, error };
+  }
+  function notifyLiveModels() {
+    exchange.invalidate();
+    GM_setValue(LIVE_MODEL_NOTICE, { version: 1, at: Date.now(), token: makeStorageId() });
+  }
+  function retirePublisher() {
+    if (heartbeat !== null) clearInterval(heartbeat);
+    heartbeat = null;
+    const wasAnnounced = announced;
+    announced = false;
+    savedBinding = null;
+    if (!publisherId || !wasAnnounced) return;
+    try {
+      GM_deleteValue(LIVE_MODEL_PREFIX + publisherId);
+      notifyLiveModels();
+    } catch (_) {
+    }
+  }
+  function publishLiveModelSource(savedTimestamp = null) {
+    var _a, _b;
+    if (!started || !publisherId) return;
+    const room2 = (_a = roomFromUrl(location.href)) == null ? void 0 : _a.toLowerCase();
+    if (!room2 || runtime.lastUrl !== location.href || runtime.activeSessionStorageKey !== getStorageKey(room2)) {
+      retirePublisher();
+      return;
+    }
+    if (heartbeat === null) heartbeat = setInterval(publishLiveModelSource, LIVE_MODEL_HEARTBEAT_MS);
+    try {
+      const at = Date.now(), epoch = getRoomEpoch(getStorageKey(room2));
+      const sessionStartedAt = runtime.sessionStartedAt, roomEpoch = runtime.activeRoomEpoch;
+      if (typeof roomEpoch !== "string") {
+        retirePublisher();
+        return;
+      }
+      const history = runtime.history, sampleCount = history.timestamps.length, sampleAt = (_b = history.timestamps.at(-1)) != null ? _b : null;
+      const record = runtime.tabRecords.get(getStorageKey(room2));
+      const sessionId = roomEpoch + "@" + (sessionStartedAt === null ? "pending" : sessionStartedAt);
+      const candidateKey = record ? runtime.TAB_RECORD_PREFIX + room2 + ":" + record.id : null;
+      if (record && Number.isSafeInteger(savedTimestamp) && savedTimestamp >= 0) {
+        savedBinding = { recordKey: candidateKey, sessionId, timestamp: savedTimestamp, writtenAt: record.savedAt, sampleCount, sampleAt };
+      }
+      const saved = !getSessionSaveState(room2).error && record && sampleCount > 0 && savedBinding && savedBinding.recordKey === candidateKey && savedBinding.sessionId === sessionId && savedBinding.writtenAt === record.savedAt && savedBinding.sampleCount === sampleCount && savedBinding.sampleAt === sampleAt;
+      const recordKey = saved ? candidateKey : null;
+      const revision = saved ? [record.id, savedBinding.timestamp, record.savedAt, sampleCount, sampleAt].join(":") : "";
+      let status = runtime.isStopped ? "stopped" : runtime.isPaused || !runtime.isAutoRefreshOn ? "paused" : isBrowserOffline() ? "offline" : runtime.requestPolicyCache.blocked || runtime.requestPolicyCache.until > at ? "retry" : sampleCount === 0 ? "waiting" : saved ? "tracking" : "unavailable";
+      if (epoch !== roomEpoch) status = "reset";
+      const source = {
+        version: 1,
+        id: publisherId + ":" + room2 + ":" + sessionId,
+        publisherId,
+        room: room2,
+        roomEpoch,
+        sessionId,
+        sessionStartedAt,
+        status,
+        lastSeenAt: at,
+        sampleAt,
+        sampleCount,
+        revision,
+        recordKey,
+        recordSavedAt: saved ? savedBinding.timestamp : null
+      };
+      GM_setValue(LIVE_MODEL_PREFIX + publisherId, source);
+      announced = true;
+      notifyLiveModels();
+    } catch (_) {
+    }
+  }
+  function initializeLiveModelSources() {
+    if (heartbeat !== null) clearInterval(heartbeat);
+    heartbeat = null;
+    started = true;
+    if (!publisherId) publisherId = makeStorageId();
+    if (!cleanupInitialized) {
+      cleanupInitialized = true;
+      exchange.cleanupExpired();
+    }
+    publishLiveModelSource();
+  }
+  function stopLiveModelSources() {
+    started = false;
+    if (heartbeat !== null) clearInterval(heartbeat);
+    heartbeat = null;
+    retirePublisher();
+    exchange.clear();
+  }
+  function readLiveModelSources(force = false) {
+    const result = exchange.readSources(force), sources = result.sources.slice();
+    const ids = new Set(sources.map((source) => source.id)), errors = result.error ? [result.error] : [];
+    for (const { provider } of sourceProviders) {
+      try {
+        const extra = providerSources(provider);
+        if (extra.error) errors.push(extra.error);
+        for (const source of extra.sources) {
+          if (ids.has(source.id)) {
+            errors.push("A comparison-only source identity is duplicated.");
+            continue;
+          }
+          sources.push(source);
+          ids.add(source.id);
+        }
+      } catch (_) {
+        errors.push("Comparison-only sources are unavailable. Their previous snapshots are retained.");
+      }
+    }
+    sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
+    return { sources, error: errors.join(" ") };
+  }
+  function readLiveModelArchive(source) {
+    if (source.kind !== "background") return exchange.readArchive(source);
+    for (const { provider } of sourceProviders) {
+      const current = providerSources(provider).sources.find((value) => value.id === source.id);
+      if (!current) continue;
+      if (current.revision !== source.revision || current.room !== source.room || current.sessionId !== source.sessionId || current.sampleCount !== source.sampleCount || current.sampleAt !== source.sampleAt || !current.sampleCount || ["reset", "unavailable", "stale"].includes(current.status)) break;
+      const archive = freezeRecordingData(validateSessionFile(provider.readArchive(current))), session = archive.session;
+      if (archive.room.toLowerCase() !== current.room || session.sessionStartedAt !== current.sessionStartedAt || session.history.timestamps.length !== current.sampleCount || session.history.timestamps.at(-1) !== current.sampleAt) break;
+      const latest = providerSources(provider).sources.find((value) => value.id === current.id);
+      if (!latest || latest.revision !== current.revision) break;
+      return archive;
+    }
+    throw new Error("This comparison-only source changed or is unavailable. Its previous chart snapshot is retained.");
+  }
+  function retainLiveModelArchives(ids) {
+    exchange.retain(ids);
+  }
+  function subscribeLiveModelSources(changed) {
+    let disposed = false, pending = null, listener = null;
+    function schedule() {
+      if (disposed || pending !== null) return;
+      pending = setTimeout(() => {
+        pending = null;
+        if (!disposed) changed();
+      }, 80);
+    }
+    sourceSubscribers.add(schedule);
+    try {
+      if (typeof GM_addValueChangeListener === "function") listener = GM_addValueChangeListener(LIVE_MODEL_NOTICE, () => {
+        exchange.invalidate();
+        schedule();
+      });
+    } catch (_) {
+    }
+    const timer = setInterval(schedule, 5e3);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+      sourceSubscribers.delete(schedule);
+      if (pending !== null) clearTimeout(pending);
+      if (listener !== null) {
+        try {
+          if (typeof GM_removeValueChangeListener === "function") GM_removeValueChangeListener(listener);
+        } catch (_) {
+        }
+      }
+      exchange.clear();
+    };
+  }
+
+  // src/background-tracking-lifecycle.js
+  var LEASE_PREFIX = "tierscope:background-owner:v1:", LEASE_MS = 9e4, PULSE_MS = 2e4;
+  function createBackgroundTrackingLeases(effects) {
+    function read(room2) {
+      const raw = effects.get(LEASE_PREFIX + room2);
+      if (raw === null) return null;
+      const value = JSON.parse(raw);
+      if (!value || value.version !== 1 || value.room !== room2 || ![value.owner, value.token, value.revision].every((id) => typeof id === "string" && /^[a-z0-9-]{1,160}$/i.test(id)) || !Number.isSafeInteger(value.until) || value.until < 0 || value.until > 864e13) throw new Error("Invalid tracking lease.");
+      return value;
+    }
+    function owns(room2, token) {
+      try {
+        const value = read(room2);
+        return !!value && value.owner === effects.owner && value.token === token && value.until > effects.now();
+      } catch (_) {
+        return false;
+      }
+    }
+    async function claim(room2, revision, previousToken) {
+      const operation = () => {
+        try {
+          const before = read(room2), at = effects.now();
+          if (before && before.until > at && !(before.owner === effects.owner && before.token === previousToken && before.revision === revision)) return null;
+          const token = before && before.owner === effects.owner && before.token === previousToken && before.revision === revision ? previousToken : effects.id();
+          const value = { version: 1, room: room2, owner: effects.owner, revision, token, until: at + LEASE_MS };
+          effects.set(LEASE_PREFIX + room2, JSON.stringify(value));
+          const written = read(room2);
+          return (written == null ? void 0 : written.token) === token && written.owner === effects.owner && written.revision === revision ? token : null;
+        } catch (_) {
+          return null;
+        }
+      };
+      try {
+        return await effects.lock(LEASE_PREFIX + room2, operation);
+      } catch (_) {
+        return null;
+      }
+    }
+    function release(room2, token) {
+      try {
+        const value = read(room2);
+        if ((value == null ? void 0 : value.owner) === effects.owner && value.token === token) effects.remove(LEASE_PREFIX + room2);
+      } catch (_) {
+      }
+    }
+    return { claim, owns, release };
+  }
+  function createBackgroundTrackingLifecycle(effects) {
+    const owned = /* @__PURE__ */ new Map(), records = /* @__PURE__ */ new Map(), failures = /* @__PURE__ */ new Map(), libraryFailures = /* @__PURE__ */ new Map(), listeners = /* @__PURE__ */ new Set();
+    let choices = /* @__PURE__ */ new Map(), running = false, timer = null, pulse = null, generation = 0;
+    let unsubscribeManager = null, unsubscribeChoices = null, notice = "";
+    let cleanupAt = null;
+    function emit() {
+      for (const changed2 of listeners) {
+        try {
+          changed2();
+        } catch (_) {
+        }
+      }
+    }
+    function managerStates() {
+      return effects.manager.states();
+    }
+    function tokenFor(room2) {
+      const claim = owned.get(room2);
+      if (!running || !claim || !effects.leases.owns(room2, claim.token)) return null;
+      try {
+        const choice = effects.preferences.read(room2);
+        return (choice == null ? void 0 : choice.active) && choice.revision === claim.revision ? claim.token : null;
+      } catch (_) {
+        return null;
+      }
+    }
+    function checkpoint2(room2) {
+      var _a;
+      const claim = owned.get(room2);
+      if (!claim || !effects.leases.owns(room2, claim.token)) return;
+      const source = effects.manager.sources().sources.find((value) => value.room === room2);
+      const state = managerStates().find((value) => value.room === room2);
+      if (!(source == null ? void 0 : source.sampleCount) || !state) return;
+      const signature = [
+        source.id,
+        source.revision,
+        state.active,
+        state.status,
+        state.message,
+        state.nextAt,
+        state.stoppedReason,
+        state.absentSince,
+        state.absenceObservedAt,
+        state.absenceObservations,
+        state.absenceMs
+      ].join("|");
+      if (claim.savedSignature === signature) return;
+      try {
+        const archive2 = effects.manager.archive(source), result = effects.recordings.save(room2, { archive: archive2, source, state });
+        if (!result.saved) throw new Error(result.error || "Recovery checkpoint could not be saved.");
+        claim.savedSignature = signature;
+        records.set(room2, { room: room2, archive: archive2, source, state, savedAt: effects.now() });
+        const libraryError = (_a = result.library) == null ? void 0 : _a.error;
+        if (libraryError) libraryFailures.set(room2, "Favorite Library keep pending: " + libraryError);
+        else libraryFailures.delete(room2);
+        failures.delete(room2);
+      } catch (error) {
+        failures.set(room2, "Recovery save pending: " + error.message);
+      }
+    }
+    function changed() {
+      if (!running) return;
+      for (const state of managerStates()) {
+        if (!owned.has(state.room)) continue;
+        checkpoint2(state.room);
+        if (state.stoppedReason === "absence" && !state.active) {
+          const claim = owned.get(state.room);
+          try {
+            const result = effects.preferences.set(state.room, false, claim.revision);
+            if (result.choice) choices.set(state.room, result.choice);
+          } catch (error) {
+            failures.set(state.room, "Could not save automatic tracking stop: " + error.message);
+          }
+        }
+      }
+      emit();
+    }
+    function drop(room2, save = false) {
+      var _a;
+      const claim = owned.get(room2);
+      if (!claim) return;
+      if ((_a = managerStates().find((state) => state.room === room2)) == null ? void 0 : _a.active) effects.manager.stop(room2);
+      if (save) checkpoint2(room2);
+      effects.manager.stop(room2, { clear: true });
+      owned.delete(room2);
+      effects.leases.release(room2, claim.token);
+    }
+    function readStored() {
+      const at = effects.now();
+      if (effects.recordings.cleanup && (cleanupAt === null || at < cleanupAt || at - cleanupAt >= 3e5)) {
+        cleanupAt = at;
+        try {
+          effects.recordings.cleanup();
+        } catch (_) {
+        }
+      }
+      const result = effects.preferences.list();
+      choices = result.choices;
+      notice = result.error || "";
+      const stored = effects.recordings.list();
+      records.clear();
+      for (const record of stored) records.set(record.room, record);
+    }
+    async function reconcile() {
+      if (!running) return;
+      if (pulse) return pulse;
+      const token = generation;
+      const operation = Promise.resolve().then(async () => {
+        if (!running || generation !== token) return;
+        try {
+          readStored();
+          for (const [room2, claim] of owned) {
+            const choice = choices.get(room2);
+            if (!(choice == null ? void 0 : choice.active) || choice.revision !== claim.revision || !effects.leases.owns(room2, claim.token)) drop(room2, true);
+          }
+          for (const [room2, choice] of choices) {
+            if (!choice.active) continue;
+            let lease2 = null;
+            try {
+              const previous = owned.get(room2);
+              lease2 = await effects.leases.claim(room2, choice.revision, previous == null ? void 0 : previous.token);
+              if (!running || generation !== token) {
+                if (lease2) effects.leases.release(room2, lease2);
+                break;
+              }
+              const latest = effects.preferences.read(room2);
+              if (!(latest == null ? void 0 : latest.active) || latest.revision !== choice.revision) {
+                if (lease2) effects.leases.release(room2, lease2);
+                continue;
+              }
+              if (!lease2) {
+                if (previous) drop(room2, false);
+                continue;
+              }
+              if (!previous || previous.token !== lease2) {
+                if (previous) drop(room2, false);
+                owned.set(room2, { token: lease2, revision: choice.revision, savedSignature: "" });
+                let record = null;
+                try {
+                  record = effects.recordings.read(room2);
+                } catch (error) {
+                  failures.set(room2, "Previous recovery recording is unavailable: " + error.message);
+                }
+                if (record) effects.manager.restore(room2, record);
+                else effects.manager.start(room2);
+              }
+            } catch (error) {
+              if (owned.has(room2)) drop(room2, false);
+              else if (lease2) effects.leases.release(room2, lease2);
+              failures.set(room2, "This background room could not resume: " + error.message);
+            }
+          }
+          for (const room2 of owned.keys()) checkpoint2(room2);
+          if (effects.recordings.retryFavorite) for (const room2 of records.keys()) {
+            try {
+              const result = effects.recordings.retryFavorite(room2);
+              if (result.error) libraryFailures.set(room2, "Favorite Library keep pending: " + result.error);
+              else libraryFailures.delete(room2);
+            } catch (error) {
+              libraryFailures.set(room2, "Favorite Library keep pending: " + error.message);
+            }
+          }
+        } catch (error) {
+          notice = "Background tracking settings are unavailable: " + error.message;
+          for (const room2 of [...owned.keys()]) drop(room2, false);
+        } finally {
+          emit();
+        }
+      });
+      pulse = operation;
+      try {
+        await operation;
+      } finally {
+        if (pulse === operation) pulse = null;
+      }
+    }
+    function initialize() {
+      if (running) return;
+      running = true;
+      generation++;
+      cleanupAt = null;
+      effects.manager.ownership(tokenFor);
+      unsubscribeManager = effects.manager.subscribe(changed);
+      unsubscribeChoices = effects.subscribe(() => {
+        reconcile();
+      });
+      timer = effects.setInterval(() => {
+        reconcile();
+      }, PULSE_MS);
+      reconcile();
+    }
+    async function start(room2) {
+      initialize();
+      if (pulse) await pulse;
+      const result = effects.preferences.set(room2, true);
+      if (result.choice) choices.set(result.choice.room, result.choice);
+      await reconcile();
+      return states().find((value) => {
+        var _a;
+        return value.room === ((_a = result.choice) == null ? void 0 : _a.room);
+      }) || null;
+    }
+    function stop(room2, options = {}) {
+      var _a;
+      if (!room2) {
+        for (const state of states()) if (state.active) stop(state.room, options);
+        return states();
+      }
+      const result = effects.preferences.set(room2, false);
+      if (result.choice) choices.set(result.choice.room, result.choice);
+      const normalized = ((_a = result.choice) == null ? void 0 : _a.room) || room2;
+      drop(normalized, true);
+      emit();
+      return states().find((value) => value.room === normalized) || null;
+    }
+    function states() {
+      const local = new Map(managerStates().map((state) => [state.room, state])), result = [];
+      const rooms = /* @__PURE__ */ new Set([...choices.keys(), ...records.keys(), ...local.keys()]);
+      for (const room2 of rooms) {
+        const choice = choices.get(room2), record = records.get(room2), state = local.get(room2) || (record == null ? void 0 : record.state);
+        if (!(choice == null ? void 0 : choice.active) && !state && !record) continue;
+        const active = !!(choice == null ? void 0 : choice.active);
+        const value = state ? __spreadProps(__spreadValues({}, state), { active }) : { room: room2, active, status: "waiting", message: "Waiting for an available tracking tab.", sampleCount: 0, sampleAt: null, nextAt: null };
+        if (!active && (state == null ? void 0 : state.active)) {
+          value.status = "stopped";
+          value.message = "Comparison tracking stopped.";
+          value.nextAt = null;
+        }
+        const warning = [failures.get(room2), libraryFailures.get(room2), notice].filter((value2) => !!value2).join(" ");
+        if (warning) {
+          value.persistenceError = warning;
+          value.message += " " + warning;
+        }
+        result.push(Object.freeze(value));
+      }
+      return result.sort((a, b) => a.room.localeCompare(b.room));
+    }
+    function sources() {
+      var _a;
+      const local = new Map(effects.manager.sources().sources.map((source) => [source.room, source])), result = [];
+      for (const state of states()) {
+        let source = local.get(state.room) || ((_a = records.get(state.room)) == null ? void 0 : _a.source);
+        if (!source) continue;
+        source = __spreadValues({}, source);
+        if (!state.active) source.status = "stopped";
+        result.push(Object.freeze(source));
+      }
+      return { sources: result, error: notice };
+    }
+    function archive(source) {
+      const local = effects.manager.sources().sources.find((value) => value.id === source.id);
+      if (local && local.revision === source.revision) return effects.manager.archive(local);
+      const record = records.get(source.room);
+      if (!record || record.source.id !== source.id || record.source.revision !== source.revision) throw new Error("This background recording changed. Refresh the comparison.");
+      return record.archive;
+    }
+    async function refresh(room2) {
+      await reconcile();
+      await effects.manager.refresh(room2);
+      return states();
+    }
+    function shutdown() {
+      if (!running) return;
+      for (const room2 of [...owned.keys()]) drop(room2, true);
+      running = false;
+      generation++;
+      if (timer !== null) effects.clearInterval(timer);
+      timer = null;
+      if (unsubscribeManager) unsubscribeManager();
+      unsubscribeManager = null;
+      if (unsubscribeChoices) unsubscribeChoices();
+      unsubscribeChoices = null;
+      emit();
+    }
+    return {
+      initialize,
+      shutdown,
+      start,
+      stop,
+      states,
+      sources,
+      archive,
+      refresh,
+      reconcile,
+      subscribe(changed2) {
+        listeners.add(changed2);
+        return () => listeners.delete(changed2);
+      }
+    };
+  }
+  var owner = makeStorageId();
+  var leases = createBackgroundTrackingLeases({
+    owner,
+    now: () => Date.now(),
+    id: makeStorageId,
+    get: (key) => window.localStorage.getItem(key),
+    set: (key, value) => window.localStorage.setItem(key, value),
+    remove: (key) => window.localStorage.removeItem(key),
+    lock: (key, action) => {
+      var _a, _b;
+      return ((_b = (_a = window.navigator) == null ? void 0 : _a.locks) == null ? void 0 : _b.request) ? window.navigator.locks.request(key, action) : Promise.resolve(action());
+    }
+  });
+  var tracking = createBackgroundTrackingLifecycle({
+    now: () => Date.now(),
+    leases,
+    preferences: { read: readBackgroundTrackingPreference, list: readBackgroundTrackingPreferences, set: setBackgroundTrackingPreference },
+    recordings: {
+      read: readBackgroundRecording,
+      list: readAllBackgroundRecordings,
+      save: saveBackgroundRecording,
+      retryFavorite: retryFavoriteBackgroundRecording,
+      cleanup: cleanupExpiredBackgroundRecordings
+    },
+    manager: {
+      states: getBackgroundComparisonStates,
+      sources: readBackgroundComparisonSources,
+      archive: readBackgroundComparisonArchive,
+      start: startBackgroundComparison,
+      stop: stopBackgroundComparison,
+      restore: restoreBackgroundComparison,
+      refresh: refreshBackgroundComparison,
+      subscribe: subscribeBackgroundComparison,
+      ownership: setBackgroundComparisonOwnership
+    },
+    setInterval: (fn, ms) => setInterval(fn, ms),
+    clearInterval: (id) => clearInterval(id),
+    subscribe: (changed) => {
+      const listeners = [];
+      try {
+        if (typeof GM_addValueChangeListener === "function") for (const key of [BACKGROUND_TRACKING_NOTICE, BACKGROUND_RECORDING_NOTICE]) listeners.push(GM_addValueChangeListener(key, changed));
+      } catch (_) {
+      }
+      return () => {
+        try {
+          if (typeof GM_removeValueChangeListener === "function") for (const listener of listeners) GM_removeValueChangeListener(listener);
+        } catch (_) {
+        }
+      };
+    }
+  });
+  var providerCleanup = null, lifecycleInitialized = false;
+  function initializeBackgroundTracking() {
+    if (!lifecycleInitialized) {
+      lifecycleInitialized = true;
+      providerCleanup = registerLiveModelSourceProvider({ readSources: () => tracking.sources(), readArchive: (source) => tracking.archive(source), subscribe: (changed) => tracking.subscribe(changed) });
+      window.addEventListener("pagehide", shutdownBackgroundTracking);
+    }
+    tracking.initialize();
+  }
+  function shutdownBackgroundTracking() {
+    tracking.shutdown();
+    if (providerCleanup) {
+      providerCleanup();
+      providerCleanup = null;
+    }
+    lifecycleInitialized = false;
+    window.removeEventListener("pagehide", shutdownBackgroundTracking);
+  }
+  function tickBackgroundTracking() {
+    initializeBackgroundTracking();
+    return tracking.reconcile();
+  }
+  async function startPersistentBackgroundComparison(room2) {
+    initializeBackgroundTracking();
+    return tracking.start(room2);
+  }
+  function stopPersistentBackgroundComparison(room2, options) {
+    return tracking.stop(room2, options);
+  }
+  function getPersistentBackgroundComparisonStates() {
+    return tracking.states();
+  }
+  function getPersistentBackgroundComparisonState(room2) {
+    return tracking.states().find((state) => !room2 || state.room === room2) || { room: null, active: false, status: "stopped", message: "", sampleCount: 0, sampleAt: null, nextAt: null };
+  }
+  function readPersistentBackgroundComparisonSources() {
+    return tracking.sources();
+  }
+  function readPersistentBackgroundComparisonArchive(source) {
+    return tracking.archive(source);
+  }
+  function refreshPersistentBackgroundComparison(room2) {
+    initializeBackgroundTracking();
+    return tracking.refresh(room2);
+  }
+  function subscribePersistentBackgroundComparison(changed) {
+    return tracking.subscribe(changed);
+  }
+
+  // src/comparison-dismissals.js
+  var COMPARISON_DISMISSAL_PREFIX = "tierscope:comparison-dismissal:v1:";
+  var COMPARISON_DISMISSAL_NOTICE = "tierscope:comparison-dismissal:changed:v1";
+  function identity(value) {
+    if (!value || typeof value.id !== "string" || !value.id.length || value.id.length > 512 || /[\s\x00-\x1f\x7f]/.test(value.id) || typeof value.room !== "string" || !/^[a-z0-9_-]{1,100}$/i.test(value.room) || !(value.sessionStartedAt === null || isStorageTimestamp(value.sessionStartedAt)) || !Number.isSafeInteger(value.sampleCount) || value.sampleCount < 0 || value.sampleCount > 1e6 || !(value.sampleCount === 0 ? value.sampleAt === null : isStorageTimestamp(value.sampleAt))) {
+      throw new Error("Invalid comparison entry.");
+    }
+    return {
+      id: value.id,
+      room: value.room.toLowerCase(),
+      sessionStartedAt: value.sessionStartedAt,
+      sampleAt: value.sampleAt,
+      sampleCount: value.sampleCount
+    };
+  }
+  function keyFor(id) {
+    return COMPARISON_DISMISSAL_PREFIX + id;
+  }
+  function createComparisonDismissals(effects) {
+    const cache = /* @__PURE__ */ new Map(), listeners = /* @__PURE__ */ new Set();
+    let detachRemote = null;
+    function decode(raw, key) {
+      if (raw === void 0) return null;
+      const value = JSON.parse(raw), marker = identity(value);
+      if (value.schemaVersion !== 1 || !isStorageTimestamp(value.dismissedAt) || keyFor(marker.id) !== key) {
+        throw new Error("Invalid comparison cleanup preference.");
+      }
+      return Object.freeze(__spreadProps(__spreadValues({}, marker), { schemaVersion: 1, dismissedAt: value.dismissedAt }));
+    }
+    function read(id) {
+      const at = effects.now(), cached = cache.get(id);
+      if (cached && at >= cached.at && at - cached.at < 1e3) return cached.marker;
+      const key = keyFor(id), raw = effects.get(key, void 0), marker = decode(raw, key);
+      cache.set(id, { at, marker });
+      return marker;
+    }
+    function isHidden(source) {
+      try {
+        const value = identity(source), marker = read(value.id);
+        return !!marker && marker.room === value.room && marker.sessionStartedAt === value.sessionStartedAt && value.sampleCount <= marker.sampleCount && (value.sampleAt === null || marker.sampleAt !== null && value.sampleAt <= marker.sampleAt);
+      } catch (_) {
+        return false;
+      }
+    }
+    function changed() {
+      cache.clear();
+      for (const listener of listeners) {
+        try {
+          listener();
+        } catch (_) {
+        }
+      }
+    }
+    function notify() {
+      changed();
+      try {
+        if (effects.notice) effects.notice();
+      } catch (_) {
+      }
+    }
+    function dismiss(sources) {
+      if (!Array.isArray(sources)) throw new Error("Choose comparison entries to clear.");
+      const values = new Map(sources.map((source) => {
+        const value = identity(source);
+        return [value.id, value];
+      }));
+      let count = 0;
+      for (const value of values.values()) {
+        const key = keyFor(value.id), before = effects.get(key, void 0), previous = decode(before, key);
+        const same = (previous == null ? void 0 : previous.room) === value.room && previous.sessionStartedAt === value.sessionStartedAt;
+        const sampleAt = same ? previous.sampleAt === null ? value.sampleAt : value.sampleAt === null ? previous.sampleAt : Math.max(previous.sampleAt, value.sampleAt) : value.sampleAt;
+        const sampleCount = same ? Math.max(previous.sampleCount, value.sampleCount) : value.sampleCount;
+        if (same && previous.sampleAt === sampleAt && previous.sampleCount === sampleCount) continue;
+        const record = __spreadProps(__spreadValues({}, value), { sampleAt, sampleCount, schemaVersion: 1, dismissedAt: effects.now() });
+        if (!isStorageTimestamp(record.dismissedAt)) throw new Error("Invalid cleanup timestamp.");
+        const raw = JSON.stringify(record);
+        try {
+          if (effects.get(key, void 0) !== before) throw new Error("Comparison cleanup preferences changed in another tab. Try again.");
+          effects.set(key, raw);
+          if (effects.get(key, void 0) !== raw) throw new Error("Comparison cleanup preference could not be verified.");
+        } catch (error) {
+          try {
+            if (effects.get(key, void 0) === raw) {
+              if (before === void 0) effects.remove(key);
+              else effects.set(key, before);
+            }
+          } catch (_) {
+          }
+          notify();
+          throw error;
+        }
+        count++;
+      }
+      if (count) notify();
+      return count;
+    }
+    function removeMatching(matches) {
+      let count = 0;
+      try {
+        for (const key of effects.list().filter((key2) => key2.startsWith(COMPARISON_DISMISSAL_PREFIX))) {
+          const before = effects.get(key, void 0);
+          let marker;
+          try {
+            marker = decode(before, key);
+          } catch (_) {
+            continue;
+          }
+          if (!marker || !matches(marker)) continue;
+          if (effects.get(key, void 0) !== before) throw new Error("Comparison cleanup preferences changed in another tab. Try again.");
+          effects.remove(key);
+          if (effects.get(key, void 0) !== void 0) throw new Error("Comparison cleanup preference could not be cleared.");
+          count++;
+        }
+      } catch (error) {
+        notify();
+        throw error;
+      }
+      if (count) notify();
+      return count;
+    }
+    function clearRoom(room2) {
+      if (typeof room2 !== "string" || !/^[a-z0-9_-]{1,100}$/i.test(room2)) throw new Error("Invalid room name.");
+      return removeMatching((marker) => marker.room === room2.toLowerCase());
+    }
+    function prune(knownSources) {
+      const ids = new Set(knownSources.map((source) => identity(source).id));
+      return removeMatching((marker) => !ids.has(marker.id));
+    }
+    function subscribe(listener) {
+      cache.clear();
+      listeners.add(listener);
+      if (listeners.size === 1 && effects.subscribe) detachRemote = effects.subscribe(changed);
+      return () => {
+        listeners.delete(listener);
+        if (!listeners.size && detachRemote) {
+          detachRemote();
+          detachRemote = null;
+        }
+      };
+    }
+    return { isHidden, dismiss, clearRoom, prune, subscribe };
+  }
+  var dismissals = createComparisonDismissals({
+    get: (key, fallback) => GM_getValue(key, fallback),
+    set: (key, value) => GM_setValue(key, value),
+    remove: (key) => GM_deleteValue(key),
+    list: () => GM_listValues(),
+    now: () => Date.now(),
+    notice: () => GM_setValue(COMPARISON_DISMISSAL_NOTICE, { version: 1, at: Date.now(), revision: makeStorageId() }),
+    subscribe: (changed) => {
+      let id = null;
+      try {
+        if (typeof GM_addValueChangeListener === "function") id = GM_addValueChangeListener(
+          COMPARISON_DISMISSAL_NOTICE,
+          (key, before, after, remote) => {
+            if (remote !== false) changed();
+          }
+        );
+      } catch (_) {
+      }
+      return () => {
+        try {
+          if (id !== null && typeof GM_removeValueChangeListener === "function") GM_removeValueChangeListener(id);
+        } catch (_) {
+        }
+      };
+    }
+  });
+  function isComparisonDismissed(source) {
+    return dismissals.isHidden(source);
+  }
+  function dismissComparisonSources(sources) {
+    return dismissals.dismiss(sources);
+  }
+  function clearComparisonDismissalsForRoom(room2) {
+    return dismissals.clearRoom(room2);
+  }
+  function subscribeComparisonDismissals(listener) {
+    return dismissals.subscribe(listener);
   }
 
   // src/tools-view-helpers.js
@@ -6108,23 +7964,22 @@ underlying system, so should run in the browser, Node, or Plask.
     collapsedRows: "tierscope:ui:collapsedRows:v1",
     geometry: "tierscope:ui:geometry:v1"
   });
-  function validateBackupPreferences(preferences) {
-    if (!preferences || typeof preferences !== "object" || Array.isArray(preferences)) throw new Error("Invalid saved preferences.");
+  function validateBackupPreferences(preferences2) {
+    if (!preferences2 || typeof preferences2 !== "object" || Array.isArray(preferences2)) throw new Error("Invalid saved preferences.");
     const clean = {};
-    for (const [name, value] of Object.entries(preferences)) {
+    for (const [name, value] of Object.entries(preferences2)) {
       if (!Object.prototype.hasOwnProperty.call(preferenceKeys, name)) throw new Error("Unknown saved preference: " + name);
-      const choices = {
-        theme: ["dark", "bright"],
-        highMode: ["sh", "ath"],
-        miniMetric: ["room", "withTokens", "total"],
-        chartWindow: ["full", "fourHours", "twoHours", "hour", "halfHour", "quarter"]
-      };
+      const choices = { theme: ["dark", "bright"], highMode: ["sh", "ath"], miniMetric: ["room", "withTokens", "total"] };
       if (name === "geometry") {
         if (!value || !Number.isFinite(value.left) || !Number.isFinite(value.top) || !Number.isFinite(value.scale) || value.scale < 0.5 || value.scale > 3) throw new Error("Invalid panel geometry.");
         clean[name] = { left: value.left, top: value.top, scale: value.scale };
       } else if (name === "collapsedRows") {
         if (!Array.isArray(value) || value.length > runtime.PANEL_ROWS.length || value.some((key) => !runtime.PANEL_ROWS.some((row) => row.key === key))) throw new Error("Invalid collapsed rows.");
         clean[name] = [...new Set(value)];
+      } else if (name === "chartWindow") {
+        const range = normalizeChartRangeKey(value);
+        if (!range) throw new Error("Invalid preference: " + name);
+        clean[name] = range;
       } else {
         if (!choices[name].includes(value)) throw new Error("Invalid preference: " + name);
         clean[name] = value;
@@ -6179,17 +8034,17 @@ underlying system, so should run in the browser, Node, or Plask.
       if (state.error || state.skipped) throw new Error("Could not read all ATH records for " + room2 + ". Existing data was left intact.");
       return { room: room2, highs: state.highs };
     });
-    const preferences = {
+    const preferences2 = {
       theme: runtime.isDarkMode ? "dark" : "bright",
       highMode: runtime.highMode,
       miniMetric: runtime.miniMetric,
       chartWindow: runtime.chartWindowMode,
       collapsedRows: [...runtime.collapsedRows]
     };
-    if (runtime.panelGeometry) preferences.geometry = runtime.panelGeometry;
+    if (runtime.panelGeometry) preferences2.geometry = runtime.panelGeometry;
     for (const [name, key] of Object.entries(preferenceKeys)) {
       const saved = GM_getValue(key, null);
-      if (saved !== null) preferences[name] = name === "geometry" || name === "collapsedRows" ? JSON.parse(saved) : saved;
+      if (saved !== null) preferences2[name] = name === "geometry" || name === "collapsedRows" ? JSON.parse(saved) : saved;
     }
     const library = includeLibrary ? readSessionLibrary() : { entries: [], damaged: [] };
     if (library.damaged.length && !allowPartialLibrary) throw new Error("The library contains unreadable sessions. Choose the healthy-sessions option to make a partial backup, or export ATH/preferences separately.");
@@ -6201,7 +8056,7 @@ underlying system, so should run in the browser, Node, or Plask.
       formatVersion: 1,
       producerVersion: runtime.TIERSCOPE_VERSION,
       rooms: records,
-      preferences,
+      preferences: preferences2,
       library: library.entries.map((entry) => ({ title: entry.title, notes: entry.notes, archive: entry.archive })),
       favoriteModels: [...modelState.favorites]
     }, rawAnalysis === null ? {} : { analysisPreferences: validateAnalysisPreferences(JSON.parse(rawAnalysis)) }), library.damaged.length ? { recovery: { omittedLibraryKeys: library.damaged } } : {}));
@@ -6824,6 +8679,10 @@ underlying system, so should run in the browser, Node, or Plask.
 #tools-content{padding:10px 12px 14px;overflow:auto;min-height:0;flex:1;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#ff69b470 transparent}
 #tools-message:not(:empty){padding:7px 12px;border-bottom:1px solid var(--panel-divider);font-size:.95em;white-space:pre-line;overflow-wrap:anywhere;flex-shrink:0}
 #tierscope-session-tools .tools-actions{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:8px 0}
+#tierscope-session-tools .tools-background-form input{flex:1 1 100px;width:100px}
+#tierscope-session-tools .tools-background-form button{flex:0 1 auto}
+#tierscope-session-tools .tools-background-row{display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--panel-divider)}
+#tierscope-session-tools .tools-background-row>[data-background-message]{flex:1;min-width:0;overflow-wrap:anywhere}
 #tierscope-session-tools .tools-muted{color:var(--panel-muted);font-size:.92em;line-height:1.45}
 #tierscope-session-tools .tools-comparison-mode{padding-bottom:7px;border-bottom:1px solid var(--panel-divider)}
 #tierscope-session-tools .tools-comparison-mode button{flex:1}
@@ -6949,10 +8808,12 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/analysis-chart-view.js
   function renderAnalysisChart(parent, series, labels, axisMs, metricLabel, savedState = null, axisMode = "elapsed", config = {}) {
+    var _a;
     const element = toolNode(parent, "div");
     element.id = "tools-chart-view";
     parent = element;
     let start = 0, end = axisMs, cursor = 0, pinned = false, drag = null, disposed = false;
+    let followingFull = (_a = savedState == null ? void 0 : savedState.followingFull) != null ? _a : true;
     function datedAxis(mode = axisMode) {
       return mode === "live" || mode === "timeline";
     }
@@ -6985,36 +8846,36 @@ underlying system, so should run in the browser, Node, or Plask.
     panLeft.setAttribute("aria-label", "Pan earlier");
     const panRight = toolButton(controls, "›", () => pan(1), "tools-chart-pan-right");
     panRight.setAttribute("aria-label", "Pan later");
-    toolButton(controls, "Full range", () => {
-      start = 0;
-      end = axisMs;
-      draw();
-    }, "tools-chart-reset");
+    toolButton(controls, "Full range", resetRange, "tools-chart-reset");
     const pin = toolButton(controls, "Pin cursor", () => {
       pinned = !pinned;
       inspect();
     }, "tools-chart-pin");
     const legend = toolNode(parent, "div", void 0, "tools-chart-legend");
-    let newestFirst, ranks, colorIndices, opacities, newest, styledTimeline, primarySeries, trackedSeries, backgroundSeries, solidSeries;
+    let newestFirst, colorIndices, opacities, newest, primarySeries, trackedSeries, backgroundSeries;
     function refreshSeriesStyling() {
-      ({ newestFirst, ranks } = axisMode === "live" ? { newestFirst: series.map((_, index) => index), ranks: series.map((_, index) => index) } : comparisonSeriesOrder(series, config.rankTimes));
-      styledTimeline = axisMode === "timeline" && Array.isArray(config.seriesStyles);
+      const order = comparisonSeriesOrder(series, config.rankTimes);
+      newestFirst = order.newestFirst;
+      const { ranks } = order;
       primarySeries = series.map((_, index) => {
-        var _a;
-        return styledTimeline && ((_a = config.seriesStyles[index]) == null ? void 0 : _a.primary) === true;
+        var _a2, _b;
+        return ((_b = (_a2 = config.seriesStyles) == null ? void 0 : _a2[index]) == null ? void 0 : _b.primary) === true;
       });
+      const useLiveDefaults = axisMode === "live" && !config.seriesStyles;
       trackedSeries = series.map((_, index) => {
-        var _a;
-        return primarySeries[index] || styledTimeline && ((_a = config.seriesStyles[index]) == null ? void 0 : _a.live) === true;
+        var _a2, _b;
+        return useLiveDefaults || primarySeries[index] || ((_b = (_a2 = config.seriesStyles) == null ? void 0 : _a2[index]) == null ? void 0 : _b.live) === true;
       });
-      backgroundSeries = ranks.map((rank, index) => axisMode !== "live" && !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
+      backgroundSeries = ranks.map((rank, index) => !trackedSeries[index] && rank >= COMPARISON_FOREGROUND_COUNT);
       newest = newestFirst[0];
-      solidSeries = series.map((_, index) => axisMode === "live" || (styledTimeline ? trackedSeries[index] : index === newest));
-      colorIndices = ranks.map((rank, i) => {
-        var _a, _b, _c, _d;
-        return axisMode === "live" ? (_b = (_a = config.colorIndices) == null ? void 0 : _a[i]) != null ? _b : i : styledTimeline ? primarySeries[i] ? 0 : Math.max(1, (_d = (_c = config.colorIndices) == null ? void 0 : _c[i]) != null ? _d : 1 + rank) : rank < 6 ? rank : 1 + (rank - 6) % 5;
+      const reservePink = primarySeries.includes(true) || axisMode === "timeline" && !!config.seriesStyles;
+      colorIndices = ranks.map((rank, index) => {
+        var _a2, _b;
+        if (primarySeries[index]) return 0;
+        if (axisMode === "live") return (_b = (_a2 = config.colorIndices) == null ? void 0 : _a2[index]) != null ? _b : index;
+        return rank + Number(reservePink);
       });
-      opacities = ranks.map((rank, index) => axisMode === "live" || trackedSeries[index] ? 1 : comparisonOpacity(rank));
+      opacities = ranks.map((rank, index) => trackedSeries[index] ? 1 : comparisonOpacity(rank));
     }
     refreshSeriesStyling();
     const legendLabels = /* @__PURE__ */ new Map(), rows = /* @__PURE__ */ new Map();
@@ -7082,12 +8943,12 @@ underlying system, so should run in the browser, Node, or Plask.
         const label = labels[i], background = backgroundSeries[i];
         item.control.style.color = background ? legendBackground : comparisonLineColor(colorIndices[i], legendDark);
         item.check.checked = !hidden.has(i);
-        item.check.disabled = hidden.size === series.length - 1 && !hidden.has(i);
-        item.swatch.style.borderTopStyle = solidSeries[i] ? "solid" : "dashed";
+        item.check.disabled = !config.allowAllHidden && hidden.size === series.length - 1 && !hidden.has(i);
+        item.swatch.style.borderTopStyle = trackedSeries[i] ? "solid" : "dashed";
         item.swatch.style.opacity = String(opacities[i]);
-        const marker = styledTimeline ? primarySeries[i] ? " · Current" : trackedSeries[i] ? " · Tracked" : "" : series.length > 1 && i === newest ? " · Latest" : "";
+        const marker = primarySeries[i] ? " · Current" : trackedSeries[i] ? " · Tracked" : axisMode !== "timeline" && series.length > 1 && i === newest ? " · Latest" : "";
         item.text.textContent = axisMode === "live" ? label : comparisonLabel(i) + marker + " · " + label;
-        item.control.title = styledTimeline ? (primarySeries[i] ? "Current tracked session — solid pink: " : trackedSeries[i] ? "Currently tracked session — solid, 100% opacity: " : "Historical session — dashed, " + Math.round(opacities[i] * 100) + "% opacity: ") + label : axisMode === "live" ? label + " · live model · solid line" : (series.length > 1 ? i === newest ? "Latest session — solid pink: " : (background ? "Background session — dashed" : "Earlier session — dashed") + ", " + Math.round(opacities[i] * 100) + "% opacity: " : "") + label;
+        item.control.title = (primarySeries[i] ? "Current tracked session — solid pink: " : trackedSeries[i] ? "Currently tracked session — solid, 100% opacity: " : (background ? "Background session" : "Historical session") + " — dashed, " + Math.round(opacities[i] * 100) + "% opacity: ") + label;
       }
     }
     function renderLinePage() {
@@ -7108,13 +8969,14 @@ underlying system, so should run in the browser, Node, or Plask.
         const text = toolNode(control, "span");
         legendLabels.set(i, { control, check, swatch, text });
         check.onchange = () => {
-          if (!check.checked && hidden.size === series.length - 1) {
+          if (!check.checked && !config.allowAllHidden && hidden.size === series.length - 1) {
             check.checked = true;
             return;
           }
           if (check.checked) hidden.delete(i);
           else hidden.add(i);
-          draw();
+          if (config.fitVisibleRange) resetRange();
+          else draw();
         };
         const row = toolNode(body, "tr");
         row.dataset.analysisInspection = String(i);
@@ -7136,11 +8998,13 @@ underlying system, so should run in the browser, Node, or Plask.
       return start + Math.max(0, Math.min(1, (x - left) / (right - left))) * (end - start);
     };
     function zoom(factor) {
+      followingFull = false;
       [start, end] = zoomAnalysisWindow(axisMs, start, end, factor, cursor);
       cursor = Math.max(start, Math.min(end, cursor));
       draw();
     }
     function pan(direction) {
+      followingFull = false;
       const span = end - start, next = Math.max(0, Math.min(axisMs - span, start + direction * span / 2));
       start = next;
       end = next + span;
@@ -7189,11 +9053,11 @@ underlying system, so should run in the browser, Node, or Plask.
       }
     }
     function draw() {
-      var _a, _b;
+      var _a2, _b;
       if (disposed) return;
       width = Math.max(260, canvas.clientWidth);
       right = width - 14;
-      ratio = (window.devicePixelRatio || 1) * (Number((_a = canvas.closest("#tierscope-session-tools")) == null ? void 0 : _a.dataset.renderScale) || 1);
+      ratio = (window.devicePixelRatio || 1) * (Number((_a2 = canvas.closest("#tierscope-session-tools")) == null ? void 0 : _a2.dataset.renderScale) || 1);
       height = Math.max(100, canvas.clientHeight || 200);
       bottom = height - 36;
       canvas.width = bitmap.width = width * ratio;
@@ -7207,8 +9071,8 @@ underlying system, so should run in the browser, Node, or Plask.
         plotCache = { series, start, end, width: right - left, plots: new Array(series.length) };
       }
       const plots = series.map((s, j) => {
-        var _a2;
-        return hidden.has(j) ? null : (_a2 = plotCache.plots)[j] || (_a2[j] = axisMode === "clock" ? buildClockPlot(s.clock, start, end, right - left) : buildAnalysisPlot(s, start, end, right - left));
+        var _a3;
+        return hidden.has(j) ? null : (_a3 = plotCache.plots)[j] || (_a3[j] = axisMode === "clock" ? buildClockPlot(s.clock, start, end, right - left) : buildAnalysisPlot(s, start, end, right - left));
       });
       let maximum = 1;
       for (const plot of plots) if (plot) maximum = Math.max(maximum, plot.maximum);
@@ -7241,7 +9105,7 @@ underlying system, so should run in the browser, Node, or Plask.
         target.strokeStyle = target.fillStyle = color;
         target.lineWidth = backgroundSeries[j] ? 1.2 : 1.8;
         target.lineCap = "butt";
-        target.setLineDash(solidSeries[j] ? [] : [6, 4]);
+        target.setLineDash(trackedSeries[j] ? [] : [6, 4]);
         target.beginPath();
         let previousY = 0;
         const dots = [], points = plots[j].points;
@@ -7275,24 +9139,18 @@ underlying system, so should run in the browser, Node, or Plask.
         ctx.globalAlpha = 1;
       }
       function paintForeground(j) {
-        var _a2, _b2;
         if (hidden.has(j) || backgroundSeries[j]) return;
-        const colorIndex = axisMode === "live" ? (_b2 = (_a2 = config.colorIndices) == null ? void 0 : _a2[j]) != null ? _b2 : colorIndices[j] : colorIndices[j];
-        const color = comparisonLineColor(colorIndex, isDark);
+        const color = comparisonLineColor(colorIndices[j], isDark);
         ctx.globalAlpha = opacities[j];
         paintSeries(ctx, j, color);
       }
-      if (styledTimeline) {
-        for (let layer = 0; layer < 3; layer++) for (let position = newestFirst.length - 1; position >= 0; position--) {
-          const j = newestFirst[position], seriesLayer = primarySeries[j] ? 2 : trackedSeries[j] ? 1 : 0;
-          if (seriesLayer === layer) paintForeground(j);
-        }
-      } else {
-        for (let position = newestFirst.length - 1; position >= 0; position--) paintForeground(newestFirst[position]);
+      for (let layer = 0; layer < 3; layer++) for (let position = newestFirst.length - 1; position >= 0; position--) {
+        const j = newestFirst[position], seriesLayer = primarySeries[j] ? 2 : trackedSeries[j] ? 1 : 0;
+        if (seriesLayer === layer) paintForeground(j);
       }
       ctx.globalAlpha = 1;
       range.textContent = "Chart window " + (datedAxis() ? liveDate(start).toLocaleString() + " – " + liveDate(end).toLocaleString() : axisLabel(start) + " – " + axisLabel(end) + (axisMode === "clock" ? " · 24h local clock" : " · full comparison/session range " + elapsed(axisMs)));
-      hint.textContent = (axisMode === "live" ? "Models are aligned by actual dated sample timestamps. Each line ends at its last accepted scan; it is not extended to the current time." : axisMode === "timeline" ? "Sessions are aligned by actual dated sample timestamps. Lines end at the last accepted sample, with no assumed coverage to the current time." : axisMode === "clock" ? "Aligned by local time of day. Midnight crossings continue at the start of the chart. Clock changes are separate segments; repeated clock times can show multiple dated values. Statistics use full sessions." : "Aligned from each session’s first retained sample, using real elapsed time. Hidden lines and zoom do not change summary totals or the shared comparison length.") + " Move to inspect; click to pin, drag to zoom, or use the buttons and arrow keys. Gaps have no assumed samples." + (styledTimeline ? " Solid pink marks the current room’s tracked session. Other tracked sessions are solid; historical sessions are dashed, with older history in faint gray." : axisMode === "live" ? " Each model has a solid, opaque line and can be hidden independently." : series.length > COMPARISON_FOREGROUND_COUNT ? " The newest twelve lines fade progressively; older sessions form a faint background. Each session remains inspectable and can be hidden." : " The newest line is opaque; earlier sessions fade progressively.");
+      hint.textContent = (axisMode === "live" ? "Models are aligned by actual dated sample timestamps. Each line ends at its last accepted scan; it is not extended to the current time." : axisMode === "timeline" ? "Sessions are aligned by actual dated sample timestamps. Lines end at the last accepted sample, with no assumed coverage to the current time." : axisMode === "clock" ? "Aligned by local time of day. Midnight crossings continue at the start of the chart. Clock changes are separate segments; repeated clock times can show multiple dated values. Statistics use full sessions." : "Aligned from each session’s first retained sample, using real elapsed time. Hidden lines and zoom do not change summary totals or the shared comparison length.") + " Move to inspect; click to pin, drag to zoom, or use the buttons and arrow keys. Gaps have no assumed samples." + (series.length > 1 || datedAxis() ? " Ongoing sessions use solid lines. Dashed lines fade with age and turn gray after the newest " + COMPARISON_FOREGROUND_COUNT + " sessions." : "");
       zoomIn.disabled = end - start <= Math.min(1e3, axisMs);
       zoomOut.disabled = end - start >= axisMs;
       panLeft.disabled = start <= 0;
@@ -7320,6 +9178,7 @@ underlying system, so should run in the browser, Node, or Plask.
       cursor = timeAt(event);
       drag = null;
       if (Math.abs(event.clientX - origin.x) > 5 && Math.abs(cursor - origin.from) >= Math.min(1e3, axisMs)) {
+        followingFull = false;
         start = Math.min(cursor, origin.from);
         end = Math.max(cursor, origin.from);
         pinned = origin.pinned;
@@ -7379,6 +9238,16 @@ underlying system, so should run in the browser, Node, or Plask.
       }
       cursor = Math.max(start, Math.min(end, cursor + originShift));
     }
+    function fitFullRange() {
+      [start, end] = config.fitVisibleRange ? visibleAnalysisWindow(series, hidden, axisMs) : [0, axisMs];
+      cursor = Math.max(start, Math.min(end, cursor));
+    }
+    function resetRange() {
+      followingFull = true;
+      fitFullRange();
+      draw();
+    }
+    if (config.fitVisibleRange && followingFull) fitFullRange();
     filterLines();
     renderLinePage();
     draw();
@@ -7387,7 +9256,8 @@ underlying system, so should run in the browser, Node, or Plask.
       canvas,
       settings,
       draw,
-      capture: () => __spreadValues(__spreadValues({
+      resetRange,
+      capture: () => __spreadValues(__spreadValues(__spreadValues({
         start,
         end,
         cursor,
@@ -7395,7 +9265,7 @@ underlying system, so should run in the browser, Node, or Plask.
         axisMs,
         axisMode,
         hidden: [...hidden]
-      }, datedAxis() ? { originAt: config.originAt, sourceIds: config.sourceIds } : {}), paged ? { linePage, lineQuery } : {}),
+      }, datedAxis() ? { originAt: config.originAt, sourceIds: config.sourceIds } : {}), config.fitVisibleRange ? { followingFull } : {}), paged ? { linePage, lineQuery } : {}),
       update(nextSeries, nextAxis, nextMetricLabel, nextMode = "elapsed", nextConfig = config) {
         if (disposed) return;
         const originShift = datedAxis() && datedAxis(nextMode) ? (config.originAt || 0) - (nextConfig.originAt || 0) : 0;
@@ -7410,7 +9280,9 @@ underlying system, so should run in the browser, Node, or Plask.
           end = axisMs;
           cursor = 0;
           pinned = false;
+          followingFull = true;
         } else fitWindow(previousAxis, originShift);
+        if (config.fitVisibleRange && followingFull) fitFullRange();
         drag = null;
         refreshSeriesStyling();
         canvas.setAttribute("aria-label", chartLabel());
@@ -7455,19 +9327,16 @@ underlying system, so should run in the browser, Node, or Plask.
     return colors;
   }
   function buildLiveModelSeries(archives, metric = "room", options = {}) {
-    let latest = 0, earliest = Infinity;
+    let latest = 0;
     for (const archive of archives) for (const time of archive.session.history.timestamps) {
       if (!Number.isSafeInteger(time) || time < 0 || time > 864e13) continue;
       latest = Math.max(latest, time);
-      earliest = Math.min(earliest, time);
     }
     const now = options.now === void 0 ? latest : options.now;
     const windowMs = options.windowMs === void 0 ? 36e5 : options.windowMs;
     if (!Number.isSafeInteger(now) || now < 0 || now > 864e13 || !(windowMs === Infinity || Number.isSafeInteger(windowMs) && windowMs > 0)) throw new Error("Invalid live comparison window.");
-    const originAt = options.originAt === void 0 ? Math.max(0, windowMs === Infinity ? earliest === Infinity ? now : Math.min(earliest, now) : now - windowMs) : options.originAt;
-    if (!Number.isSafeInteger(originAt) || originAt < 0 || originAt > now) throw new Error("Invalid live comparison origin.");
-    let excludedSamples = 0;
-    const series = archives.map((archive) => {
+    let excludedSamples = 0, earliest = Infinity, acceptedLatest = 0;
+    const accepted = archives.map((archive) => {
       const input = analysisSeries(archive, metric), timestamps = archive.session.history.timestamps;
       const output = { times: [], values: [], breaks: [], timestamps: [] };
       let previous = -1, interrupted = false;
@@ -7478,271 +9347,27 @@ underlying system, so should run in the browser, Node, or Plask.
           interrupted = true;
           return;
         }
-        output.times.push(time - originAt);
+        output.times.push(time);
         output.values.push(value);
         output.breaks.push(interrupted || !!input.breaks[index]);
         output.timestamps.push(time);
+        earliest = Math.min(earliest, time);
+        acceptedLatest = Math.max(acceptedLatest, time);
         previous = time;
         interrupted = false;
       });
+      return output;
+    });
+    const originAt = options.originAt === void 0 ? Math.max(0, windowMs === Infinity ? earliest === Infinity ? now : earliest : now - windowMs) : options.originAt;
+    if (!Number.isSafeInteger(originAt) || originAt < 0 || originAt > now) throw new Error("Invalid live comparison origin.");
+    const axisEnd = windowMs === Infinity && earliest !== Infinity ? acceptedLatest : now;
+    const series = accepted.map((output) => {
+      output.times = output.times.map((time) => time - originAt);
       const first = Math.max(0, analysisSampleIndex(output.times, 0));
       for (const key of ["times", "values", "breaks", "timestamps"]) output[key] = output[key].slice(first);
       return output;
     });
-    return { series, labels: archives.map((archive) => archive.room), originAt, axisMs: Math.max(1e3, now - originAt), excludedSamples };
-  }
-
-  // src/live-model-data.js
-  var LIVE_MODEL_PREFIX = "tierscope:live:v1:source:";
-  var LIVE_MODEL_NOTICE = "tierscope:live:v1:changed";
-  var LIVE_MODEL_HEARTBEAT_MS = 3e4;
-  var LIVE_MODEL_STALE_MS = 18e4;
-  var statuses = /* @__PURE__ */ new Set(["tracking", "paused", "stopped", "waiting", "offline", "retry", "reset", "unavailable"]);
-  var timestamp = (value) => Number.isSafeInteger(value) && value >= 0 && value <= 864e13;
-  function decodeLiveModelSource(value, key, at) {
-    if (!value || value.version !== 1 || typeof value.publisherId !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.publisherId) || key !== LIVE_MODEL_PREFIX + value.publisherId || typeof value.room !== "string" || !/^[a-z0-9_-]{1,100}$/.test(value.room) || typeof value.roomEpoch !== "string" || !/^[a-z0-9-]{1,160}$/i.test(value.roomEpoch) || !(value.sessionStartedAt === null || timestamp(value.sessionStartedAt)) || value.sessionId !== value.roomEpoch + "@" + (value.sessionStartedAt === null ? "pending" : value.sessionStartedAt) || value.id !== value.publisherId + ":" + value.room + ":" + value.sessionId || !statuses.has(value.status) || !timestamp(value.lastSeenAt) || value.lastSeenAt > at + 5e3 || !Number.isSafeInteger(value.sampleCount) || value.sampleCount < 0 || value.sampleCount > 1e6 || !(value.sampleCount === 0 ? value.sampleAt === null : timestamp(value.sampleAt) && value.sampleAt <= value.lastSeenAt) || !(value.sessionStartedAt === null || value.sessionStartedAt <= value.lastSeenAt) || typeof value.revision !== "string" || value.revision.length > 512) return null;
-    if (value.recordKey === null) {
-      if (value.recordSavedAt !== null || value.revision !== "") return null;
-    } else if (typeof value.recordKey !== "string" || !value.recordKey.startsWith("tierscope:tab:v2:" + value.room + ":") || !/^[a-z0-9-]{1,160}$/i.test(value.recordKey.slice(("tierscope:tab:v2:" + value.room + ":").length)) || !timestamp(value.recordSavedAt) || value.recordSavedAt > value.lastSeenAt || !value.revision) return null;
-    return {
-      version: 1,
-      id: value.id,
-      publisherId: value.publisherId,
-      room: value.room,
-      roomEpoch: value.roomEpoch,
-      sessionId: value.sessionId,
-      sessionStartedAt: value.sessionStartedAt,
-      status: value.status,
-      lastSeenAt: value.lastSeenAt,
-      sampleAt: value.sampleAt,
-      sampleCount: value.sampleCount,
-      revision: value.revision,
-      recordKey: value.recordKey,
-      recordSavedAt: value.recordSavedAt
-    };
-  }
-  function liveModelSourceStatus(source, at, epoch) {
-    if (source.roomEpoch !== epoch) return "reset";
-    if (at - source.lastSeenAt > LIVE_MODEL_STALE_MS) return "stale";
-    return source.status;
-  }
-
-  // src/live-model-sources.js
-  function createLiveModelExchange(effects) {
-    const archives = /* @__PURE__ */ new Map();
-    let discoveryKeys = null, discoveryAt = -Infinity;
-    function invalidate() {
-      discoveryKeys = null;
-    }
-    function readSources(force = false) {
-      if (force) invalidate();
-      const sources = [], errors = [];
-      const at = effects.now();
-      try {
-        if (!discoveryKeys || at < discoveryAt || at - discoveryAt >= 1e4) {
-          discoveryKeys = effects.list().filter((key) => key.startsWith(LIVE_MODEL_PREFIX));
-          discoveryAt = at;
-        }
-      } catch (_) {
-        return { sources, error: "Live tab discovery is unavailable. Existing chart snapshots are retained." };
-      }
-      for (const key of discoveryKeys) {
-        try {
-          const source = decodeLiveModelSource(effects.get(key, null), key, at);
-          if (!source || at - source.lastSeenAt > 3 * 60 * 60 * 1e3) continue;
-          source.status = liveModelSourceStatus(source, at, effects.epoch(source.room));
-          sources.push(Object.freeze(source));
-        } catch (_) {
-          errors.push(key);
-        }
-      }
-      sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
-      const currentIds = new Set(sources.map((source) => source.id));
-      for (const id of archives.keys()) if (!currentIds.has(id)) archives.delete(id);
-      return { sources, error: errors.length ? "Some live tabs could not be read. Their previous snapshots are retained." : "" };
-    }
-    function readArchive(source) {
-      var _a;
-      const at = effects.now(), key = LIVE_MODEL_PREFIX + source.publisherId;
-      const current = decodeLiveModelSource(effects.get(key, null), key, at);
-      if (!current || current.id !== source.id || current.recordKey !== source.recordKey || current.revision !== source.revision || current.roomEpoch !== effects.epoch(current.room) || ["reset", "unavailable"].includes(current.status) || !current.recordKey) {
-        throw new Error("This live source changed or is unavailable. Its previous chart snapshot is retained.");
-      }
-      const cached = archives.get(current.id);
-      if ((cached == null ? void 0 : cached.revision) === current.revision) return cached.archive;
-      const raw = effects.get(current.recordKey, null);
-      if (typeof raw !== "string") throw new Error("The live session record is unavailable.");
-      const data = JSON.parse(raw), times = (_a = data == null ? void 0 : data.history) == null ? void 0 : _a.timestamps;
-      if (data.roomEpoch !== current.roomEpoch || data.sessionStartedAt !== current.sessionStartedAt || data.timestamp !== current.recordSavedAt || !Array.isArray(times) || times.length !== current.sampleCount || times.at(-1) !== current.sampleAt) {
-        throw new Error("The live session changed while reading. Waiting for its next announcement.");
-      }
-      const archive = freezeRecordingData(effects.archive(current.room, data));
-      if (effects.epoch(current.room) !== current.roomEpoch) throw new Error("This room was reset. Choose its new session.");
-      archives.set(current.id, { revision: current.revision, archive });
-      return archive;
-    }
-    function clear() {
-      archives.clear();
-      invalidate();
-    }
-    function retain(ids) {
-      const selected = ids instanceof Set ? ids : new Set(ids);
-      for (const id of archives.keys()) if (!selected.has(id)) archives.delete(id);
-    }
-    function cleanupExpired() {
-      if (!effects.remove) return;
-      try {
-        const at = effects.now();
-        for (const key of effects.list().filter((key2) => key2.startsWith(LIVE_MODEL_PREFIX))) {
-          const source = decodeLiveModelSource(effects.get(key, null), key, at);
-          if (!source || at - source.lastSeenAt <= 3 * 60 * 60 * 1e3) continue;
-          const current = decodeLiveModelSource(effects.get(key, null), key, at);
-          if ((current == null ? void 0 : current.id) === source.id && current.lastSeenAt === source.lastSeenAt && current.revision === source.revision) effects.remove(key);
-        }
-        invalidate();
-      } catch (_) {
-      }
-    }
-    return { readSources, readArchive, clear, retain, invalidate, cleanupExpired };
-  }
-  var exchange = createLiveModelExchange({
-    get: (key, fallback) => GM_getValue(key, fallback),
-    list: () => GM_listValues(),
-    remove: (key) => GM_deleteValue(key),
-    now: () => Date.now(),
-    epoch: (room2) => getRoomEpoch(getStorageKey(room2)),
-    archive: (room2, session) => validateSessionFile({
-      format: runtime.SESSION_FILE_FORMAT,
-      formatVersion: runtime.SESSION_FILE_VERSION,
-      producerVersion: session.producerVersion || runtime.TIERSCOPE_VERSION,
-      room: room2,
-      session
-    })
-  });
-  var publisherId = null, heartbeat = null, announced = false, started = false, cleanupInitialized = false, savedBinding = null;
-  function notifyLiveModels() {
-    exchange.invalidate();
-    GM_setValue(LIVE_MODEL_NOTICE, { version: 1, at: Date.now(), token: makeStorageId() });
-  }
-  function retirePublisher() {
-    if (heartbeat !== null) clearInterval(heartbeat);
-    heartbeat = null;
-    const wasAnnounced = announced;
-    announced = false;
-    savedBinding = null;
-    if (!publisherId || !wasAnnounced) return;
-    try {
-      GM_deleteValue(LIVE_MODEL_PREFIX + publisherId);
-      notifyLiveModels();
-    } catch (_) {
-    }
-  }
-  function publishLiveModelSource(savedTimestamp = null) {
-    var _a, _b;
-    if (!started || !publisherId) return;
-    const room2 = (_a = roomFromUrl(location.href)) == null ? void 0 : _a.toLowerCase();
-    if (!room2 || runtime.lastUrl !== location.href || runtime.activeSessionStorageKey !== getStorageKey(room2)) {
-      retirePublisher();
-      return;
-    }
-    if (heartbeat === null) heartbeat = setInterval(publishLiveModelSource, LIVE_MODEL_HEARTBEAT_MS);
-    try {
-      const at = Date.now(), epoch = getRoomEpoch(getStorageKey(room2));
-      const sessionStartedAt = runtime.sessionStartedAt, roomEpoch = runtime.activeRoomEpoch;
-      if (typeof roomEpoch !== "string") {
-        retirePublisher();
-        return;
-      }
-      const history = runtime.history, sampleCount = history.timestamps.length, sampleAt = (_b = history.timestamps.at(-1)) != null ? _b : null;
-      const record = runtime.tabRecords.get(getStorageKey(room2));
-      const sessionId = roomEpoch + "@" + (sessionStartedAt === null ? "pending" : sessionStartedAt);
-      const candidateKey = record ? runtime.TAB_RECORD_PREFIX + room2 + ":" + record.id : null;
-      if (record && Number.isSafeInteger(savedTimestamp) && savedTimestamp >= 0) {
-        savedBinding = { recordKey: candidateKey, sessionId, timestamp: savedTimestamp, writtenAt: record.savedAt, sampleCount, sampleAt };
-      }
-      const saved = !getSessionSaveState(room2).error && record && sampleCount > 0 && savedBinding && savedBinding.recordKey === candidateKey && savedBinding.sessionId === sessionId && savedBinding.writtenAt === record.savedAt && savedBinding.sampleCount === sampleCount && savedBinding.sampleAt === sampleAt;
-      const recordKey = saved ? candidateKey : null;
-      const revision = saved ? [record.id, savedBinding.timestamp, record.savedAt, sampleCount, sampleAt].join(":") : "";
-      let status = runtime.isStopped ? "stopped" : runtime.isPaused || !runtime.isAutoRefreshOn ? "paused" : isBrowserOffline() ? "offline" : runtime.requestPolicyCache.blocked || runtime.requestPolicyCache.until > at ? "retry" : sampleCount === 0 ? "waiting" : saved ? "tracking" : "unavailable";
-      if (epoch !== roomEpoch) status = "reset";
-      const source = {
-        version: 1,
-        id: publisherId + ":" + room2 + ":" + sessionId,
-        publisherId,
-        room: room2,
-        roomEpoch,
-        sessionId,
-        sessionStartedAt,
-        status,
-        lastSeenAt: at,
-        sampleAt,
-        sampleCount,
-        revision,
-        recordKey,
-        recordSavedAt: saved ? savedBinding.timestamp : null
-      };
-      GM_setValue(LIVE_MODEL_PREFIX + publisherId, source);
-      announced = true;
-      notifyLiveModels();
-    } catch (_) {
-    }
-  }
-  function initializeLiveModelSources() {
-    if (heartbeat !== null) clearInterval(heartbeat);
-    heartbeat = null;
-    started = true;
-    if (!publisherId) publisherId = makeStorageId();
-    if (!cleanupInitialized) {
-      cleanupInitialized = true;
-      exchange.cleanupExpired();
-    }
-    publishLiveModelSource();
-  }
-  function stopLiveModelSources() {
-    started = false;
-    if (heartbeat !== null) clearInterval(heartbeat);
-    heartbeat = null;
-    retirePublisher();
-    exchange.clear();
-  }
-  function readLiveModelSources(force = false) {
-    return exchange.readSources(force);
-  }
-  function readLiveModelArchive(source) {
-    return exchange.readArchive(source);
-  }
-  function retainLiveModelArchives(ids) {
-    exchange.retain(ids);
-  }
-  function subscribeLiveModelSources(changed) {
-    let disposed = false, pending = null, listener = null;
-    function schedule() {
-      if (disposed || pending !== null) return;
-      pending = setTimeout(() => {
-        pending = null;
-        if (!disposed) changed();
-      }, 80);
-    }
-    try {
-      if (typeof GM_addValueChangeListener === "function") listener = GM_addValueChangeListener(LIVE_MODEL_NOTICE, () => {
-        exchange.invalidate();
-        schedule();
-      });
-    } catch (_) {
-    }
-    const timer = setInterval(schedule, 5e3);
-    return () => {
-      disposed = true;
-      clearInterval(timer);
-      if (pending !== null) clearTimeout(pending);
-      if (listener !== null) {
-        try {
-          if (typeof GM_removeValueChangeListener === "function") GM_removeValueChangeListener(listener);
-        } catch (_) {
-        }
-      }
-      exchange.clear();
-    };
+    return { series, labels: archives.map((archive) => archive.room), originAt, axisMs: Math.max(1e3, axisEnd - originAt), excludedSamples };
   }
 
   // src/live-model-comparison.js
@@ -7774,14 +9399,21 @@ underlying system, so should run in the browser, Node, or Plask.
       rowLimit: MODEL_PAGE_SIZE,
       reportPage: 0,
       chartState: null,
-      chartIds: []
+      chartIds: [],
+      hiddenSources: /* @__PURE__ */ new Set()
     };
   }
   function renderLiveModelsComparison(parent, { state, getMetric, metricControl, currentRoom = "" }) {
+    var _a;
+    if (!state.hiddenSources) {
+      const hidden = new Set(((_a = state.chartState) == null ? void 0 : _a.hidden) || []);
+      state.hiddenSources = new Set(state.chartIds.filter((id, index) => hidden.has(index)));
+    }
     const root = toolNode(parent, "section");
     root.id = "tools-live-models";
     toolNode(root, "h3", "Live models comparison");
-    toolNode(root, "p", "Uses scans from your other TierScope tabs. No additional API requests.", "tools-muted");
+    const sourceExplanation = toolNode(root, "p", "Uses scans from your other TierScope tabs. No additional API requests.", "tools-muted");
+    sourceExplanation.id = "tools-live-source-explanation";
     const controls = toolNode(root, "div", void 0, "tools-actions");
     const freeze = toolButton(controls, "", () => {
       state.frozen = !state.frozen;
@@ -7791,17 +9423,27 @@ underlying system, so should run in the browser, Node, or Plask.
     }, "tools-live-freeze");
     freeze.className = "tools-primary";
     toolButton(controls, "Refresh sources", () => refresh(true), "tools-live-refresh");
+    const clearInactive = toolButton(controls, "Clear stopped/stale", () => {
+      try {
+        dismissComparisonSources(clearableSources);
+        state.autoPicked = true;
+        plotSignature = "";
+        refresh();
+      } catch (error) {
+        status.textContent = "Some entries could not be cleared: " + error.message;
+      }
+    }, "tools-live-clear-inactive");
+    clearInactive.title = "Hide stopped, stale and closed comparison entries. Saved recordings and active tracking are preserved.";
     const rangeLabel = toolNode(controls, "label", "Show "), windowSelect = toolNode(rangeLabel, "select");
     windowSelect.id = "tools-live-window";
-    for (const [value, label] of [[9e5, "Last 15 minutes"], [36e5, "Last hour"], [144e5, "Last 4 hours"], [864e5, "Last 24 hours"], [Infinity, "Full sessions"]]) {
+    for (const { ms, label } of CHART_RANGES) {
       const option = toolNode(windowSelect, "option", label);
-      option.value = String(value);
+      option.value = String(ms);
     }
     windowSelect.value = String(state.windowMs);
     windowSelect.onchange = () => {
       state.windowMs = Number(windowSelect.value);
-      clearChart();
-      state.chartState = null;
+      resetRange = true;
       plotSignature = "";
       refresh();
     };
@@ -7879,7 +9521,8 @@ underlying system, so should run in the browser, Node, or Plask.
     });
     const reportBody = toolNode(table, "tbody");
     toolNode(root, "p", "The chart uses actual dates and clock times, including midnight crossings. Gaps stay gaps and lines end at their last accepted sample. A stale source may be suspended or closed; its old counts are never treated as a fresh scan. Keeping sessions in Library remains a separate choice.", "tools-muted");
-    let disposed = false, refreshing = false, view = null, observer = null, detach = null;
+    let disposed = false, refreshing = false, view = null, observer = null, detach = null, detachDismissals = null, resetRange = false;
+    let clearableSources = [];
     let rows = /* @__PURE__ */ new Map(), currentGroups = /* @__PURE__ */ new Map(), reportData = [], topology = "", plotSignature = "", notice = "", userNotice = "";
     function age(time, at) {
       if (!Number.isFinite(time)) return "No sample";
@@ -7892,9 +9535,18 @@ underlying system, so should run in the browser, Node, or Plask.
     function eligible(source) {
       return source && source.sampleCount > 0 && !["reset", "unavailable", "stale"].includes(source.status);
     }
+    function rememberChart() {
+      if (!view) return;
+      state.chartState = view.capture();
+      const hidden = new Set(state.chartState.hidden);
+      state.chartIds.forEach((id, index) => {
+        if (hidden.has(index)) state.hiddenSources.add(id);
+        else state.hiddenSources.delete(id);
+      });
+    }
     function clearChart() {
       if (view) {
-        state.chartState = view.capture();
+        rememberChart();
         view.dispose();
         view = null;
       }
@@ -7914,7 +9566,7 @@ underlying system, so should run in the browser, Node, or Plask.
       refresh();
     }
     function sourceText(source, index, at) {
-      return "Tab " + (index + 1) + " · " + describe(source) + " · " + (source.sampleAt ? new Date(source.sampleAt).toLocaleTimeString() : "no sample");
+      return (source.kind === "background" ? "Compare without watching" : "Tab " + (index + 1)) + " · " + describe(source) + " · " + (source.sampleAt ? new Date(source.sampleAt).toLocaleTimeString() : "no sample");
     }
     function updateRows(groups, at) {
       const query = state.query.trim().toLowerCase(), filtered = [...groups].filter(([room2]) => room2.includes(query));
@@ -7933,7 +9585,7 @@ underlying system, so should run in the browser, Node, or Plask.
           toolNode(label, "strong", room2);
           const select = toolNode(row, "select");
           select.dataset.liveTab = room2;
-          select.setAttribute("aria-label", "Source tab for " + room2);
+          select.setAttribute("aria-label", "Tracking source for " + room2);
           for (const source of sources) {
             const option = toolNode(select, "option");
             option.value = source.id;
@@ -7947,8 +9599,11 @@ underlying system, so should run in the browser, Node, or Plask.
           rows.set(room2, { row, check, select, tabNote, detail, snapshot });
           check.onchange = () => choose(state.known.get(state.choices.get(room2)), check.checked);
           select.onchange = () => {
+            rememberChart();
             const old = state.choices.get(room2), checked = state.selected.delete(old);
             state.choices.set(room2, select.value);
+            if (state.hiddenSources.has(old)) state.hiddenSources.add(select.value);
+            else state.hiddenSources.delete(select.value);
             if (checked) state.selected.add(select.value);
             state.autoPicked = true;
             plotSignature = "";
@@ -7971,8 +9626,8 @@ underlying system, so should run in the browser, Node, or Plask.
         });
         const publishers = new Set(sources.filter((item) => item.status !== "unavailable" && item.status !== "reset").map((item) => item.publisherId));
         row.tabNote.hidden = publishers.size < 2;
-        row.tabNote.textContent = publishers.size + " tabs · using the session with the most samples";
-        row.detail.textContent = describe(source);
+        row.tabNote.textContent = publishers.size + (sources.some((item) => item.kind === "background") ? " sources" : " tabs") + " · using the session with the most samples";
+        row.detail.textContent = (source.kind === "background" ? "Compare without watching · " : "") + describe(source);
         row.snapshot.textContent = source.sampleCount ? source.sampleCount.toLocaleString() + " samples · latest " + age(source.sampleAt, at) : "Waiting for a first accepted sample";
         row.row.dataset.liveState = source.status;
         row.row.dataset.liveSampleCount = String(source.sampleCount);
@@ -8013,6 +9668,7 @@ underlying system, so should run in the browser, Node, or Plask.
       plotSignature = signature;
       if (!selected.length) {
         clearChart();
+        state.chartIds = [];
         reportData = [];
         renderReports();
         return;
@@ -8021,11 +9677,33 @@ underlying system, so should run in the browser, Node, or Plask.
       const same = state.chartIds.length === ids.length && ids.every((id, index) => state.chartIds[index] === id);
       if (!same) {
         clearChart();
-        state.chartState = null;
+        state.chartState = __spreadProps(__spreadValues({}, state.chartState), {
+          start: 0,
+          end: data.axisMs,
+          cursor: 0,
+          pinned: false,
+          axisMs: data.axisMs,
+          axisMode: "live",
+          originAt: data.originAt,
+          sourceIds: ids,
+          hidden: ids.flatMap((id, index) => state.hiddenSources.has(id) ? [index] : [])
+        });
         state.reportPage = 0;
+        resetRange = true;
       }
       state.colors = allocateLiveModelColors(selected.map((source) => source.room), state.colors, currentRoom);
-      const config = { originAt: data.originAt, sourceIds: ids, colorIndices: selected.map((source) => state.colors.get(source.room)) };
+      const config = {
+        originAt: data.originAt,
+        sourceIds: ids,
+        fitVisibleRange: state.windowMs === Infinity,
+        allowAllHidden: true,
+        colorIndices: selected.map((source) => state.colors.get(source.room)),
+        rankTimes: selected.map((source) => source.sessionStartedAt),
+        seriesStyles: selected.map((source) => {
+          const live = isOngoingLiveModelStatus(source.status);
+          return { live, primary: live && source.room === currentRoom };
+        })
+      };
       if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[getMetric()], "live", config);
       else {
         view = renderAnalysisChart(
@@ -8034,7 +9712,7 @@ underlying system, so should run in the browser, Node, or Plask.
           selected.map((source) => source.room),
           data.axisMs,
           ANALYSIS_METRICS[getMetric()],
-          same ? state.chartState : null,
+          state.chartState,
           "live",
           config
         );
@@ -8042,6 +9720,10 @@ underlying system, so should run in the browser, Node, or Plask.
           observer = new window.ResizeObserver(view.draw);
           observer.observe(view.canvas);
         }
+      }
+      if (resetRange) {
+        view.resetRange();
+        resetRange = false;
       }
       state.chartIds = ids.slice();
       state.displayAt = state.frozen ? state.frozenAt : at;
@@ -8083,13 +9765,23 @@ underlying system, so should run in the browser, Node, or Plask.
       refreshing = true;
       try {
         notice = "";
-        const at = Date.now(), result = readLiveModelSources(force), sources = [...result.sources || []], available = new Map(sources.map((source) => [source.id, source]));
+        const at = Date.now(), result = readLiveModelSources(force), sources = (result.sources || []).filter((source) => !isComparisonDismissed(source)), available = new Map(sources.map((source) => [source.id, source]));
+        sourceExplanation.textContent = sources.some((source) => source.kind === "background") ? "Uses scans from TierScope tabs and Compare without watching. Rooms tracked without watching make additional API requests while running." : "Uses scans from your other TierScope tabs. No additional API requests.";
         if (result.error) notice = "Live sharing is unavailable: " + result.error + ". Previous snapshots are retained.";
         for (const id of state.selected) {
           if (available.has(id)) continue;
           const previous = state.known.get(id);
+          if (previous && isComparisonDismissed(previous)) {
+            state.selected.delete(id);
+            state.snapshots.delete(id);
+            state.known.delete(id);
+            if (state.choices.get(previous.room) === id) state.choices.delete(previous.room);
+            continue;
+          }
           if (previous) sources.push(__spreadProps(__spreadValues({}, previous), { status: "unavailable" }));
         }
+        clearableSources = sources.filter((source) => ["stopped", "stale"].includes(source.status) || source.status === "unavailable" && !available.has(source.id));
+        clearInactive.disabled = !clearableSources.length;
         const groups = /* @__PURE__ */ new Map();
         sources.sort((a, b) => a.room.localeCompare(b.room) || a.id.localeCompare(b.id));
         for (const source of sources) {
@@ -8104,6 +9796,11 @@ underlying system, so should run in the browser, Node, or Plask.
           const preferred = candidates.sort((a, b) => b.sampleCount - a.sampleCount || Number(b.id === choice) - Number(a.id === choice) || (b.sampleAt || 0) - (a.sampleAt || 0) || a.id.localeCompare(b.id))[0];
           const changedSession = previous && entries.some((source) => available.has(source.id) && source.publisherId === previous.publisherId && source.id !== choice);
           if (!state.frozen && preferred && !result.error && (!choice || !state.selected.has(choice) || (previous == null ? void 0 : previous.status) !== "reset" && !changedSession && (!available.has(choice) || (previous == null ? void 0 : previous.status) === "stale" || preferred.sampleCount > previous.sampleCount))) {
+            if (choice && choice !== preferred.id) {
+              rememberChart();
+              if (state.hiddenSources.has(choice)) state.hiddenSources.add(preferred.id);
+              else state.hiddenSources.delete(preferred.id);
+            }
             if (state.selected.delete(choice)) state.selected.add(preferred.id);
             state.choices.set(room2, preferred.id);
           } else if (!choice) state.choices.set(room2, entries[0].id);
@@ -8124,12 +9821,12 @@ underlying system, so should run in the browser, Node, or Plask.
         freeze.disabled = !state.snapshots.size;
         chooserTitle.textContent = "Models being tracked · " + groups.size + " · " + state.selected.size + " selected";
         empty.hidden = groups.size > 0;
-        empty.textContent = "Open broadcast rooms in other tabs with TierScope enabled. Models appear after their tabs start tracking; no favorite or saved Library session is required.";
+        empty.textContent = "Open broadcast rooms in other tabs with TierScope enabled, or use Compare without watching in Current Live Session. Models appear after tracking starts; no favorite or saved Library session is required.";
         const unavailable = selected.filter((source) => ["unavailable", "reset", "stale"].includes(source.status)).length;
         status.textContent = (state.frozen ? "Frozen at " + new Date(state.frozenAt).toLocaleTimeString() + " · source status still updates." : "Following new scans · " + state.selected.size + " models selected.") + (unavailable ? " " + unavailable + " source(s) unavailable or stale; open Models being tracked for details." : "") + (notice ? " " + notice : "") + (userNotice ? " " + userNotice : "");
         if (!groups.size) {
           chooser.open = true;
-          status.textContent = "Open a room in another TierScope tab to start comparing live models.";
+          status.textContent = "Open a room in another TierScope tab or use Compare without watching in Current Live Session.";
         }
         for (const id of [...state.snapshots.keys()]) if (!state.selected.has(id)) state.snapshots.delete(id);
         retainLiveModelArchives(state.selected);
@@ -8143,6 +9840,7 @@ underlying system, so should run in the browser, Node, or Plask.
     }
     refresh();
     detach = subscribeLiveModelSources(() => refresh());
+    detachDismissals = subscribeComparisonDismissals(() => refresh());
     return {
       refresh,
       draw() {
@@ -8152,8 +9850,9 @@ underlying system, so should run in the browser, Node, or Plask.
         if (disposed) return;
         disposed = true;
         if (detach) detach();
+        if (detachDismissals) detachDismissals();
         if (view) {
-          state.chartState = view.capture();
+          rememberChart();
           view.dispose();
         }
         if (observer) observer.disconnect();
@@ -8166,12 +9865,11 @@ underlying system, so should run in the browser, Node, or Plask.
   function timestamp2(value) {
     return Number.isSafeInteger(value) && value >= 0 && value <= 864e13;
   }
-  var ongoingSourceStatuses = /* @__PURE__ */ new Set(["tracking", "paused", "retry", "offline"]);
   function buildRecentComparisonStyles(entries, sources, currentRoom = "") {
     if (!Array.isArray(entries)) throw new Error("Invalid recent comparison style input.");
     const winners = /* @__PURE__ */ new Map(), primaryRoom = typeof currentRoom === "string" ? currentRoom.toLowerCase() : "";
     for (const source of Array.isArray(sources) ? sources : []) {
-      if (!source || typeof source.room !== "string" || !source.room.length || typeof source.id !== "string" || !source.id.length || typeof source.roomEpoch !== "string" || !source.roomEpoch.length || !ongoingSourceStatuses.has(source.status) || !timestamp2(source.sessionStartedAt) || !timestamp2(source.sampleAt) || !Number.isSafeInteger(source.sampleCount) || source.sampleCount <= 0) continue;
+      if (!source || typeof source.room !== "string" || !source.room.length || typeof source.id !== "string" || !source.id.length || typeof source.roomEpoch !== "string" || !source.roomEpoch.length || !isOngoingLiveModelStatus(source.status) || !timestamp2(source.sessionStartedAt) || !timestamp2(source.sampleAt) || !Number.isSafeInteger(source.sampleCount) || source.sampleCount <= 0) continue;
       const room2 = source.room.toLowerCase(), previous = winners.get(room2);
       if (!previous || source.sampleCount > previous.sampleCount || source.sampleCount === previous.sampleCount && (source.sampleAt > previous.sampleAt || source.sampleAt === previous.sampleAt && source.id.localeCompare(previous.id) < 0)) winners.set(room2, source);
     }
@@ -8186,7 +9884,7 @@ underlying system, so should run in the browser, Node, or Plask.
   function selectRecentComparisonEntries(entries, now, windowMs = RECENT_COMPARISON_MS) {
     var _a;
     if (!Array.isArray(entries) || !timestamp2(now)) throw new Error("Invalid recent comparison input.");
-    const rangeMs = Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
+    const rangeMs = windowMs === Infinity || Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= RECENT_COMPARISON_MS ? windowMs : RECENT_COMPARISON_MS;
     const cutoffAt = Math.max(0, now - rangeMs), selected = [];
     for (const [index, entry] of entries.entries()) {
       const archive = entry == null ? void 0 : entry.archive, session = archive == null ? void 0 : archive.session, times = (_a = session == null ? void 0 : session.history) == null ? void 0 : _a.timestamps;
@@ -8276,7 +9974,7 @@ underlying system, so should run in the browser, Node, or Plask.
   function renderRecentComparison(parent, { readEntries, getMetric, metricControl, currentRoom = "", readSources = readLiveModelSources, state = createRecentComparisonState() }) {
     const root = toolNode(parent, "section");
     root.id = "tools-recent-comparison";
-    toolNode(root, "h3", "Last 24 hours · all models");
+    toolNode(root, "h3", "Saved comparison · all models");
     toolNode(root, "p", "All saved models with samples in the selected range. Library filters do not apply.", "tools-muted");
     const controls = toolNode(root, "div", void 0, "tools-actions");
     const freeze = toolButton(controls, "", () => {
@@ -8289,9 +9987,9 @@ underlying system, so should run in the browser, Node, or Plask.
     const refreshButton = toolButton(controls, "Refresh", () => refresh(true), "tools-recent-refresh");
     const rangeLabel = toolNode(controls, "label", "Range "), range = toolNode(rangeLabel, "select");
     range.id = "tools-recent-range";
-    for (const [value, label] of [[36e5, "Last hour"], [144e5, "Last 4 hours"], [432e5, "Last 12 hours"], [RECENT_COMPARISON_MS, "Last 24 hours"]]) {
+    for (const { ms, label } of CHART_RANGES) {
       const option = toolNode(range, "option", label);
-      option.value = String(value);
+      option.value = String(ms);
     }
     range.value = String(state.windowMs);
     range.onchange = () => {
@@ -8327,7 +10025,7 @@ underlying system, so should run in the browser, Node, or Plask.
       state.page++;
       paintReports();
     }, "tools-recent-next");
-    toolNode(root, "p", "Solid lines mark ongoing TierScope tracking, including paused tabs. Pink marks this room’s current session; history uses dashed lines. Gaps stay blank, lines end at their last accepted sample, and older history stays faint gray.", "tools-muted");
+    toolNode(root, "p", "Pink marks this room’s ongoing session. Paused sessions and temporary connection or retry waits still count as ongoing tracking.", "tools-muted");
     let disposed = false, refreshing = false, view = null, observer = null, plotSignature = "", paintSignature = "", selectionSignature = "", selection = null;
     let projection = null, projectionSignature = "";
     function rememberChart() {
@@ -8412,16 +10110,18 @@ underlying system, so should run in the browser, Node, or Plask.
       const nextPaintSignature = [state.revision, state.liveRevision, at, metric, state.windowMs, state.frozen, state.loaded, state.notice, state.liveNotice].join("|");
       if (!force && nextPaintSignature === paintSignature) return;
       rememberChart();
-      if (state.chartWindowMs !== state.windowMs) {
+      const resetRange = state.chartWindowMs !== state.windowMs;
+      if (resetRange) {
         clearChart();
-        const axisMs = Math.max(1e3, Math.min(at, state.windowMs));
+        const axisMs = Number.isFinite(state.windowMs) ? Math.max(1e3, Math.min(at, state.windowMs)) : 1e3;
         if (state.chartState) state.chartState = __spreadProps(__spreadValues({}, state.chartState), {
           start: 0,
           end: axisMs,
           axisMs,
-          originAt: Math.max(0, at - state.windowMs),
+          originAt: Number.isFinite(state.windowMs) ? Math.max(0, at - state.windowMs) : at,
           cursor: 0,
-          pinned: false
+          pinned: false,
+          followingFull: true
         });
         state.chartWindowMs = state.windowMs;
       }
@@ -8445,6 +10145,7 @@ underlying system, so should run in the browser, Node, or Plask.
           sourceIds: ids,
           rankTimes: selection.metadata.map((item) => item.startAt),
           allowAllHidden: true,
+          fitVisibleRange: state.windowMs === Infinity,
           seriesStyles: buildRecentComparisonStyles(selection.entries, state.liveSources, currentRoom)
         };
         state.liveSignature = JSON.stringify(config.seriesStyles);
@@ -8452,6 +10153,15 @@ underlying system, so should run in the browser, Node, or Plask.
           clearChart();
           state.chartState = retainedChartState(ids);
         }
+        if (resetRange && state.chartState) state.chartState = __spreadProps(__spreadValues({}, state.chartState), {
+          start: 0,
+          end: data.axisMs,
+          axisMs: data.axisMs,
+          originAt: data.originAt,
+          cursor: 0,
+          pinned: false,
+          followingFull: true
+        });
         if (view) view.update(data.series, data.axisMs, ANALYSIS_METRICS[metric], "timeline", config);
         else {
           const labels = selection.metadata.map((item) => item.room + " · " + new Date(item.startAt).toLocaleString());
@@ -8461,6 +10171,7 @@ underlying system, so should run in the browser, Node, or Plask.
             observer.observe(view.canvas);
           }
         }
+        if (resetRange) view.resetRange();
         state.chartSources = selection.entries.map((entry, index) => ({ id: ids[index], entry }));
       } else if (!ids.length) {
         clearChart();
@@ -8475,7 +10186,7 @@ underlying system, so should run in the browser, Node, or Plask.
       refreshButton.disabled = state.frozen;
       refreshButton.title = state.frozen ? "Resume comparison to read the latest saved Library sessions." : "Read all saved Library sessions again.";
       status.textContent = (state.frozen ? "Frozen" : "Following saved Library updates") + " · " + ids.length.toLocaleString() + " sessions · " + selection.roomCount.toLocaleString() + " models · " + selection.sampleCount.toLocaleString() + " accepted samples in window." + (state.notice ? " " + state.notice : "") + (state.liveNotice ? " " + state.liveNotice : "");
-      windowLabel.textContent = "Window: " + new Date(selection.cutoffAt).toLocaleString() + " — " + new Date(selection.now).toLocaleString();
+      windowLabel.textContent = state.windowMs === Infinity ? "Full range · saved recordings through " + new Date(selection.now).toLocaleString() : "Window: " + new Date(selection.cutoffAt).toLocaleString() + " — " + new Date(selection.now).toLocaleString();
       windowLabel.title = "Both endpoints are included. A recording qualifies by actual samples, including sessions that started earlier. Future samples, empty recordings and gaps without a sample in this window are excluded. No additional API requests or automatic saves.";
       empty.hidden = !!ids.length;
       empty.textContent = state.loaded ? "No saved Library session has an accepted sample in this date window." : "Saved Library sessions could not be read.";
@@ -8523,7 +10234,7 @@ underlying system, so should run in the browser, Node, or Plask.
             const inputSources = new Map(incoming.map((entry, index) => [String(entry.id || entry.lineage || index), sourceToken(entry)]));
             const changed = !state.loaded || inputSources.size !== state.inputSources.size || [...inputSources].some(([id, source]) => !sameSource(state.inputSources.get(id), source));
             if (changed || windowChanged) {
-              const result = selectRecentComparisonEntries(incoming, at), snapshots = /* @__PURE__ */ new Map();
+              const result = selectRecentComparisonEntries(incoming, at, Infinity), snapshots = /* @__PURE__ */ new Map();
               state.entries = result.entries.map((entry, index) => {
                 const id = result.metadata[index].sourceId, previous2 = state.snapshots.get(id);
                 const source = inputSources.get(id) || sourceToken(entry);
@@ -8649,7 +10360,7 @@ underlying system, so should run in the browser, Node, or Plask.
     selectionTools.id = "tools-library-selection";
     selectionTools.open = selected.size > 0;
     toolNode(selectionTools, "summary", "Select sessions for Compare or export");
-    toolNode(selectionTools, "p", "Compare any number of saved sessions, from one or several models. Older sessions form a faint gray chart background.", "tools-muted");
+    toolNode(selectionTools, "p", "Compare any number of saved sessions, from one or several models. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray chart background.", "tools-muted");
     const bulk = toolNode(selectionTools, "div", void 0, "tools-actions tools-library-bulk"), selection = toolNode(bulk, "span");
     selection.id = "tools-library-selected";
     let matching = [];
@@ -8745,7 +10456,7 @@ underlying system, so should run in the browser, Node, or Plask.
         const compareModel = toolButton(controls, "Compare", () => actions.compareModel(room3), "tools-folder-compare-" + room3);
         compareModel.disabled = ids.length < 2;
         compareModel.setAttribute("aria-label", "Compare stored sessions for " + room3);
-        compareModel.title = ids.length < 2 ? "Keep at least two sessions for this model to compare." : "Compare the " + ids.length + " latest stored sessions for " + room3 + ", independently of the search filters. Sessions after the newest twelve form a faint chart background.";
+        compareModel.title = ids.length < 2 ? "Keep at least two sessions for this model to compare." : "Compare the " + ids.length + " latest stored sessions for " + room3 + ", independently of the search filters. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray background.";
       }
       else for (const entry of visible.slice(0, shown)) {
         const row = toolNode(list, "article", void 0, "tools-row");
@@ -9550,6 +11261,7 @@ underlying system, so should run in the browser, Node, or Plask.
   }
   function openSessionTools(focusTarget) {
     if (closeSessionTools) closeSessionTools();
+    initializeBackgroundTracking();
     const origin = location.href, generation = runtime.initGuard, focusBefore = focusTarget || document.getElementById("btn-control-library") || document.activeElement;
     const dialog = document.createElement("dialog");
     dialog.id = "tierscope-session-tools";
@@ -9558,7 +11270,7 @@ underlying system, so should run in the browser, Node, or Plask.
     dialog.innerHTML = libraryShell();
     document.body.appendChild(dialog);
     let currentArchive = null, liveComparisonArchive = null, library = null, tab = "library", fileRequest = 0, chartObserver = null;
-    const libraryReader = createLibraryReader();
+    const libraryReader2 = createLibraryReader();
     const modelHistoryReader = createModelHistoryReader();
     const modelCardReader = createModelCardReader();
     let historyLimit = Infinity, historySelected = "", compareAxis = "elapsed";
@@ -9582,6 +11294,8 @@ underlying system, so should run in the browser, Node, or Plask.
     let compareMode = "saved", liveModelsView = null, recentView = null, selectionPage = 0, reportPage = 0;
     const liveModelsState = createLiveComparisonState();
     const recentState = createRecentComparisonState();
+    let backgroundRoomDraft = "", detachBackgroundStatus = null, detachComparisonDismissals = null;
+    const pendingBackgroundSelection = /* @__PURE__ */ new Set();
     const followers = { summary: createAnalysisFollower(), compare: createAnalysisFollower(), history: createAnalysisFollower() };
     try {
       currentArchive = captureSessionFile();
@@ -9667,7 +11381,7 @@ underlying system, so should run in the browser, Node, or Plask.
       input.click();
     }
     function readLibrary() {
-      library = libraryReader.read();
+      library = libraryReader2.read();
       options = [];
       optionsLibrary = null;
       optionsArchive = null;
@@ -9723,7 +11437,7 @@ underlying system, so should run in the browser, Node, or Plask.
       saveNote: action((entry) => {
         const draft = noteDrafts.read(entry);
         if (!draft.dirty) return;
-        const fresh = libraryReader.read();
+        const fresh = libraryReader2.read();
         const latest = fresh.entries.find((item) => item.id === draft.id || draft.lineage && item.lineage === draft.lineage || item.records.some((record) => record.key === LIBRARY_PREFIX + draft.id));
         if (!latest) throw new Error("This session changed or is unavailable. Your draft is kept in Review unsaved notes.");
         if ((latest.notes || "") !== draft.base && latest.notes !== draft.value && !confirm("Saved notes for this session changed in another tab. Replace them with your draft?")) return;
@@ -9800,16 +11514,16 @@ underlying system, so should run in the browser, Node, or Plask.
     }
     function followContext() {
       const room2 = getModelName(), history = runtime.history;
-      const identity = room2 + ":" + runtime.sessionStartedAt + ":" + runtime.activeRoomEpoch;
+      const identity2 = room2 + ":" + runtime.sessionStartedAt + ":" + runtime.activeRoomEpoch;
       if (!current() || room2 === "unknown" || location.href !== runtime.lastUrl || runtime.activeSessionStorageKey !== getStorageKey(room2) || !history.timestamps.length) {
-        return { identity, reason: "Waiting for a live session in this room." };
+        return { identity: identity2, reason: "Waiting for a live session in this room." };
       }
       try {
-        if (!readModelFavorite(room2).autoKeep) return { identity, reason: "Confirm this model as a favorite to follow their live session." };
+        if (!readModelFavorite(room2).autoKeep) return { identity: identity2, reason: "Confirm this model as a favorite to follow their live session." };
       } catch (error) {
-        return { identity, reason: "Favorite setting unavailable; this view is frozen." };
+        return { identity: identity2, reason: "Favorite setting unavailable; this view is frozen." };
       }
-      return { identity, room: room2, signature: [identity, history.timestamps[0], history.timestamps.at(-1), history.timestamps.length, runtime.isPaused, runtime.isStopped, runtime.stoppedAt].join(":") };
+      return { identity: identity2, room: room2, signature: [identity2, history.timestamps[0], history.timestamps.at(-1), history.timestamps.length, runtime.isPaused, runtime.isStopped, runtime.stoppedAt].join(":") };
     }
     function followedEntries() {
       return followers.history.project(library.entries);
@@ -9880,6 +11594,7 @@ underlying system, so should run in the browser, Node, or Plask.
     }
     function refreshCurrent() {
       var _a;
+      refreshBackgroundControls();
       if (tab === "compare" && recentView) {
         recentView.refresh();
         return;
@@ -9894,7 +11609,7 @@ underlying system, so should run in the browser, Node, or Plask.
       if (refreshCapacity && capacityCheckpoint !== checkpointSignature) {
         capacityCheckpoint = checkpointSignature;
         try {
-          refreshCapacity(libraryReader.read(), readLibraryLimits(), "");
+          refreshCapacity(libraryReader2.read(), readLibraryLimits(), "");
         } catch (error) {
           refreshCapacity(library, null, error.message);
         }
@@ -9926,6 +11641,7 @@ underlying system, so should run in the browser, Node, or Plask.
       }
       refreshCards();
       if ((replaced || firstCapture) && (tab === "summary" && selectedA === "current" || tab === "compare" && [selectedA, selectedB, ...selectedExtra].includes("current"))) render(tab);
+      else if (analysisView && analysisSources.liveIndex !== currentAnalysisIndex(analysisSources.archives, analysisSources.ids)) refreshAnalysis();
     }
     function favoriteAction(room2, enableOnly = false) {
       if (!changeModelFavorite(room2, enableOnly)) return;
@@ -10052,8 +11768,9 @@ underlying system, so should run in the browser, Node, or Plask.
       history.dataset.cardHistory = "";
       if (!replay) {
         const comparisons = node(card, "div", void 0, "tools-actions");
-        button(comparisons, "Live sessions", openLiveComparison, "tools-compare-live").title = "Compare models being tracked in your open TierScope tabs.";
-        button(comparisons, "Last 24h sessions", openRecentComparison, "tools-compare-last24h").title = "Compare all models with saved samples in the last 24 hours.";
+        button(comparisons, "Compare all live sessions", openLiveComparison, "tools-compare-live").title = "Compare models being tracked in your open TierScope tabs and this Library.";
+        button(comparisons, "Compare last 24h sessions", openRecentComparison, "tools-compare-last24h").title = "Compare all models with saved samples in the last 24 hours.";
+        backgroundComparisonControls(card, true);
       }
       if (replay) {
         const exports = node(card, "div", void 0, "tools-actions tools-exports");
@@ -10076,6 +11793,132 @@ underlying system, so should run in the browser, Node, or Plask.
         const status = node(card, "div", "", "tools-muted");
         status.id = "session-save-info";
         status.setAttribute("role", "status");
+      }
+    }
+    function backgroundComparisonControls(parent, allowStart) {
+      const section = node(parent, "div", void 0, "tools-background-comparison");
+      if (allowStart) {
+        const form = node(section, "form", void 0, "tools-actions tools-background-form");
+        const input = node(form, "input");
+        input.id = "tools-background-room";
+        input.type = "text";
+        input.placeholder = "Room name";
+        input.maxLength = 100;
+        input.required = true;
+        input.value = backgroundRoomDraft;
+        input.setAttribute("aria-label", "Room to compare without watching");
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        input.oninput = () => {
+          backgroundRoomDraft = input.value;
+          input.setCustomValidity("");
+        };
+        const start = node(form, "button", "Compare without watching");
+        start.type = "submit";
+        start.id = "tools-compare-background";
+        form.onsubmit = async (event) => {
+          event.preventDefault();
+          try {
+            if (input.value.trim().toLowerCase() === getModelName().toLowerCase()) throw new Error("This room is already being tracked. Enter another room name.");
+            clearComparisonDismissalsForRoom(input.value.trim().toLowerCase());
+            input.disabled = true;
+            start.disabled = true;
+            const state = await startPersistentBackgroundComparison(input.value);
+            if (!current()) return;
+            backgroundRoomDraft = state.room;
+            const firstSelection = !liveModelsState.autoPicked;
+            liveModelsState.autoPicked = true;
+            liveModelsState.frozen = false;
+            liveModelsState.chartState = null;
+            if (firstSelection) {
+              if (getModelName() !== "unknown") pendingBackgroundSelection.add(getModelName().toLowerCase());
+              for (const tracked of getPersistentBackgroundComparisonStates()) if (tracked.active) pendingBackgroundSelection.add(tracked.room);
+            } else pendingBackgroundSelection.add(state.room);
+            selectBackgroundComparisons();
+            compareMode = "live";
+            render("compare");
+          } catch (error) {
+            if (input.isConnected) {
+              input.setCustomValidity(error.message);
+              input.reportValidity();
+            }
+          } finally {
+            input.disabled = false;
+            start.disabled = false;
+          }
+        };
+        node(section, "p", "Add rooms without opening their videos. Tracking continues while Chaturbate is open. Stops after more than 15 minutes of confirmed broadcaster absence, or when you press Stop.", "tools-muted");
+      }
+      const status = node(section, "div", void 0, "tools-background-status");
+      status.id = "tools-background-status";
+      button(section, "Clear stopped/stale", () => {
+        try {
+          dismissComparisonSources(inactiveBackgroundSources());
+          refreshBackgroundControls();
+        } catch (error) {
+          tell("Some entries could not be cleared: " + error.message, true);
+        }
+      }, "tools-clear-background-inactive").title = "Hide old tracking entries without deleting saved sessions or recovery data.";
+      refreshBackgroundControls();
+    }
+    function backgroundSourcesForView() {
+      const raw = readPersistentBackgroundComparisonSources().sources;
+      const displayed = new Map(readLiveModelSources().sources.map((source) => [source.id, source]));
+      return raw.map((source) => displayed.get(source.id) || source);
+    }
+    function inactiveBackgroundSources() {
+      return backgroundSourcesForView().filter((source) => ["stopped", "stale"].includes(source.status) && !isComparisonDismissed(source));
+    }
+    function refreshBackgroundControls() {
+      const status = dialog.querySelector("#tools-background-status");
+      if (!status) return;
+      const sources = backgroundSourcesForView(), states = getPersistentBackgroundComparisonStates().filter((state) => {
+        const source = sources.find((item) => item.room === state.room);
+        return !source || !isComparisonDismissed(source);
+      });
+      const clear = dialog.querySelector("#tools-clear-background-inactive");
+      if (clear) clear.disabled = !inactiveBackgroundSources().length;
+      status.hidden = !states.length;
+      const visible = new Set(states.map((state) => state.room));
+      for (const row of Array.from(status.children)) if (!visible.has(row.dataset.backgroundRoom)) row.remove();
+      for (const state of states) {
+        let row = Array.from(status.children).find((item) => item.dataset.backgroundRoom === state.room);
+        if (!row) {
+          row = node(status, "div", void 0, "tools-background-row");
+          row.dataset.backgroundRoom = state.room;
+          const text2 = node(row, "span", "", "tools-muted");
+          text2.setAttribute("role", "status");
+          text2.dataset.backgroundMessage = "";
+          const stop = button(row, "Stop", () => {
+            try {
+              stopPersistentBackgroundComparison(state.room);
+              pendingBackgroundSelection.delete(state.room);
+              refreshBackgroundControls();
+            } catch (error) {
+              tell(error.message, true);
+            }
+          });
+          stop.dataset.backgroundStop = "";
+          stop.setAttribute("aria-label", "Stop tracking " + state.room);
+        }
+        const text = row.querySelector("[data-background-message]");
+        const message2 = state.room + " · " + state.message;
+        if (text.textContent !== message2) text.textContent = message2;
+        text.style.color = ["retry", "unavailable", "offline"].includes(state.status) ? "var(--panel-warning)" : "var(--panel-muted)";
+        row.querySelector("[data-background-stop]").hidden = !state.active;
+      }
+    }
+    function selectBackgroundComparisons() {
+      const { sources } = readLiveModelSources(true);
+      for (const room2 of pendingBackgroundSelection) {
+        const candidates = sources.filter((source) => source.room === room2 && !["reset", "unavailable", "stale"].includes(source.status));
+        candidates.sort((a, b) => b.sampleCount - a.sampleCount || (b.sampleAt || 0) - (a.sampleAt || 0) || a.id.localeCompare(b.id));
+        const chosen = candidates[0];
+        if (chosen) {
+          liveModelsState.selected.add(chosen.id);
+          liveModelsState.choices.set(room2, chosen.id);
+          pendingBackgroundSelection.delete(room2);
+        }
       }
     }
     function compareLiveWithPrevious() {
@@ -10442,7 +12285,7 @@ underlying system, so should run in the browser, Node, or Plask.
         tell(error.message, true);
       }
       node(picker, "p", filteredSources.length + " matching sessions. Existing selections stay available when outside the filters.", "tools-muted");
-      if (comparing) node(picker, "p", "Compare any number of saved sessions. The newest twelve remain distinct; older sessions form a faint gray background.", "tools-muted");
+      if (comparing) node(picker, "p", "Compare any number of saved sessions. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray background. Ongoing tracking stays solid and opaque.", "tools-muted");
       const sourceControls = node(picker, "div", void 0, "tools-actions");
       if (liveComparisonArchive) button(sourceControls, "Refresh live snapshot", () => {
         liveComparisonArchive = captureLiveSessionFile();
@@ -10705,26 +12548,41 @@ underlying system, so should run in the browser, Node, or Plask.
       }
       node(parent, "p", "The full-session high can predate retained history and is not limited by “Match shared length.” Token-holder share is weighted by recorded registered-viewer time.", "tools-muted");
     }
+    function currentAnalysisIndex(archives, ids) {
+      const room2 = getModelName();
+      if (runtime.isStopped || location.href !== runtime.lastUrl || runtime.activeSessionStorageKey !== getStorageKey(room2)) return -1;
+      return archives.findIndex((archive, index) => {
+        var _a, _b;
+        if (archive.room !== room2 || archive.session.isStopped || archive.session.sessionStartedAt !== runtime.sessionStartedAt) return false;
+        const id = ids[index];
+        if (id === "current") return !currentArchiveIsReplay;
+        return id === "live" || ((_b = (_a = followers[tab]) == null ? void 0 : _a.get(id)) == null ? void 0 : _b.archive) === archive;
+      });
+    }
     function chart(archives, labels, endMs, ids) {
       const axisMode = tab === "compare" ? compareAxis : "elapsed";
       const series = archives.map((archive) => {
         const source = __spreadProps(__spreadValues({}, analysisSeries(archive, metric)), { timestamps: archive.session.history.timestamps });
         return axisMode === "clock" ? __spreadProps(__spreadValues({}, source), { clock: projectClockSeries(source) }) : source;
       });
+      const liveIndex = currentAnalysisIndex(archives, ids);
+      const config = {
+        rankTimes: archives.map((archive) => archive.session.sessionStartedAt),
+        seriesStyles: archives.map((_, index) => index === liveIndex ? { live: true, primary: true } : {})
+      };
+      analysisSources = { archives, ids, liveIndex };
       if (analysisView) {
-        analysisSources = { archives, ids };
-        analysisView.update(series, endMs, ANALYSIS_METRICS[metric], axisMode);
+        analysisView.update(series, endMs, ANALYSIS_METRICS[metric], axisMode, config);
         return;
       }
       const saved = analysisStates.get(tab);
       const same = saved && (saved.state.axisMode || "elapsed") === axisMode && saved.ids.length === ids.length && ids.every((id, index) => saved.archives[saved.ids.indexOf(id)] === archives[index]);
       const restored = same ? __spreadProps(__spreadValues({}, saved.state), { hidden: saved.state.hidden.map((index) => ids.indexOf(saved.ids[index])) }) : null;
-      const view = renderAnalysisChart(content, series, labels, endMs, ANALYSIS_METRICS[metric], restored, axisMode);
+      const view = renderAnalysisChart(content, series, labels, endMs, ANALYSIS_METRICS[metric], restored, axisMode, config);
       const range = dialog.querySelector("#tools-comparison-range");
       if (range) view.settings.appendChild(range);
       content.appendChild(analysisOutput);
       analysisView = view;
-      analysisSources = { archives, ids };
       chartDraw = view.draw;
       chartDispose = view.dispose;
       if (window.ResizeObserver) {
@@ -10763,6 +12621,7 @@ underlying system, so should run in the browser, Node, or Plask.
           return;
         }
         if (compareMode === "live") {
+          if (getPersistentBackgroundComparisonStates().length) backgroundComparisonControls(content, false);
           liveModelsView = renderLiveModelsComparison(content, {
             state: liveModelsState,
             currentRoom: getModelName(),
@@ -10879,11 +12738,11 @@ underlying system, so should run in the browser, Node, or Plask.
         node(content, "p", pendingBackup.rooms.length + " rooms · " + (Object.keys(pendingBackup.preferences).length + (pendingBackup.analysisPreferences ? 1 : 0)) + " saved preferences · " + pendingBackup.library.length + " sessions", "tools-muted");
         node(content, "p", pendingBackup.favoriteModels.length + " favorite models. Restoring Library adds these where no local model choice exists.", "tools-muted");
         const choices = node(content, "div", void 0, "tools-actions");
-        const highs = checkbox(choices, "tools-restore-highs", "Merge ATH"), preferences = checkbox(choices, "tools-restore-preferences", "Restore preferences"), recordings = checkbox(choices, "tools-restore-library", "Add sessions and favorite models");
+        const highs = checkbox(choices, "tools-restore-highs", "Merge ATH"), preferences2 = checkbox(choices, "tools-restore-preferences", "Restore preferences"), recordings = checkbox(choices, "tools-restore-library", "Add sessions and favorite models");
         button(content, "Restore selected data", () => {
-          if (!highs.checked && !preferences.checked && !recordings.checked) throw new Error("Choose at least one kind of data to restore.");
+          if (!highs.checked && !preferences2.checked && !recordings.checked) throw new Error("Choose at least one kind of data to restore.");
           if (!confirm("Restore the selected backup data?\n\nATH will be merged, library sessions added or updated with fuller versions, and selected saved preferences replaced. Your live session is not replaced." + (pendingBackup.recovery ? "\n\nThis partial backup excludes " + pendingBackup.recovery.omittedLibraryKeys.length + " unreadable library entries." : ""))) return;
-          const result = restoreTierScopeBackup(pendingBackup, { highs: highs.checked, preferences: preferences.checked, library: recordings.checked });
+          const result = restoreTierScopeBackup(pendingBackup, { highs: highs.checked, preferences: preferences2.checked, library: recordings.checked });
           library = null;
           if (runtime.playback) setPlaybackAllTimeState(runtime.playback, readAllTimeHighs(displayedHighRoom()));
           repaintHighMode();
@@ -10952,6 +12811,14 @@ underlying system, so should run in the browser, Node, or Plask.
       }
     }
     function close() {
+      if (detachComparisonDismissals) {
+        detachComparisonDismissals();
+        detachComparisonDismissals = null;
+      }
+      if (detachBackgroundStatus) {
+        detachBackgroundStatus();
+        detachBackgroundStatus = null;
+      }
       if (compactView) {
         compactView.dispose();
         compactView = null;
@@ -10980,7 +12847,7 @@ underlying system, so should run in the browser, Node, or Plask.
       analysisSources = null;
       analysisOutput = null;
       analysisReports = null;
-      libraryReader.clear();
+      libraryReader2.clear();
       modelHistoryReader.clear();
       options = [];
       optionsLibrary = null;
@@ -11069,6 +12936,15 @@ underlying system, so should run in the browser, Node, or Plask.
       modeChanged: (enabled) => detachDock.setChartOnly(enabled),
       redraw: () => detachDock.redraw()
     });
+    detachBackgroundStatus = subscribePersistentBackgroundComparison(() => {
+      if (!current()) return;
+      selectBackgroundComparisons();
+      refreshBackgroundControls();
+      if (liveModelsView) liveModelsView.refresh();
+    });
+    detachComparisonDismissals = subscribeComparisonDismissals(() => {
+      if (current()) refreshBackgroundControls();
+    });
     render("library");
     dialog.querySelector("#tools-close").focus();
   }
@@ -11112,8 +12988,9 @@ underlying system, so should run in the browser, Node, or Plask.
     var button = document.getElementById("btn-panel-options");
     if (button) {
       button.style.display = runtime.isMinimized ? "none" : "";
-      button.textContent = { full: "Full", fourHours: "4h", twoHours: "2h", hour: "1h", halfHour: "30m", quarter: "15m" }[runtime.chartWindowMode] + " ▾";
-      button.title = "Chart window and highs. Showing " + { full: "full history", fourHours: "the last 4 hours", twoHours: "the last 2 hours", hour: "the last hour", halfHour: "the last 30 minutes", quarter: "the last 15 minutes" }[runtime.chartWindowMode] + ".";
+      var range = CHART_RANGES.find((range2) => range2.key === runtime.chartWindowMode);
+      button.textContent = range.shortLabel + " ▾";
+      button.title = "Chart window and highs. Showing " + (range.key === "full" ? "the full range" : "the last " + range.label) + ".";
     }
     var select = document.getElementById("chart-window-select");
     if (select) select.value = runtime.chartWindowMode;
@@ -11914,67 +13791,8 @@ underlying system, so should run in the browser, Node, or Plask.
   }
 
   // src/scanning.js
-  function parseGetChatUserListResponse(text) {
-    if (typeof text !== "string" || !text.trim()) throw new Error("Empty API response");
-    var parts = text.trim().split(",");
-    if (!/^\d+$/.test(parts[0])) throw new Error("Invalid API anonymous count");
-    var anonymousCount = Number(parts[0]);
-    if (!Number.isSafeInteger(anonymousCount)) throw new Error("Unsafe API anonymous count");
-    var firstUser = 1;
-    if (parts.length > 1 && /^\d+$/.test(parts[1])) {
-      if (!Number.isSafeInteger(Number(parts[1]))) throw new Error("Unsafe API metadata count");
-      firstUser = 2;
-    }
-    var classTiers = { m: "red", f: "green", l: "purple", p: "pink", tr: "dark-blue", t: "light-blue", g: "gray" };
-    var genders = { m: "male", f: "female", s: "trans", c: "couple" };
-    var seen = /* @__PURE__ */ new Set();
-    var parsedUsers = [];
-    var unknownClasses = /* @__PURE__ */ Object.create(null);
-    var unknownGenders = /* @__PURE__ */ Object.create(null);
-    for (var i = firstUser; i < parts.length; i++) {
-      var fields = parts[i].split("|");
-      if (fields.length !== 4 || !/^[A-Za-z0-9_-]{2,30}$/.test(fields[0]) || fields.slice(1).some(function(field) {
-        return !/^[^\s|,<>\x00-\x1f]+$/.test(field);
-      })) {
-        throw new Error("Malformed API record at index " + i);
-      }
-      var username = fields[0];
-      var key = username.toLowerCase();
-      if (seen.has(key)) throw new Error("Duplicate API username at index " + i);
-      seen.add(key);
-      var rawClass = fields[1];
-      var genderCode = fields[2];
-      var isOwner = rawClass === "o";
-      var tier = Object.prototype.hasOwnProperty.call(classTiers, rawClass) ? classTiers[rawClass] : null;
-      var gender = Object.prototype.hasOwnProperty.call(genders, genderCode) ? genders[genderCode] : "unknown";
-      if (!tier && !isOwner) unknownClasses[rawClass] = (unknownClasses[rawClass] || 0) + 1;
-      if (gender === "unknown") unknownGenders[genderCode] = (unknownGenders[genderCode] || 0) + 1;
-      parsedUsers.push({
-        username,
-        rawClass,
-        tier,
-        genderCode,
-        gender,
-        rawFlag: fields[3],
-        isOwner
-      });
-    }
-    var registeredCount = parsedUsers.length;
-    var totalUsers = anonymousCount + registeredCount;
-    if (!Number.isSafeInteger(totalUsers)) throw new Error("Unsafe API total users");
-    return {
-      anonymousCount,
-      registeredCount,
-      totalUsers,
-      users: parsedUsers,
-      diagnostics: { unknownClasses, unknownGenders }
-    };
-  }
-  function validateRoomSnapshot(snapshot) {
-    if (!snapshot || !Number.isSafeInteger(snapshot.roomTotal) || snapshot.roomTotal < 0 || !Array.isArray(snapshot.users)) throw new Error("Invalid room snapshot");
-    if (snapshot.source === "API" && (!Number.isSafeInteger(snapshot.anonymousCount) || snapshot.anonymousCount < 0 || snapshot.registeredCount !== snapshot.users.length || snapshot.totalUsers !== snapshot.anonymousCount + snapshot.registeredCount || snapshot.roomTotal !== snapshot.totalUsers)) {
-      throw new Error("Inconsistent API anonymous, registered, or total user counts");
-    }
+  function validateRoomSnapshot2(snapshot) {
+    validateRoomSnapshot(snapshot);
     if (!isScanValid(snapshot.users.length, snapshot.roomTotal)) {
       throw new Error("Sample rejected by 3.0.0 scan-validity checks");
     }
@@ -12120,7 +13938,7 @@ underlying system, so should run in the browser, Node, or Plask.
       resumeSessionForOwnerReturn(Date.now());
       startTrackingTimer();
       updateStopControls();
-      validateRoomSnapshot(snapshot);
+      validateRoomSnapshot2(snapshot);
       return snapshot;
     } catch (error) {
       if (!isAcquisitionCurrent(context)) return null;
@@ -12141,7 +13959,7 @@ underlying system, so should run in the browser, Node, or Plask.
       if (checkAbsenceStop() || !isAcquisitionCurrent(context)) return null;
       observeSessionPresence(snapshot, Date.now());
       if (checkAbsenceStop() || !isAcquisitionCurrent(context)) return null;
-      validateRoomSnapshot(snapshot);
+      validateRoomSnapshot2(snapshot);
       clearDOMFailures();
       clearRequestFailures(context.policyRevision, context.policyStorageRevision);
       return snapshot;
@@ -12169,7 +13987,7 @@ underlying system, so should run in the browser, Node, or Plask.
     try {
       var fallback = await acquireDOMSnapshot(context, returnToChat);
       if (!isAcquisitionCurrent(context)) return null;
-      validateRoomSnapshot(fallback);
+      validateRoomSnapshot2(fallback);
       log("DOM fallback succeeded; room=" + context.room + " records=" + fallback.users.length);
       return fallback;
     } catch (err) {
@@ -12393,7 +14211,7 @@ underlying system, so should run in the browser, Node, or Plask.
     if (existing) existing.remove();
     var div = document.createElement("div");
     div.id = "cb-tier-tracker";
-    var html = '<div id="tracker-container" style="position:fixed;top:80px;right:20px;background:rgba(20,20,30,0.95);color:var(--panel-text);padding:5px;border-radius:6px;font-family:Arial,sans-serif;font-size:9px;z-index:999999;width:' + runtime.BASE_WIDTH_MINI + 'px;border:1px solid #ff69b4;transition:width 0.3s ease;cursor:default;user-select:none;"><div id="drag-handle" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;border-bottom:1px solid #ff69b4;padding-bottom:3px;cursor:move;"><div id="header-model" style="display:flex;flex:1;min-width:0;align-items:center;gap:3px;margin-left:14px;margin-right:4px;"><span id="header-text" style="flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:bold;color:var(--panel-accent);font-size:13px;line-height:18px;">TierScope</span><button type="button" id="btn-model-favorite" aria-label="Favorite model" style="flex:0 0 18px;padding:0;border:0;background:transparent;color:var(--panel-muted);font-size:14px;line-height:18px;cursor:pointer;">☆</button></div><div style="display:flex;align-items:center;gap:3px;flex-shrink:0;"><button type="button" id="btn-high-mode" aria-pressed="false" aria-label="Session highs. Switch to all-time highs" style="display:none;min-width:29px;background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;">SH</button><button type="button" id="btn-panel-options" aria-label="Chart window and highs" aria-expanded="false" aria-controls="panel-options" style="display:none;background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;white-space:nowrap;">Full ▾</button><button type="button" id="btn-standard-size" title="Restore standard panel size (100%)" aria-label="Restore standard panel size" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;">100%</button><button id="btn-toggle" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:9px;padding:1px 4px;flex-shrink:0;">+</button></div></div><div id="panel-options" role="group" aria-label="Chart and high options" style="display:none;position:absolute;right:5px;top:29px;width:190px;max-width:calc(100% - 10px);box-sizing:border-box;z-index:5;padding:8px;background:var(--panel-solid);color:var(--panel-text);border:1px solid #ff69b4;border-radius:4px;font-size:11px;box-shadow:0 3px 12px #0008;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;"><strong>Charts &amp; highs</strong><button type="button" id="panel-options-close" aria-label="Close chart and high options" style="background:var(--panel-button);color:var(--panel-text);border:0;border-radius:3px;cursor:pointer;">×</button></div><label for="chart-window-select">Chart window</label><select id="chart-window-select" style="display:block;width:100%;margin:4px 0 6px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);font-size:11px;"><option value="full">Full history</option><option value="fourHours">Last 4 hours</option><option value="twoHours">Last 2 hours</option><option value="hour">Last hour</option><option value="halfHour">Last 30 minutes</option><option value="quarter">Last 15 minutes</option></select><div style="font-size:10px;color:var(--panel-muted);line-height:1.4;margin-bottom:8px;">Charts only. Downloads keep the full retained history.</div><input type="file" id="session-file-input" accept=".json,application/json" style="display:none;"><div id="session-file-info" style="display:none;margin-top:7px;font-size:10px;line-height:1.4;white-space:pre-line;overflow-wrap:anywhere;color:var(--panel-secondary);"></div><div style="border-top:1px solid var(--panel-divider);margin-top:8px;padding-top:6px;"><strong>All-time highs</strong><div id="all-time-info" style="font-size:10px;line-height:1.4;margin:4px 0;color:var(--panel-secondary);"></div><button type="button" id="btn-add-all-time" style="display:none;width:100%;margin:4px 0;padding:4px;background:#4169E1;color:#fff;border:0;border-radius:3px;cursor:pointer;">Add to all-time highs</button><button type="button" id="btn-clear-all-time" style="display:block;width:100%;margin:4px 0;padding:4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;">Clear Room ATH…</button><button type="button" id="btn-clear-inactive-ath" style="display:block;width:100%;margin:4px 0;padding:4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;" title="Preview and clear ATH for rooms not visited in over 90 days">Clear inactive ATH (90 days)…</button><div id="all-time-action-status" role="status" style="font-size:10px;line-height:1.4;overflow-wrap:anywhere;color:var(--panel-secondary);"></div></div></div><div id="minimized-view" style="display:block;position:relative;"><div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><strong id="mini-room-count" style="color:var(--panel-accent);font-size:13px;">0</strong><span style="color:var(--panel-muted);font-size:8px;">in room</span><span id="mini-room-change" style="margin-left:auto;font-size:8px;"></span></div><div style="display:flex;align-items:center;justify-content:space-between;gap:3px;"><button type="button" id="mini-metric" style="background:transparent;border:0;color:var(--panel-secondary);font:inherit;cursor:pointer;padding:2px 0;" aria-label="Cycle chart metric">Room total ▾</button><button type="button" id="mini-high" style="background:transparent;border:0;padding:0;color:var(--panel-subtle);font-size:8px;cursor:pointer;"></button></div><canvas id="mini-chart" width="140" height="36" style="display:block;width:100%;height:36px;" role="img" aria-label="Recent audience history"></canvas><div style="display:flex;justify-content:space-between;gap:4px;margin:3px 0;"><span title="With Tokens">💎 <span id="mini-withtokens" style="color:var(--panel-warning);">0</span> <span id="mini-withtokens-change"></span></span><span title="Registered">📊 <span id="mini-total">0</span> <span id="mini-total-change"></span></span></div><div style="display:flex;align-items:center;gap:3px;"><span id="mini-freshness" style="flex:1;min-width:0;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">No sample</span><button type="button" id="btn-auto" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;cursor:pointer;" title="Pause or resume scans">⏸</button><button type="button" id="mini-settings-toggle" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;cursor:pointer;" aria-label="Scan interval settings" title="Scan interval settings — adjust how often TierScope scans" aria-expanded="false" aria-controls="mini-settings">◷</button><button type="button" id="btn-expand" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;font-size:9px;cursor:pointer;" title="Expand panel" aria-label="Expand panel">↗</button></div><div id="mini-settings" style="display:none;position:absolute;left:0;right:0;top:17px;background:var(--panel-settings);border:1px solid #ff69b4;border-radius:4px;padding:5px;z-index:2;" role="group" aria-label="Scan interval"><div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--panel-secondary);">Scan interval <button type="button" id="mini-settings-close" aria-label="Close scan interval settings" title="Close (Escape)" style="background:var(--panel-button);color:var(--panel-text);border:0;border-radius:3px;cursor:pointer;padding:1px 5px;font-size:13px;">×</button></div><div style="display:flex;align-items:center;justify-content:center;gap:3px;margin:3px 0;padding:2px;background:rgba(var(--panel-row-rgb),0.05);border-radius:3px;"><button id="btn-timer-down" style="background:var(--panel-button-strong);border:none;color:var(--panel-text);border-radius:2px;cursor:pointer;font-size:9px;padding:1px 4px;font-weight:bold;">−</button><span id="timer-display" style="font-size:11px;color:var(--panel-warning);font-weight:bold;min-width:28px;">60s</span><button id="btn-timer-up" style="background:var(--panel-button-strong);border:none;color:var(--panel-text);border-radius:2px;cursor:pointer;font-size:9px;padding:1px 4px;font-weight:bold;">+</button></div><div style="display:flex;gap:2px;justify-content:center;margin-top:3px;"><button class="timer-preset" data-time="30" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">30s</button><button class="timer-preset" data-time="60" style="background:#ff69b4;border:1px solid #ff69b4;color:#fff;border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">60s</button><button class="timer-preset" data-time="120" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">2m</button><button class="timer-preset" data-time="300" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">5m</button></div><div id="auto-status" style="margin-top:3px;font-size:8px;color:var(--panel-muted);">Starting...</div></div></div><div id="full-view" style="display:none;"><div id="tier-chart-region" style="display:flow-root;">' + collapsedTrayHtml();
+    var html = '<div id="tracker-container" style="position:fixed;top:80px;right:20px;background:rgba(20,20,30,0.95);color:var(--panel-text);padding:5px;border-radius:6px;font-family:Arial,sans-serif;font-size:9px;z-index:999999;width:' + runtime.BASE_WIDTH_MINI + 'px;border:1px solid #ff69b4;transition:width 0.3s ease;cursor:default;user-select:none;"><div id="drag-handle" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;border-bottom:1px solid #ff69b4;padding-bottom:3px;cursor:move;"><div id="header-model" style="display:flex;flex:1;min-width:0;align-items:center;gap:3px;margin-left:14px;margin-right:4px;"><span id="header-text" style="flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:bold;color:var(--panel-accent);font-size:13px;line-height:18px;">TierScope</span><button type="button" id="btn-model-favorite" aria-label="Favorite model" style="flex:0 0 18px;padding:0;border:0;background:transparent;color:var(--panel-muted);font-size:14px;line-height:18px;cursor:pointer;">☆</button></div><div style="display:flex;align-items:center;gap:3px;flex-shrink:0;"><button type="button" id="btn-high-mode" aria-pressed="false" aria-label="Session highs. Switch to all-time highs" style="display:none;min-width:29px;background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;">SH</button><button type="button" id="btn-panel-options" aria-label="Chart window and highs" aria-expanded="false" aria-controls="panel-options" style="display:none;background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;white-space:nowrap;">Full ▾</button><button type="button" id="btn-standard-size" title="Restore standard panel size (100%)" aria-label="Restore standard panel size" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:8px;padding:1px 3px;">100%</button><button id="btn-toggle" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-text);border-radius:3px;cursor:pointer;font-size:9px;padding:1px 4px;flex-shrink:0;">+</button></div></div><div id="panel-options" role="group" aria-label="Chart and high options" style="display:none;position:absolute;right:5px;top:29px;width:190px;max-width:calc(100% - 10px);box-sizing:border-box;z-index:5;padding:8px;background:var(--panel-solid);color:var(--panel-text);border:1px solid #ff69b4;border-radius:4px;font-size:11px;box-shadow:0 3px 12px #0008;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;"><strong>Charts &amp; highs</strong><button type="button" id="panel-options-close" aria-label="Close chart and high options" style="background:var(--panel-button);color:var(--panel-text);border:0;border-radius:3px;cursor:pointer;">×</button></div><label for="chart-window-select">Chart window</label><select id="chart-window-select" style="display:block;width:100%;margin:4px 0 6px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);font-size:11px;">' + CHART_RANGES.map((range) => '<option value="' + range.key + '">' + range.label + "</option>").join("") + '</select><div style="font-size:10px;color:var(--panel-muted);line-height:1.4;margin-bottom:8px;">Charts only. Downloads keep the full retained history.</div><input type="file" id="session-file-input" accept=".json,application/json" style="display:none;"><div id="session-file-info" style="display:none;margin-top:7px;font-size:10px;line-height:1.4;white-space:pre-line;overflow-wrap:anywhere;color:var(--panel-secondary);"></div><div style="border-top:1px solid var(--panel-divider);margin-top:8px;padding-top:6px;"><strong>All-time highs</strong><div id="all-time-info" style="font-size:10px;line-height:1.4;margin:4px 0;color:var(--panel-secondary);"></div><button type="button" id="btn-add-all-time" style="display:none;width:100%;margin:4px 0;padding:4px;background:#4169E1;color:#fff;border:0;border-radius:3px;cursor:pointer;">Add to all-time highs</button><button type="button" id="btn-clear-all-time" style="display:block;width:100%;margin:4px 0;padding:4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;">Clear Room ATH…</button><button type="button" id="btn-clear-inactive-ath" style="display:block;width:100%;margin:4px 0;padding:4px;background:var(--panel-button);color:var(--panel-text);border:1px solid var(--panel-divider);border-radius:3px;cursor:pointer;" title="Preview and clear ATH for rooms not visited in over 90 days">Clear inactive ATH (90 days)…</button><div id="all-time-action-status" role="status" style="font-size:10px;line-height:1.4;overflow-wrap:anywhere;color:var(--panel-secondary);"></div></div></div><div id="minimized-view" style="display:block;position:relative;"><div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><strong id="mini-room-count" style="color:var(--panel-accent);font-size:13px;">0</strong><span style="color:var(--panel-muted);font-size:8px;">in room</span><span id="mini-room-change" style="margin-left:auto;font-size:8px;"></span></div><div style="display:flex;align-items:center;justify-content:space-between;gap:3px;"><button type="button" id="mini-metric" style="background:transparent;border:0;color:var(--panel-secondary);font:inherit;cursor:pointer;padding:2px 0;" aria-label="Cycle chart metric">Room total ▾</button><button type="button" id="mini-high" style="background:transparent;border:0;padding:0;color:var(--panel-subtle);font-size:8px;cursor:pointer;"></button></div><canvas id="mini-chart" width="140" height="36" style="display:block;width:100%;height:36px;" role="img" aria-label="Recent audience history"></canvas><div style="display:flex;justify-content:space-between;gap:4px;margin:3px 0;"><span title="With Tokens">💎 <span id="mini-withtokens" style="color:var(--panel-warning);">0</span> <span id="mini-withtokens-change"></span></span><span title="Registered">📊 <span id="mini-total">0</span> <span id="mini-total-change"></span></span></div><div style="display:flex;align-items:center;gap:3px;"><span id="mini-freshness" style="flex:1;min-width:0;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">No sample</span><button type="button" id="btn-auto" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;cursor:pointer;" title="Pause or resume scans">⏸</button><button type="button" id="mini-settings-toggle" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;cursor:pointer;" aria-label="Scan interval settings" title="Scan interval settings — adjust how often TierScope scans" aria-expanded="false" aria-controls="mini-settings">◷</button><button type="button" id="btn-expand" style="background:var(--panel-button);border:0;color:var(--panel-text);border-radius:3px;font-size:9px;cursor:pointer;" title="Expand panel" aria-label="Expand panel">↗</button></div><div id="mini-settings" style="display:none;position:absolute;left:0;right:0;top:17px;background:var(--panel-settings);border:1px solid #ff69b4;border-radius:4px;padding:5px;z-index:2;" role="group" aria-label="Scan interval"><div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--panel-secondary);">Scan interval <button type="button" id="mini-settings-close" aria-label="Close scan interval settings" title="Close (Escape)" style="background:var(--panel-button);color:var(--panel-text);border:0;border-radius:3px;cursor:pointer;padding:1px 5px;font-size:13px;">×</button></div><div style="display:flex;align-items:center;justify-content:center;gap:3px;margin:3px 0;padding:2px;background:rgba(var(--panel-row-rgb),0.05);border-radius:3px;"><button id="btn-timer-down" style="background:var(--panel-button-strong);border:none;color:var(--panel-text);border-radius:2px;cursor:pointer;font-size:9px;padding:1px 4px;font-weight:bold;">−</button><span id="timer-display" style="font-size:11px;color:var(--panel-warning);font-weight:bold;min-width:28px;">60s</span><button id="btn-timer-up" style="background:var(--panel-button-strong);border:none;color:var(--panel-text);border-radius:2px;cursor:pointer;font-size:9px;padding:1px 4px;font-weight:bold;">+</button></div><div style="display:flex;gap:2px;justify-content:center;margin-top:3px;"><button class="timer-preset" data-time="30" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">30s</button><button class="timer-preset" data-time="60" style="background:#ff69b4;border:1px solid #ff69b4;color:#fff;border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">60s</button><button class="timer-preset" data-time="120" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">2m</button><button class="timer-preset" data-time="300" style="background:var(--panel-button);border:1px solid var(--panel-divider);color:var(--panel-muted);border-radius:2px;cursor:pointer;font-size:7px;padding:1px 3px;">5m</button></div><div id="auto-status" style="margin-top:3px;font-size:8px;color:var(--panel-muted);">Starting...</div></div></div><div id="full-view" style="display:none;"><div id="tier-chart-region" style="display:flow-root;">' + collapsedTrayHtml();
     Object.keys(runtime.TIERS).forEach(function(key) {
       var t = runtime.TIERS[key];
       html += '<div id="tier-row-' + key + '" data-tier="' + key + '" style="display:flex;align-items:center;padding:1px 3px;margin:1px 0;background:rgba(var(--panel-row-rgb),calc(0.05 * var(--tier-background-scale, 1)));border-radius:3px;border-left:3px solid ' + t.color + ';"><div style="width:30px;flex-shrink:0;text-align:center;">' + collapseMarkerHtml(key) + '</div><canvas id="spark-' + key + '" width="105" height="28" style="flex:1;margin:0 4px;"></canvas><div style="text-align:right;width:48px;flex-shrink:0;"><span id="count-' + key + '" style="font-weight:bold;color:' + t.color + ';font-size:14px;">0</span><div id="high-' + key + '" style="font-size:8px;color:var(--panel-positive);margin-top:1px;white-space:nowrap;">SH:0</div></div></div>';
@@ -12563,6 +14381,11 @@ underlying system, so should run in the browser, Node, or Plask.
     }, delay);
   }
   function init() {
+    try {
+      initializeBackgroundTracking();
+    } catch (error) {
+      log("Comparison tracking recovery unavailable: " + error.message);
+    }
     try {
       initializeAthGrace();
     } catch (error) {
@@ -12749,7 +14572,7 @@ underlying system, so should run in the browser, Node, or Plask.
 
   // src/bootstrap.js
   function initializeRuntime() {
-    runtime.TIERSCOPE_VERSION = "3.31.1";
+    runtime.TIERSCOPE_VERSION = "3.32.0";
     runtime.API_TIMEOUT_MS = 1e4;
     runtime.DEFAULT_API_INTERVAL_SECONDS = 60;
     runtime.DOM_FALLBACK_INTERVAL_SECONDS = 60;
@@ -13029,10 +14852,10 @@ underlying system, so should run in the browser, Node, or Plask.
     runtime.SESSION_FILE_VERSION = 1;
     runtime.SESSION_FILE_MAX_BYTES = 8 * 1024 * 1024;
     runtime.CHART_WINDOW_KEY = "tierscope:ui:chartWindow:v1";
-    runtime.CHART_WINDOWS = { full: 0, fourHours: 240 * 6e4, twoHours: 120 * 6e4, hour: 60 * 6e4, halfHour: 30 * 6e4, quarter: 15 * 6e4 };
+    runtime.CHART_WINDOWS = Object.fromEntries(CHART_RANGES.map((range) => [range.key, range.ms === Infinity ? 0 : range.ms]));
     runtime.chartWindowMode = "full";
     try {
-      runtime.savedWindow = GM_getValue(runtime.CHART_WINDOW_KEY, "full");
+      runtime.savedWindow = normalizeChartRangeKey(GM_getValue(runtime.CHART_WINDOW_KEY, "full"));
       if (typeof runtime.savedWindow === "string" && hasStorageField(runtime.CHART_WINDOWS, runtime.savedWindow)) runtime.chartWindowMode = runtime.savedWindow;
     } catch (error) {
     }

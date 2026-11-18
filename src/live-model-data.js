@@ -3,7 +3,10 @@ export const LIVE_MODEL_NOTICE = 'tierscope:live:v1:changed';
 export const LIVE_MODEL_HEARTBEAT_MS = 30000;
 export const LIVE_MODEL_STALE_MS = 180000;
 const statuses = new Set(['tracking', 'paused', 'stopped', 'waiting', 'offline', 'retry', 'reset', 'unavailable']);
+const ongoingStatuses = new Set(['tracking', 'paused', 'retry', 'offline']);
 const timestamp = value => Number.isSafeInteger(value) && value >= 0 && value <= 8640000000000000;
+
+export function isOngoingLiveModelStatus(status) { return ongoingStatuses.has(status); }
 
 // Metadata is an announcement, never proof that its referenced history is valid.
 // Discovery only reads these small records; selected histories are checked later.
@@ -34,4 +37,15 @@ export function liveModelSourceStatus(source, at, epoch) {
     if (source.roomEpoch !== epoch) return 'reset';
     if (at - source.lastSeenAt > LIVE_MODEL_STALE_MS) return 'stale';
     return source.status;
+}
+
+// Comparison-only providers own their histories in memory. Reuse the same
+// identity/timestamp checks without implying that a GM record exists.
+export function decodeInMemoryLiveModelSource(value, at) {
+    if (!value || value.kind !== 'background' || value.recordKey !== null || value.recordSavedAt !== null ||
+        typeof value.revision !== 'string' || value.revision.length > 512) return null;
+    const source = decodeLiveModelSource({...value, revision: ''}, LIVE_MODEL_PREFIX + value.publisherId, at);
+    if (!source) return null;
+    return {...source, kind: 'background', revision: value.revision,
+        status: at - source.lastSeenAt > LIVE_MODEL_STALE_MS ? 'stale' : source.status};
 }

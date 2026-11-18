@@ -1,6 +1,6 @@
 # Comparison fading and history shadows
 
-**3.30.0 update:** comparison count limits have been removed. [Current comparison guide](expanded-comparisons.md). The measurements and examples below document the earlier 3.26.0 release.
+In **3.32.0**, the newest **30 sessions by start time** keep their colors, with historical lines fading progressively; the faint gray background starts with historical lines ranked **31** or older. Ongoing tracking stays colored, solid and opaque regardless of age, including paused sessions and temporary retry or offline waits; other saved, stopped and stale sessions are dashed. Comparison count limits were removed in 3.30.0. See the [current comparison guide](expanded-comparisons.md). The measurements and examples below document the earlier 3.26.0 release.
 
 Compare up to **30 sessions from one model**, or **12 sessions across different models**, in Library. The newest session stays solid pink and fully opaque. The next eleven sessions are dashed and fade gradually through **95%, 90%, 85%, 80%, 75%, 70%, 65%, 60%, 55%, 50% and 45% opacity**.
 

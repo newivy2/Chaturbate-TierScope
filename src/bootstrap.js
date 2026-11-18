@@ -1,5 +1,6 @@
 import { stopAthActivity } from './ath-activity.js';
 import { initializeAcquisitionState } from './acquisition-state.js';
+import { CHART_RANGES, normalizeChartRangeKey } from './chart-ranges.js';
 import { updatePanelOptions } from './files.js';
 import { cancelGifExport, generateGifFromHistory } from './gif.js';
 import { cancelHighPulses } from './high-pulses.js';
@@ -262,12 +263,12 @@ export function initializeRuntime() {
     runtime.SESSION_FILE_VERSION = 1;
     runtime.SESSION_FILE_MAX_BYTES = 8 * 1024 * 1024;
     runtime.CHART_WINDOW_KEY = 'tierscope:ui:chartWindow:v1';
-    runtime.CHART_WINDOWS = { full: 0, fourHours: 240 * 60000, twoHours: 120 * 60000, hour: 60 * 60000, halfHour: 30 * 60000, quarter: 15 * 60000 };
+    runtime.CHART_WINDOWS = Object.fromEntries(CHART_RANGES.map(range => [range.key, range.ms === Infinity ? 0 : range.ms]));
     runtime.chartWindowMode = 'full';
     try {
-        runtime.savedWindow = GM_getValue(runtime.CHART_WINDOW_KEY, 'full');
+        runtime.savedWindow = normalizeChartRangeKey(GM_getValue(runtime.CHART_WINDOW_KEY, 'full'));
         if (typeof runtime.savedWindow === 'string' && hasStorageField(runtime.CHART_WINDOWS, runtime.savedWindow)) runtime.chartWindowMode = runtime.savedWindow;
-    } catch (error) { /* Full history is the default. */ }
+    } catch (error) { /* Full range is the default. */ }
     runtime.playbackLayoutState = null;
     // A small indexed-color renderer: each rectangle updates the canvas and its
     // matching palette index buffer. Bitmap lettering needs no antialiasing,

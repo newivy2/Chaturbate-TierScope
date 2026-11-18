@@ -12,7 +12,7 @@ export function renderLibraryBrowser(parent, entries, filters, selected, actions
     const inputs = recordingFilters(search, entries, filters, 'tools-library', () => { shown = 50; actions.room(filters.room); rows(); }, true);
     const selectionTools = node(book, 'details'); selectionTools.id = 'tools-library-selection'; selectionTools.open = selected.size > 0;
     node(selectionTools, 'summary', 'Select sessions for Compare or export');
-    node(selectionTools, 'p', 'Compare any number of saved sessions, from one or several models. Older sessions form a faint gray chart background.', 'tools-muted');
+    node(selectionTools, 'p', 'Compare any number of saved sessions, from one or several models. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray chart background.', 'tools-muted');
     const bulk = node(selectionTools, 'div', undefined, 'tools-actions tools-library-bulk'), selection = node(bulk, 'span'); selection.id = 'tools-library-selected';
     let matching = [];
     button(bulk, 'Select matching', () => { matching.forEach(entry => selected.add(entry.id)); updateSelection(); }, 'tools-select-matching');
@@ -80,7 +80,7 @@ export function renderLibraryBrowser(parent, entries, filters, selected, actions
             compareModel.disabled = ids.length < 2;
             compareModel.setAttribute('aria-label', 'Compare stored sessions for ' + room);
             compareModel.title = ids.length < 2 ? 'Keep at least two sessions for this model to compare.' :
-                'Compare the ' + ids.length + ' latest stored sessions for ' + room + ', independently of the search filters. Sessions after the newest twelve form a faint chart background.';
+                'Compare the ' + ids.length + ' latest stored sessions for ' + room + ', independently of the search filters. The newest 30 sessions keep their colors, with history fading progressively; older history forms a faint gray background.';
         } else for (const entry of visible.slice(0, shown)) {
             const row = node(list, 'article', undefined, 'tools-row'); row.dataset.libraryId = entry.id;
             const title = node(row, 'label'), check = node(title, 'input'); check.type = 'checkbox'; check.checked = selected.has(entry.id);

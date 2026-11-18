@@ -18,6 +18,7 @@ const reviewedChanges = new Set([
   // Offline/transport classification: connection-recovery unit and native browser fixtures.
   'acquireAPISnapshot', 'recordRequestFailure', 'requestPolicyMessage',
   'parseGetChatUserListResponse', // optional numeric header: acquisition-csv and paired browser fixtures
+  'validateRoomSnapshot', // shared structural validation plus unchanged foreground validity gate
   // Model-first Library + automatic favorite checkpoints: favorite-sessions and model-library browser tests.
   'loadCollapsedRows', 'drawHistorySparklines', 'pulseAcceptedHighs', 'captureSessionFile',
   // Acquisition/preference ownership and controller wiring: control-ownership.test.cjs,
@@ -81,12 +82,19 @@ const reviewedChanges = new Set([
 // Follow-live snapshot ownership: analysis-follow.test.cjs and follow-live-browser.cjs.
 const featureModules = new Set(['ath-retention.js', 'ath-activity.js', 'ath-maintenance.js', 'analysis-clock-data.js', 'analysis-metric-view.js', 'analysis-follow.js', 'library-capacity-data.js', 'library-capacity.js', 'library-capacity-view.js', 'automatic-library.js', 'favorite-controls.js', 'favorite-view.js', 'room-total-series.js', 'library-drafts.js', 'library-models.js', 'library-query.js', 'library-transfer.js', 'library-browser-view.js', 'tools-view-helpers.js', 'analysis-chart-data.js', 'analysis-chart-view.js', 'model-history.js', 'model-history-view.js', 'presentation-health.js', 'sample-presentation.js', 'analysis-preference-data.js', 'analysis-preferences.js', 'acquisition-state.js', 'panel-preferences.js', 'library-dock.js', 'library-shell.js', 'recording-export-data.js', 'recording-exports.js', 'display-model.js', 'display-values.js', 'immutable-data.js', 'presentation-data.js', 'status-model.js', 'status-view.js', 'trend-view.js', 'playback-state.js', 'live-session.js', 'diagnostics.js', 'room-context.js', 'backup.js', 'data-io.js', 'session-analysis.js', 'session-health.js', 'session-library.js', 'session-tools.js']);
 const addedFunctions = new Set(['clearInactiveAllTimeHighs', 'retireInactiveAllTimeRecord', 'captureLiveSessionFile', 'initializeLifecycle', 'refreshPanelOptions', 'refreshScanCountdown', 'getSessionSamplePolicy', 'initializePresentation', 'paintPanelFrame', 'getSessionWriteStatus', 'writeSessionRecord']); // shared history-gap policy; session/ownership tests
+for (const file of ['user-list-data.js', 'background-comparison.js', 'background-tracking-preferences.js', 'background-tracking-lifecycle.js', 'background-recording-storage.js', 'comparison-dismissals.js']) featureModules.add(file);
 featureModules.add('library-chart-only-view.js'); featureModules.add('library-appearance.js'); featureModules.add('connection-status.js'); featureModules.add('request-policy-data.js'); featureModules.add('request-coordination.js');
 for (const file of ['live-model-data.js', 'live-model-sources.js', 'live-model-chart-data.js', 'live-model-comparison.js', 'recent-comparison-data.js', 'recent-comparison.js']) featureModules.add(file);
+featureModules.add('chart-ranges.js');
 addedFunctions.add('effectiveRequestDeadline'); addedFunctions.add('initializeConnectionRecovery'); addedFunctions.add('shareResponseWait'); addedFunctions.add('requestFailureExplanation');
 
 test('unchanged extracted functions preserve 3.4.0; reviewed changes have behavior coverage', () => {
   const actual = {};
+  // The existing parser moved intact to the shared data module. Keep checking
+  // its fingerprint even though other new functions in that module are exempt.
+  const parser = modules.find(module => module.file === 'user-list-data.js').ast.body
+    .find(node => node.declaration?.id?.name === 'parseGetChatUserListResponse').declaration;
+  actual.parseGetChatUserListResponse = hash(parser);
   for (const {file, ast} of modules) {
     if (featureModules.has(file)) continue;
     for (const node of ast.body) {
@@ -148,6 +156,14 @@ test('runtime initialization preserves preference loading and startup order', ()
   // Preserve every original default, preference read and effect in order.
   const ownerBindings = new Set([bindings[0], playbackBinding, acquisitionBinding, preferenceBinding, lifecycleBinding, presentationBinding, connectionBinding, liveBinding, hideBinding, showBinding, offlineDefault, recoveryDefault, storedPolicyDefault]);
   const unchanged = structuredClone(body.filter(n => !ownerBindings.has(n)));
+  // Standard chart presets and legacy preference migration: session-files and
+  // backup regressions cover the new choices; preserve all other defaults.
+  const chartWindows = unchanged.find(n => n.expression?.left?.property?.name === 'CHART_WINDOWS');
+  assert.equal(chartWindows.expression.right.arguments[0].callee.object.name, 'CHART_RANGES');
+  chartWindows.expression.right = acorn.parse('({ full: 0, fourHours: 240 * 60000, twoHours: 120 * 60000, hour: 60 * 60000, halfHour: 30 * 60000, quarter: 15 * 60000 })', {ecmaVersion:2022}).body[0].expression;
+  const windowPreference = unchanged.find(n => n.type === 'TryStatement' && n.block.body[0]?.expression?.left?.property?.name === 'savedWindow').block.body[0].expression;
+  assert.equal(windowPreference.right.callee.name, 'normalizeChartRangeKey');
+  windowPreference.right = windowPreference.right.arguments[0];
   const rows = unchanged.find(n => n.expression?.left?.property?.name === 'PANEL_ROWS').expression.right.arguments[0].elements;
   const roomRow = rows.pop();
   assert.deepEqual(roomRow.properties.map(p => [p.key.name, p.value.value]),

@@ -70,7 +70,7 @@ window.chartFixture={renderAnalysisChart,buildLiveModelSeries};`, resolveDir: pa
             window.mountExpanded = (count, mode = 'elapsed', shadow = false, seriesStyles = null) => {
                 chart.dispose(); const host = document.getElementById('view'); host.replaceChildren(); host.dataset.theme = 'dark';
                 window.largeSeries = Array.from({length: count}, (_, index) => ({times: [0, 60000], values: shadow ?
-                    (index < 12 ? [20, 20] : [8, 8]) : [20 + index, 21 + index], breaks: [false, false],
+                    (index < 30 ? [20, 20] : [8, 8]) : [20 + index, 21 + index], breaks: [false, false],
                     timestamps: mode === 'timeline' ? [now - 60000, now] : [now - index * 1000, now + 60000 - index * 1000]}));
                 const labels = largeSeries.map((_, index) => 'model_' + index + ' · saved session');
                 const config = {originAt: now - 60000, sourceIds: labels, colorIndices: labels.map((_, index) => index),
@@ -87,10 +87,23 @@ window.chartFixture={renderAnalysisChart,buildLiveModelSeries};`, resolveDir: pa
         assert.match(await page.locator('#tools-chart-lines-status').textContent(), /Lines 1–30 of 60/);
         const savedStyles = await page.locator('.tools-chart-legend label').evaluateAll(nodes => nodes.map(node => ({
             color: node.style.color, alpha: Number(node.querySelector('.tools-series-swatch').style.opacity)})));
-        assert.deepEqual(savedStyles.slice(0, 12).map(style => Math.round(style.alpha * 100)), [100,95,90,85,80,75,70,65,60,55,50,45]);
-        assert(savedStyles.slice(12).every(style => style.alpha === 0.12 && style.color === 'rgb(170, 170, 170)'));
+        assert.equal(new Set(savedStyles.map(style => style.color)).size, 30, 'the newest thirty saved sessions have distinct colors');
+        savedStyles.forEach((style, rank) => assert(Math.abs(style.alpha - (1 - rank * 0.55 / 29)) < 1e-6,
+            'all thirty colored sessions fade evenly by age'));
+        assert(await page.locator('.tools-series-swatch').evaluateAll(nodes => nodes.every(node => node.style.borderTopStyle === 'dashed')),
+            'saved snapshots use dashed strokes, including the newest');
+        const savedStrokes = await page.evaluate(() => strokeLog);
+        assert.equal(savedStrokes.length, 30, 'the canvas draws exactly thirty individual foreground strokes');
+        assert.equal(new Set(savedStrokes.map(stroke => stroke.color)).size, 30, 'the actual foreground strokes have thirty distinct colors');
+        assert(savedStrokes.every(stroke => stroke.dash.length > 0), 'the actual saved strokes are dashed');
+        savedStrokes.forEach((stroke, position) => assert(Math.abs(stroke.alpha - (1 - (29 - position) * 0.55 / 29)) < 1e-6));
         await page.click('#tools-chart-lines-next');
         assert.match(await page.locator('#tools-chart-lines-status').textContent(), /Lines 31–60 of 60/);
+        const backgroundStyles = await page.locator('.tools-chart-legend label').evaluateAll(nodes => nodes.map(node => ({
+            color: node.style.color, alpha: Number(node.querySelector('.tools-series-swatch').style.opacity),
+            dash: node.querySelector('.tools-series-swatch').style.borderTopStyle})));
+        assert(backgroundStyles.every(style => style.alpha === 0.12 && style.color === 'rgb(170, 170, 170)' && style.dash === 'dashed'),
+            'gray dashed history begins with session thirty-one');
         assert.equal(await page.locator('[data-analysis-series="59"]').count(), 1);
         await page.fill('#tools-chart-line-search', 'model_59');
         assert.equal(await page.locator('.tools-chart-legend label').count(), 1);
@@ -110,7 +123,7 @@ window.chartFixture={renderAnalysisChart,buildLiveModelSeries};`, resolveDir: pa
         await page.evaluate(() => mountExpanded(60, 'timeline'));
         await page.fill('#tools-chart-line-search', 'model_59');
         assert.equal(await page.locator('.tools-series-swatch').evaluate(node => node.style.opacity), '1', 'original dates own rolling-window ranks');
-        assert.equal(await page.locator('.tools-series-swatch').evaluate(node => node.style.borderTopStyle), 'solid');
+        assert.equal(await page.locator('.tools-series-swatch').evaluate(node => node.style.borderTopStyle), 'dashed');
         assert.match(await page.locator('#tools-chart-range').textContent(), /10\/24\/2026/);
         await page.fill('#tools-chart-line-search', 'model_0 ·');
         assert.equal(await page.locator('.tools-series-swatch').evaluate(node => node.style.opacity), '0.12');
@@ -129,7 +142,7 @@ window.chartFixture={renderAnalysisChart,buildLiveModelSeries};`, resolveDir: pa
             let alpha = 0; for (let i = 3; i < pixels.length; i += 4) alpha = Math.max(alpha, pixels[i]);
             return {alpha, composites};
         }, count);
-        const singleShadow = await shadow(13), crowdedShadow = await shadow(112);
+        const singleShadow = await shadow(31), crowdedShadow = await shadow(130);
         assert.deepEqual(crowdedShadow.composites.map(alpha => Math.round(alpha * 100)), [12]);
         assert(crowdedShadow.alpha >= 20 && crowdedShadow.alpha <= 32, '100 older overlapping traces stay within a single 12% layer: ' + crowdedShadow.alpha);
         assert(Math.abs(crowdedShadow.alpha - singleShadow.alpha) <= 4, 'adding 99 coincident traces does not darken the background');
@@ -142,6 +155,19 @@ window.chartFixture={renderAnalysisChart,buildLiveModelSeries};`, resolveDir: pa
         assert.equal(await page.locator('[data-analysis-series="39"]').count(), 1);
         assert.equal(await page.locator('#tools-chart-inspection tbody tr td').first().textContent(), '59');
         assert.equal(await page.locator('.tools-series-swatch').evaluate(node => node.style.opacity), '1');
+        await page.evaluate(() => mountExpanded(40, 'live', false,
+            Array.from({length: 40}, (_, index) => index === 0 ? {primary: true, live: true} : index === 1 ? {live: true} : {})));
+        const mixedLine = index => page.locator('.tools-chart-legend label').filter({has: page.locator('[data-analysis-series="' + index + '"]')});
+        for (const index of [0, 1]) {
+            assert.equal(await mixedLine(index).locator('.tools-series-swatch').evaluate(node => node.style.borderTopStyle), 'solid');
+            assert.equal(await mixedLine(index).locator('.tools-series-swatch').evaluate(node => node.style.opacity), '1');
+        }
+        for (const index of [2, 3]) assert.equal(await mixedLine(index).locator('.tools-series-swatch').evaluate(node => node.style.borderTopStyle), 'dashed',
+            'stopped or stale traces on a Live axis use dashed strokes');
+        const mixedStrokes = await page.evaluate(() => strokeLog);
+        assert.equal(mixedStrokes.filter(stroke => !stroke.dash.length).length, 2,
+            'actual Live canvas strokes remain solid only for ongoing sources');
+        assert(mixedStrokes.filter(stroke => !stroke.dash.length).every(stroke => stroke.alpha === 1));
         await page.evaluate(() => {
             window.styleFlags = Array.from({length: 60}, (_, index) => index === 0 ? {primary: true, live: true} : index === 1 ? {live: true} : {});
             mountExpanded(60, 'timeline', false, styleFlags); window.styledCanvas = chart.canvas;
@@ -149,7 +175,7 @@ window.chartFixture={renderAnalysisChart,buildLiveModelSeries};`, resolveDir: pa
         const line = index => page.locator('.tools-chart-legend label').filter({has: page.locator('[data-analysis-series="' + index + '"]')});
         const swatch = index => line(index).locator('.tools-series-swatch');
         assert.equal(await swatch(0).evaluate(node => node.style.borderTopStyle), 'solid');
-        assert.equal(await swatch(0).evaluate(node => node.style.opacity), '1', 'the current session stays opaque even beyond the newest twelve');
+        assert.equal(await swatch(0).evaluate(node => node.style.opacity), '1', 'the current session stays opaque even beyond the newest thirty');
         assert.equal(await line(0).evaluate(node => node.style.color), 'rgb(255, 105, 180)');
         assert.match(await line(0).getAttribute('title'), /Current tracked session — solid pink/);
         assert.match(await line(0).textContent(), /Current/);
@@ -195,7 +221,7 @@ window.chartFixture={renderAnalysisChart,buildLiveModelSeries};`, resolveDir: pa
             document.getElementById('view').dataset.theme = 'dark'; chart.update(largeSeries, 60000, 'Room audience', 'timeline', ordinary);
         });
         await page.fill('#tools-chart-line-search', 'model_59');
-        assert.equal(await swatch(59).evaluate(node => node.style.borderTopStyle), 'solid', 'opting out retains the normal newest-saved-session styling');
+        assert.equal(await swatch(59).evaluate(node => node.style.borderTopStyle), 'dashed', 'a newest saved snapshot remains historical without ongoing tracking metadata');
         assert.equal(await line(59).evaluate(node => node.style.color), 'rgb(255, 105, 180)');
         assert.deepEqual(errors, []); await page.close();
         console.log(engine + ': live/timeline real-date alignment, large comparisons, gray shadows and dynamic tracked/current styling with preserved pinned zoom/visibility passed');
